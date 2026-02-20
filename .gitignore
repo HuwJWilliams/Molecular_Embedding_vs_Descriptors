@@ -1,0 +1,11 @@
+results/
+*.pkl
+*.csv
+*.out
+*.log
+*.sh
+*/__pycache/*
+*.zip
+*.xml
+*.png
+*.json
