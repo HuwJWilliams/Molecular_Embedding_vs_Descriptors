@@ -35,7 +35,6 @@ def plotPCA(
     plot_scatter: bool = True,
     random_seed: int = None,
     plot_loadings: bool = False,
-    plot_title: str = "PCA Plot",
     remove_outliers: bool = True,
     kdep_sample_ls: list = ["PyMolGen"],
     axis_fontsize: int = 20,
@@ -332,3 +331,6 @@ def plotPCA(
         plt.savefig(plot_dir / f"{plot_fname}_loadings.png", dpi=600, bbox_inches="tight")
 
     return fig
+
+
+a

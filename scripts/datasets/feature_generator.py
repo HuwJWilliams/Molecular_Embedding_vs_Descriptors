@@ -5,14 +5,13 @@ import logging
 from pathlib import Path
 import sys
 from rdkit import Chem
-from rdkit.Chem import Descriptors, AllChem
+from rdkit.Chem import Descriptors, AllChem, rdFingerprintGenerator
 from mordred import Calculator, descriptors
 from transformers import AutoTokenizer, AutoModel
 import torch
 
 FILE_DIR = Path(__file__).resolve()
 PROJ_DIR = FILE_DIR.parents[2]
-# print(f"Project Reference Dir for file {FILE_DIR.name}:\n{PROJ_DIR}")
 SCRIPTS_DIR = PROJ_DIR / "scripts"
 
 
@@ -31,6 +30,7 @@ MODELS = {
     "MolFormer": "ibm/MoLFormer-XL-both-10pct",
     "ChemBERTa" : "DeepChem/ChemBERTa-100M-MLM"
 }
+
 LOG_LEVEL = logging.DEBUG
 PATHS = getPaths()
 MIN_UNIQUE = 2
@@ -39,7 +39,7 @@ MIN_UNIQUE = 2
 # %% --- Classes & Functions
 class FeatureGenerator():
     """
-    Class to hold all things feature generation
+    Class to hold all of the feature generation functions
     """
     def __init__(
             self,
@@ -51,6 +51,14 @@ class FeatureGenerator():
     ):
         """
         Class Initialiser
+        
+        Parameters
+        ----------
+        feature_set     (str)      Name of the feature set to generate (currently supports [rdkit, mordred, molformer, chemberta])
+        log_name        (str)      Name of the logger
+        save_log        (bool)     Flag to save logger
+        log_level       (int)      Level of logging to save
+        log_identifier  (str)      Identifier for the log
         """
         #===== Logger Setup=====#
         self.logger = setupLogger(
@@ -82,8 +90,21 @@ class FeatureGenerator():
             smiles_ls: list[str],
             id_ls: list[str],
             drop_cols: bool=False,
-            min_unique=MIN_UNIQUE
+            min_unique: int=MIN_UNIQUE
     ) -> pd.DataFrame:
+        
+        """
+        Description
+        -----------
+        Function to calculate RDKit descriptors for a list of smiles
+
+        Parameters
+        ----------
+        smiles_ls           list[str]   List of SMILES
+        id_ls               list[str]   List of IDs corresponding to each SMILE
+        drop_cols           bool        Flag to drop columns with low variance
+        min_unique          int         Variance threshold for dopping columns       
+        """
         
         if len(smiles_ls) != len(id_ls):
             self.logger.error(
@@ -121,6 +142,20 @@ class FeatureGenerator():
             drop_cols: bool=False,
             min_unique: int=MIN_UNIQUE,
     ) -> pd.DataFrame:
+
+        """
+        Description
+        -----------
+        Function to calculate Mordred descriptors for a list of smiles
+
+        Parameters
+        ----------
+        smiles_ls           list[str]   List of SMILES
+        id_ls               list[str]   List of IDs corresponding to each SMILE
+        ignore_3d           bool        Flag to ignore 3D mordred descriptors
+        drop_cols           bool        Flag to drop columns with low variance
+        min_unique          int         Variance threshold for dopping columns       
+        """
     
         self.logger.info(f"Creating Mordred descriptors for {len(smiles_ls)} smiles.")
 
@@ -130,7 +165,7 @@ class FeatureGenerator():
             id_ls=parsed_ids, smiles_ls=parsed_smiles, mol_ls=parsed_mols
             )
 
-        self.logger.info(f"Generating descriptors for {len(df)} molecules")
+        self.logger.info(f"Generating descriptors for {len(df)} valid molecules")
         calc = Calculator(descriptors, ignore_3D=ignore_3D)
         desc_df = calc.pandas(df["Mols"])
         desc_df = desc_df.add_suffix("_mordred")
@@ -142,16 +177,81 @@ class FeatureGenerator():
             self.logger.info(f"Mordred data frame created with shape: {final_df.shape}")
 
         return final_df
+    
+        
+    # ====== Fingerprint Calculations
+
+    def calcMorganFingerprints(
+            self,
+            smiles_ls: list[str],
+            id_ls: list[str],
+            radius:int=2,
+            fingerprint_size:int=1024
+    ):
+        
+        self.logger.info(f"Creating Morgan Fingerprints descriptors for {len(smiles_ls)} smiles.")
+        (parsed_ids, parsed_smiles, parsed_mols), _ = self._parse_smiles(smiles_ls=smiles_ls, id_ls=id_ls)
+
+        df = self._setup_molecule_df(
+            id_ls=parsed_ids, smiles_ls=parsed_smiles, mol_ls=parsed_mols
+            )
+
+        self.logger.info(f"Generating dMorgan Fingerprints for {len(df)} valid molecules")
+
+        fpgen = rdFingerprintGenerator.GetMorganGenerator(
+            radius=radius, fpsize=fingerprint_size
+            )
+
+        fps = []
+
+        for mol in df["mol"]:
+            fp = fpgen.GetFingerprintAsNumPy(mol)
+            fps.append(fp)
+        
+        fp_df = pd.DataFrame(
+            fps,
+            index=df.index,
+            columns=[f"morgan_{i}" for i in range(fingerprint_size)]
+        )
+        result_df = pd.concat(
+            [df[["ID", "SMILES"]].reset_index(drop=True), fp_df.reset_index(drop=True)],
+            axis=1
+        )
+
+        return result_df
+
+    
+    # ====== Embedding Calculations
 
     def calcChemBERTa(
             self,
             smiles_ls: list[str],
             id_ls: list[str],
             batch_size: int=64,
-            max_len_emb: int=400,
+            max_token_len: int=512,
             drop_cols: bool=False,
-            min_unique: int=MIN_UNIQUE
+            min_unique: int=MIN_UNIQUE,
+            pooling: str="mean"
     ) -> pd.DataFrame:
+        
+        """
+        Description
+        -----------
+        Function to calculate ChemBERTa embeddings for a list of smiles
+
+        Parameters
+        ----------
+        smiles_ls           list[str]   List of SMILES
+        id_ls               list[str]   List of IDs corresponding to each SMILE
+        batch_size          int         Size of batch to process
+        max_token_len         int         Maximum length of the generated embeddings
+        drop_cols           bool        Flag to drop columns with low variance
+        min_unique          int         Variance threshold for dopping columns       
+        pooling             str         Pooling strategy: "cls" or "mean"
+        """
+
+        if pooling not in {"cls", "mean"}:
+            raise ValueError("pooling must be either 'cls' or 'mean'.")
         
         if len(smiles_ls) != len(id_ls):
             self.logger.error(
@@ -162,82 +262,7 @@ class FeatureGenerator():
 
         self.logger.info(f"Creating ChemBERTa embeddings for {len(smiles_ls)} smiles.")
         self.logger.debug(f"Tokeniser:\n{TOKENIZERS['ChemBERTa']}\nEncoder:\n{MODELS['ChemBERTa']}")
-
-        (parsed_ids, parsed_smiles, parsed_mols), _ = self._parse_smiles(smiles_ls=smiles_ls, id_ls=id_ls)
-
-        embeddings = []
-
-        n_smiles = len(parsed_smiles)
-        total_batches = (n_smiles + batch_size - 1) // batch_size
-        self.logger.info(f"Generating embeddings in {total_batches} batches")
-
-        for i in range(0, n_smiles, batch_size):
-            batch = [
-                s for s in parsed_smiles[i: i + batch_size]
-            ]
-            current_batch_no = i // batch_size + 1
-
-            self.logger.debug(f"SMILES for batch {current_batch_no}:\n{batch}")
-
-            enc = self.tokeniser(
-                batch,
-                padding=True,
-                truncation=True,
-                max_length=max_len_emb,
-                return_tensors="pt",
-                add_special_tokens=True
-            )
-
-            with torch.no_grad():
-                hidden = self.encoder(**enc).last_hidden_state
-                mask = enc["attention_mask"].unsqueeze(-1).float()
-                pooled = (hidden * mask).sum(1) / mask.sum(1).clamp(min=1)
-            
-            embeddings.append(pooled.cpu().numpy().astype(np.float32))
-
-            self.logger.info(f"Processed batch {current_batch_no} of {total_batches}")
-
-        try:
-            emb_array = np.vstack(embeddings)
-        except ValueError as e:
-            self.logger.error(f"Could not stack the embedding arrays:\n{e}")
-            return pd.DataFrame()
-
-        final_df = pd.DataFrame(
-            emb_array,
-            index=parsed_ids,
-            columns=[f"emb_{i}" for i in range(1, emb_array.shape[1] + 1)]
-        )
-
-        final_df['SMILES'] = parsed_smiles
-        final_df = final_df.add_suffix("_chemberta")
-        final_df.index.name, final_df.index = "ID", parsed_ids
-
-        if drop_cols:
-            final_df = self._drop_columns(df=final_df, min_unique=min_unique)
-            self.logger.info(f"Embedding data frame created with shape: {final_df.shape}")
-
-        return final_df
-
-    def calcMolFormer(
-            self,
-            smiles_ls: list[str],
-            id_ls: list[str],
-            batch_size: int=64,
-            max_len_emb: int=400,
-            drop_cols: bool=False,
-            min_unique: int=MIN_UNIQUE
-        ) -> pd.DataFrame:
-
-        if len(smiles_ls) != len(id_ls):
-                    self.logger.error(
-                        f"Length of SMILES and IDs not the same."
-                        f"(SMILES = {len(smiles_ls)}, IDs = {len(id_ls)})"
-                    )
-                    raise ValueError("len(smiles_ls) != len(id_ls)")
-
-        self.logger.info(f"Creating MolFormer embeddings for {len(smiles_ls)} smiles.")
-        self.logger.debug(f"Tokeniser:\n{TOKENIZERS['MolFormer']}\nEncoder:\n{MODELS['MolFormer']}")
+        self.logger.info(f"Pooling strategy: {pooling}")
 
         (parsed_ids, parsed_smiles, parsed_mols), _ = self._parse_smiles(smiles_ls=smiles_ls, id_ls=id_ls)
 
@@ -260,20 +285,155 @@ class FeatureGenerator():
                 batch,
                 padding=True,
                 truncation=True,
-                max_length=max_len_emb,
+                max_length=max_token_len,
                 return_tensors="pt",
                 add_special_tokens=True
             )
 
+            enc = {k: v.to(device) for k, v in enc.items()}
+
             with torch.no_grad():
                 output = self.encoder(**enc)
 
-                if isinstance(output, torch.Tensor):
+                if hasattr(output, "last_hidden_state"):
+                    hidden = output.last_hidden_state  # (B, L, H)
+
+                    if pooling == "cls":
+                        pooled = hidden[:, 0, :]
+
+                    elif pooling == "mean":
+                        mask = enc["attention_mask"].unsqueeze(-1).float()  # (B, L, 1)
+                        pooled = (hidden * mask).sum(dim=1) / mask.sum(dim=1).clamp(min=1)
+
+                    else:
+                        raise RuntimeError(f"Unexpected pooling strategy: {pooling}")
+
+                elif isinstance(output, torch.Tensor):
                     pooled = output
-                elif hasattr(output, "last_hidden_state"):
-                    pooled = output.last_hidden_state[:, 0, :]
+
                 elif hasattr(output, "pooler_output"):
                     pooled = output.pooler_output
+
+                else:
+                    raise RuntimeError("Unknown output structure from encoder")
+            
+            embeddings.append(pooled.cpu().numpy().astype(np.float32))
+
+            self.logger.info(f"Processed batch {current_batch_no} of {total_batches}")
+
+        try:
+            emb_array = np.vstack(embeddings)
+        except ValueError as e:
+            self.logger.error(f"Could not stack the embedding arrays:\n{e}")
+            return pd.DataFrame()
+
+        final_df = pd.DataFrame(
+            emb_array,
+            index=parsed_ids,
+            columns=[f"emb_{i}" for i in range(1, emb_array.shape[1] + 1)]
+        )
+
+        final_df['SMILES'] = parsed_smiles
+        final_df = final_df.add_suffix(f"_chemberta_{pooling}")
+        final_df.index.name, final_df.index = "ID", parsed_ids
+
+        if drop_cols:
+            final_df = self._drop_columns(df=final_df, min_unique=min_unique)
+            self.logger.info(f"Embedding data frame created with shape: {final_df.shape}")
+
+        return final_df
+
+    def calcMolFormer(
+            self,
+            smiles_ls: list[str],
+            id_ls: list[str],
+            batch_size: int=64,
+            max_token_len: int=202,
+            drop_cols: bool=False,
+            min_unique: int=MIN_UNIQUE,
+            pooling: str ="mean"
+        ) -> pd.DataFrame:
+
+        """
+        Description
+        -----------
+        Function to calculate MolFormer embeddings for a list of smiles
+
+        Parameters
+        ----------
+        smiles_ls           list[str]   List of SMILES
+        id_ls               list[str]   List of IDs corresponding to each SMILE
+        batch_size          int         Size of batch to process
+        max_token_len       int         Maximum length of the generated embeddings
+        drop_cols           bool        Flag to drop columns with low variance
+        min_unique          int         Variance threshold for dopping columns
+        pooling             str         Pooling strategy: "cls" or "mean"
+        """
+
+        if pooling not in {"cls", "mean"}:
+            raise ValueError("pooling must be either 'cls' or 'mean'.")
+
+        if len(smiles_ls) != len(id_ls):
+                    self.logger.error(
+                        f"Length of SMILES and IDs not the same."
+                        f"(SMILES = {len(smiles_ls)}, IDs = {len(id_ls)})"
+                    )
+                    raise ValueError("len(smiles_ls) != len(id_ls)")
+
+        self.logger.info(f"Creating MolFormer embeddings for {len(smiles_ls)} smiles.")
+        self.logger.debug(f"Tokeniser:\n{TOKENIZERS['MolFormer']}\nEncoder:\n{MODELS['MolFormer']}")
+        self.logger.info(f"Pooling strategy: {pooling}")
+
+        (parsed_ids, parsed_smiles, parsed_mols), _ = self._parse_smiles(smiles_ls=smiles_ls, id_ls=id_ls)
+
+        embeddings = []
+        device = next(self.encoder.parameters()).device
+
+        n_smiles = len(parsed_smiles)
+        total_batches = (n_smiles + batch_size - 1) // batch_size
+        self.logger.info(f"Generating embeddings in {total_batches} batches")
+
+        for i in range(0, n_smiles, batch_size):
+            batch = [
+                s for s in parsed_smiles[i: i + batch_size]
+            ]
+            current_batch_no = i // batch_size + 1
+
+            self.logger.debug(f"SMILES for batch {current_batch_no}:\n{batch}")
+
+            enc = self.tokeniser(
+                batch,
+                padding=True,
+                truncation=True,
+                max_length=max_token_len,
+                return_tensors="pt",
+                add_special_tokens=True
+            )
+
+            enc = {k: v.to(device) for k, v in enc.items()}
+
+            with torch.no_grad():
+                output = self.encoder(**enc)
+
+                if hasattr(output, "last_hidden_state"):
+                    hidden = output.last_hidden_state  # (B, L, H)
+
+                    if pooling == "cls":
+                        pooled = hidden[:, 0, :]  # CLS token
+
+                    elif pooling == "mean":
+                        attention_mask = enc["attention_mask"].unsqueeze(-1)  # (B, L, 1)
+                        masked_hidden = hidden * attention_mask
+                        summed = masked_hidden.sum(dim=1)
+                        counts = attention_mask.sum(dim=1).clamp(min=1)
+                        pooled = summed / counts
+
+                elif isinstance(output, torch.Tensor):
+                    pooled = output
+
+                elif hasattr(output, "pooler_output"):
+                    pooled = output.pooler_output
+
                 else:
                     raise RuntimeError("Unknown output structure from encoder")
             
@@ -294,7 +454,7 @@ class FeatureGenerator():
 
         final_df['SMILES'] = parsed_smiles
         final_df.index.name, final_df.index = "ID", parsed_ids
-        final_df = final_df.add_suffix("_molformer")
+        final_df = final_df.add_suffix(f"_molformer_{pooling}")
 
         if drop_cols:
             final_df = self._drop_columns(df=final_df, min_unique=min_unique)
@@ -303,18 +463,36 @@ class FeatureGenerator():
         return final_df
     
     # ====== Batch Feature Calculations
-
+ 
     def calcBatchFeatures(
             self,
             smiles_ls: list[str],
             id_ls: list[str],
             batch_size: int=2000,
             ignore_3D: bool=False,
-            max_len_emb: int=400,
+            max_token_len: int=400,
             fpath: str | Path = "./",
             compression: str | None=None,
             drop_cols: bool=False,
     ):
+        
+        """
+        Description
+        -----------
+        Function to calculate features across batches
+
+        Parameters
+        ----------
+        smiles_ls           list[str]   List of SMILES
+        id_ls               list[str]   List of IDs corresponding to each SMILE
+        batch_size          int         Size of batch to process
+        ignore_3d           bool        Flag to ignore 3D mordred descriptors
+        max_token_len       int         Maximum length of the generated embeddings
+        fpath               str | Path  Path to save the descriptor datasets to
+        compression         str         Type of compression to save dataset as (e.g., "gzip")
+        drop_cols           bool        Flag to drop columns with low variance
+        """
+
         self.logger.info(f"Calculating {self.feature_set} descriptors in batches of {batch_size}.")
 
         if isinstance(fpath, str):
@@ -338,7 +516,7 @@ class FeatureGenerator():
                 id for id in id_ls[i : i + batch_size]
             ]
 
-            df = self._calculate_features(smi_batch, id_batch, ignore_3D, max_len_emb)
+            df = self._calculate_features(smi_batch, id_batch, ignore_3D, max_token_len)
             
             fpath_str = str(fpath).replace('*', str(current_batch_no))
             base_path = Path(fpath_str)
@@ -390,10 +568,10 @@ class FeatureGenerator():
         mol: Chem.Mol,
         num_confs: int = 20,
         max_iters: int = 500,
-        seed: int = 0xF00D,
+        seed: int = 42,
     ) -> Chem.Mol | None:
         """
-        Take a *parsed* RDKit Mol (2D) and return the same molecule with Hs + an embedded,
+        parsed RDKit Mol (2D) and return the same molecule with Hs + an embedded,
         optimized 3D conformer (lowest-energy if multiple conformers are generated).
         """
         if mol is None:
@@ -515,8 +693,10 @@ class FeatureGenerator():
             id_ls: list[str],
             smiles_ls: list[str],
             mol_ls: list[Chem.rdchem.Mol],
-    
     ):
+        """
+        Making a dataframe with smiles, mol objects and IDs
+        """
 
         df = pd.DataFrame()
         df.index.name, df.index = "ID", id_ls
@@ -530,6 +710,9 @@ class FeatureGenerator():
             tokeniser: str,
             model: str,
     ):
+        """
+        Initialising the embedding models
+        """
         if tokeniser and model:
 
             self.logger.info(
@@ -552,6 +735,9 @@ class FeatureGenerator():
             min_unique: int=2,
             protected_cols: list[str] = ["SMILES", "ID"]
     ):
+        """
+        Dropping columns based on low variability (subject to min_unique)
+        """
         
         low_var = df.nunique(dropna=True) < min_unique
         has_nan = df.isna().any(axis=0)
@@ -660,8 +846,11 @@ class FeatureGenerator():
             smi_batch: list[str],
             id_batch: list[str],
             ignore_3D: bool,
-            max_len_emb: int
+            max_token_len: int
     ):
+        """
+        Function to package the feature generation functions
+        """
         
         if self.feature_set == "rdkit":
             return self.calcRDKit(
@@ -681,7 +870,7 @@ class FeatureGenerator():
                 smiles_ls=smi_batch,
                 id_ls=id_batch,
                 batch_size=64,
-                max_len_emb=max_len_emb
+                max_token_len=max_token_len
             )
         
         elif self.feature_set == "molformer":
@@ -689,8 +878,14 @@ class FeatureGenerator():
                 smiles_ls=smi_batch,
                 id_ls=id_batch,
                 batch_size=64,
-                max_len_emb=max_len_emb
+                max_token_len=max_token_len
             )
+        
+        elif self.feature_set == "morgan":
+            return (self.calcMorganFingerprints(
+                smiles_ls=smi_batch,
+                id_ls=id_batch,
+            ))
         
         else:
             self.logger.error(f"Feature set ({self.feature_set}) not valid"

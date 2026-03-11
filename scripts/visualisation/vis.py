@@ -17,6 +17,7 @@ from sklearn.neighbors import LocalOutlierFactor
 from scipy.spatial import ConvexHull
 import random as rand
 from typing import Union
+import textwrap
 
 FILE_DIR = Path(__file__).resolve()
 PROJ_DIR = FILE_DIR.parents[2]
@@ -447,11 +448,14 @@ class Visualise():
             exclude = []
 
         # Calculate group performances
+        print(descriptor_groups)
         group_perf = {}
         for group, descs in descriptor_groups.items():
             valid = [d for d in descs if d in data.index and d not in exclude]
             if valid:
                 group_perf[group] = data.loc[valid, metrics].mean()
+
+        print(group_perf)
 
         out = pd.DataFrame.from_dict(group_perf, orient="index")
         out = out[metrics]
@@ -460,19 +464,22 @@ class Visualise():
         return out
 
     def plotGroupRadar(
-            self, 
-            group_perf_df: pd.DataFrame,
-            title: str="Radar Plot",
-            figsize: tuple=(10,10),
-            title_fontsize: int=16,
-            label_fontsize: int=12,
-            tick_fontsize: int=10,
-            save_plot: bool=False,
-            save_path: Union[str, Path]=None,
-            save_fname: str="group_radar",
-            dpi: int=400
-    
-        ):
+        self,
+        group_perf_df,
+        title: str = "Radar Plot",
+        figsize: tuple = (11, 11),
+        title_fontsize: int = 16,
+        label_fontsize: int = 11,
+        tick_fontsize: int = 9,
+        save_plot: bool = False,
+        save_path: Union[str, Path] = None,
+        save_fname: str = "group_radar",
+        dpi: int = 400,
+        wrap_labels: bool = True,
+        wrap_width: int = 14,
+        rotate_labels: bool = True,
+    ):
+        
         """
         Generates a radar (spider) plot visualising descriptor group performances 
         with dual scales for comparison (0–1 and 0.5–1).
@@ -523,91 +530,136 @@ class Visualise():
                             the specified directory.
         """
 
-        
+        # --- Basic validation ---
+        if group_perf_df is None or group_perf_df.empty:
+            raise ValueError("group_perf_df is empty. Nothing to plot.")
 
-        labels = group_perf_df.index.tolist()
-        values = group_perf_df.iloc[:,0].values
+        # Use first numeric column by default
+        col0 = group_perf_df.select_dtypes(include="number").columns
+        if len(col0) == 0:
+            raise ValueError("group_perf_df has no numeric columns to plot.")
+        values = group_perf_df[col0[0]].to_numpy(dtype=float)
+
+        labels = group_perf_df.index.astype(str).tolist()
+
+        # Optional: make labels nicer (break underscores and wrap)
+        pretty_labels = []
+        for lab in labels:
+            lab2 = lab.replace("_", " ")
+            if wrap_labels:
+                lab2 = "\n".join(textwrap.wrap(lab2, width=wrap_width))
+            pretty_labels.append(lab2)
+
+        # Close the loop
         values = np.append(values, values[0])
-        angles = np.linspace(0, 2*np.pi, len(labels), endpoint=False)
+
+        n = len(labels)
+        angles = np.linspace(0, 2 * np.pi, n, endpoint=False)
         angles = np.append(angles, angles[0])
 
-        # Set colour palette
+        # Colours
         palette = sns.color_palette("tab10")
         blue, red = palette[0], palette[3]
 
-        # Create the figure
         fig = plt.figure(figsize=figsize)
 
-        # Axis 1 (0–1)
+        # -------------------------
+        # Axis 1 (0–1 scale)
+        # -------------------------
         ax1 = fig.add_subplot(111, polar=True)
-        ax1.plot(
-            angles, 
-            values, 
-            linewidth=2, 
-            color=blue, 
-            label="0–1 scale",
-            alpha=0.5, 
-            zorder=1
-            )
-        ax1.fill(angles, values, alpha=0.2, color=blue, zorder=0)
 
-        # Configuring the y-ticks
-        ax1.set_ylim(0,1)
-        ticks_blue = np.arange(0,1.1,0.1)
+        ax1.plot(angles, values, linewidth=2, color=blue, label="0–1 scale", alpha=0.65)
+        ax1.fill(angles, values, alpha=0.18, color=blue)
+
+        ax1.set_ylim(0, 1.0)
+        ticks_blue = np.arange(0, 1.01, 0.1)
         ax1.set_yticks(ticks_blue)
-        ax1.set_yticklabels([f"{t:.1f}" if t>0 else "" for t in ticks_blue], 
-                            color=blue, fontsize=tick_fontsize, fontweight="bold")
-        
-        # Configuring the x-ticks
+        ax1.set_yticklabels(
+            [f"{t:.1f}" if t > 0 else "" for t in ticks_blue],
+            fontsize=tick_fontsize,
+            fontweight="bold",
+            color=blue,
+        )
+
         ax1.set_xticks(angles[:-1])
-        ax1.set_xticklabels(labels, fontsize=label_fontsize, fontweight="bold")
+        ax1.set_xticklabels(pretty_labels, fontsize=label_fontsize, fontweight="bold")
+
+        # Rotate labels so they follow the circle (reduces overlap a lot)
+        if rotate_labels:
+            for lbl, ang in zip(ax1.get_xticklabels(), angles[:-1]):
+                ang_deg = np.degrees(ang)
+                # keep text upright-ish
+                if 90 < ang_deg < 270:
+                    lbl.set_rotation(ang_deg + 180)
+                    lbl.set_ha("right")
+                else:
+                    lbl.set_rotation(ang_deg)
+                    lbl.set_ha("left")
+                lbl.set_va("center")
+
+        # Put blue radial labels at top
         ax1.set_rlabel_position(90)
 
-        # Axis 2 (0.5–1)
+        # Slightly pad the plot from the figure edge
+        ax1.tick_params(axis="x", pad=14)
+
+        # -------------------------
+        # Axis 2 (0.5–1 scale)
+        # -------------------------
         ax2 = fig.add_subplot(111, polar=True, frame_on=False)
         ax2.plot(
-            angles, 
-            values, 
-            linewidth=2, 
-            color=red, 
-            linestyle="--", 
-            label="0.5–1 scale", 
-            alpha=0.5, zorder=1
-            )
-            
-        ax2.fill(angles, values, alpha=0.15, color=red, zorder=0)
+            angles,
+            values,
+            linewidth=2,
+            color=red,
+            linestyle="--",
+            label="0.5–1 scale",
+            alpha=0.6,
+        )
+        ax2.fill(angles, values, alpha=0.10, color=red)
 
-        # Configuring the y-ticks
-        ax2.set_ylim(0.5,1)
-        ticks_red = np.arange(0.5,1.01,0.1)
+        ax2.set_ylim(0.5, 1.0)
+        ticks_red = np.arange(0.5, 1.01, 0.1)
         ax2.set_yticks(ticks_red)
-        ax2.set_yticklabels([f"{t:.2f}" for t in ticks_red], 
-                            color=red, fontsize=title_fontsize, fontweight="bold")
-        
-        # Configuring the x-ticks
+
+        # FIX: use tick_fontsize (not title_fontsize) + slightly lighter weight
+        ax2.set_yticklabels(
+            [f"{t:.2f}" for t in ticks_red],
+            fontsize=tick_fontsize,
+            fontweight="semibold",
+            color=red,
+        )
+
         ax2.set_xticks([])
         ax2.set_xticklabels([])
         ax2.set_rlabel_position(270)
 
-        # Merge legends
+        # Make the red labels a bit closer to the circle to reduce clutter
+        ax2.tick_params(axis="y", pad=2)
+
+        # Legend (keep it inside a bit so it doesn't collide)
         handles1, labels1 = ax1.get_legend_handles_labels()
         handles2, labels2 = ax2.get_legend_handles_labels()
-        plt.legend(
-            handles1+handles2, 
-            labels1+labels2, 
-            loc="upper right", 
-            bbox_to_anchor=(1.2,1.1), 
-            fontsize=label_fontsize
-            )
+        ax1.legend(
+            handles1 + handles2,
+            labels1 + labels2,
+            loc="upper right",
+            bbox_to_anchor=(1.18, 1.12),
+            fontsize=label_fontsize,
+            frameon=False,
+        )
 
-        plt.title(title, fontsize=title_fontsize, weight="bold", pad=40)
+        ax1.set_title(title, fontsize=title_fontsize, fontweight="bold", pad=28)
+
+        # Layout tweak (polar plots often need manual spacing)
+        plt.subplots_adjust(top=0.88, bottom=0.08, left=0.08, right=0.92)
 
         self._savePlot(
             save_plot=save_plot,
             save_path=save_path,
             save_fname=save_fname,
             dpi=dpi,
-            description="descriptor-grouped radar plot"
+            description="descriptor-grouped radar plot",
         )
 
     def plotGroupBar(
@@ -1178,6 +1230,7 @@ class Visualise():
             save_path: Path = Path("./"),
             save_fname: str = "model_performance",
             dpi: int = 400,
+            show_plots: bool=False
     ):
         """
         Generates individual bar plots comparing model performance metrics 
@@ -1235,6 +1288,7 @@ class Visualise():
                         to the specified directory.
         """
 
+        # Find json
         # --- Load JSONs into DataFrame ---
         records = []
         for model, file in model_jsons.items():
@@ -1272,8 +1326,9 @@ class Visualise():
                 dpi=dpi,
                 description=f"model performance bar charts"
             )
-        
-            plt.show()
+
+            if show_plots:
+                plt.show()
 
     def plotPCA (
         self,
@@ -1823,8 +1878,6 @@ class Visualise():
 
         plt.show()
         return summary_df
-
-
 
     def plotPredictions(
             self,

@@ -20,7 +20,6 @@ DATASET_DIR = PROJ_DIR / "datasets"
 PALMERCHEM_SOFTWARE_MODELS = Path.home() / "PalmerChem_Software" / "src" / "models"
 PALMERCHEM_SOFTWARE_ANALYSIS = Path.home() / "PalmerChem_Software" / "src" / "analysis"
 LOG_DIR = PROJ_DIR / "scripts" / "models" / "logs"
-print(PALMERCHEM_SOFTWARE_MODELS)
 
 sys.path.insert(0, str(PALMERCHEM_SOFTWARE_MODELS))
 from RFRegressor import RFRegressor
@@ -33,11 +32,7 @@ from misc_fns import loadData
 
 # ========== Constants ========== #
 tok_ls          = ["ibm/MoLFormer-XL-both-10pct", "DeepChem/ChemBERTa-100M-MLM"]
-TOKENIZER       = tok_ls[0]
 mod_ls          = [ "ibm/MoLFormer-XL-both-10pct", "DeepChem/ChemBERTa-100M-MLM"]
-MODEL           = mod_ls[0]
-DATA            = DATASET_DIR / "LD50" / "ld50_rat-mouse_oral_lt_9500.csv"
-MAX_LEN         = 400         # shorter = cheaper RAM/CPU
 BATCH_SIZE      = 64
 SEED            = 42
 LOG_LEVEL       = logging.DEBUG
@@ -147,7 +142,7 @@ class TL():
 
         completed_targets =  set()
 
-        self.logger.debug("Existing performance CSV path: existing_performance_csv")
+        self.logger.debug(f"Existing performance CSV path: {existing_performance_csv}")
 
         # Load existing performance CSV
         if existing_performance_csv and Path(existing_performance_csv).exists():
@@ -320,7 +315,7 @@ class TL():
         with open(Path(save_path / f"{target_column}_internal_performance_dict.json"), "w") as f:
             json.dump(performance_dict, f, indent=4)
 
-        feat_importance_df.to_csv(Path(save_path / f"{target_column}_feature_importance.csv"), index_label="Feature")
+        feat_importance_df.to_csv(Path(save_path / f"{target_column}_feature_importance.csv"))
 
         return final_model, best_params, performance_dict, feat_importance_df
 
@@ -466,44 +461,68 @@ class TL():
     def predictSingleTargetRF(
             self,
             model,
-            feature_data: pd.DataFrame,
-            prediction_col: str="LD50",
-            calc_perf: bool=False,
-            targets_true: pd.DataFrame=None,
-            save_preds: bool=False,
-            save_path: str=Path(FILE_DIR),
-            preds_filename:str="preds",
-            perf_filename:str="performance"
+            data: pd.DataFrame | str | Path,
+            target_column: str = "LD50",
+            feature_cols: list[str] | None = None,
+            calc_perf: bool = False,
+            save_preds: bool = False,
+            save_path: str | Path = Path(FILE_DIR),
+            preds_filename: str = "preds",
+            perf_filename: str = "performance"
     ):
-        
+        data = loadData(data, index_col="ID") if isinstance(data, (str, Path)) else data.copy()
+
+        if feature_cols is not None:
+            feature_data = data[feature_cols].copy()
+        else:
+            feature_data = data.drop(columns=[target_column, "SMILES"], errors="ignore").copy()
+
+        targets_true = data[[target_column]].copy() if target_column in data.columns else None
+
+        if isinstance(model, (str, Path)):
+            model = joblib.load(model)
+
         if not self.instantiated_model:
             self.instantiated_model = RFRegressor(
-                cv_function=None, 
+                cv_function=None,
                 hp_search_function=None,
-                cv_kwargs={}, 
+                cv_kwargs={},
                 hp_search_kwargs={}
-                )
-            
-        targets_pred = self.instantiated_model.predictRFRegressor(
-                    feature_data=feature_data,
-                    prediction_col=prediction_col,
-                    final_rf=model,
-                    save_preds=save_preds,
-                    save_path=save_path,
-                    filename=preds_filename
-                )
-        if calc_perf:
-            targ_pred, targ_true, perf_dict = calculatePerformance(
-                targ_preds = targets_pred[prediction_col],
-                targ_true = targets_true[prediction_col],
-                logger = self.logger
             )
+
+        targets_pred = self.instantiated_model.predictRFRegressor(
+            feature_data=feature_data,
+            prediction_col=target_column,
+            final_rf=model,
+            save_preds=save_preds,
+            save_path=save_path,
+            filename=preds_filename
+        )
+
+        targ_pred, targ_true, perf_dict = None, None, None
+
+        if calc_perf:
+            if targets_true is None:
+                raise ValueError(
+                    f"calc_perf=True but '{target_column}' is not present in the provided data."
+                )
+
+            targ_pred = (
+                targets_pred[target_column]
+                if isinstance(targets_pred, pd.DataFrame) and target_column in targets_pred.columns
+                else targets_pred.squeeze()
+            )
+            targ_true = targets_true[target_column]
+
+            targ_pred, targ_true, perf_dict = calculatePerformance(
+                targ_preds=targ_pred,
+                targ_true=targ_true,
+                logger=self.logger
+            )
+
             if save_preds:
-                with open(save_path / f"{perf_filename}.json", "w") as f:
+                with open(Path(save_path) / f"{perf_filename}.json", "w") as f:
                     json.dump(perf_dict, f, indent=4)
-        
-        else:
-            perf_dict = None
 
         return targ_pred, targ_true, perf_dict
 

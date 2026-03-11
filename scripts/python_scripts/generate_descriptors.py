@@ -5,7 +5,7 @@ import pandas as pd
 from pathlib import Path
 
 FILE_DIR = Path(__file__).resolve()
-PROJ_DIR = FILE_DIR.parents[1]
+PROJ_DIR = FILE_DIR.parents[2]
 print(f"Project Reference Dir for file {FILE_DIR.name}:\n{PROJ_DIR}")
 SCRIPTS_DIR = PROJ_DIR / "scripts"
 # %%

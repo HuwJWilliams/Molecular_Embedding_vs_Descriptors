@@ -135,3 +135,32 @@ def setupLogger(
             logger.addHandler(file_handler)
 
     return logger
+
+
+def fixCSVColumns(
+        root_dir: str | Path,
+        col_to_drop: str=None,
+        rename_to: dict={},
+        file_fnames: list="*feature_importance.csv",
+        file_ls: list=None,
+        ):
+    
+    if not file_ls:
+        file_ls = root_dir.rglob(file_fnames)
+    
+    for csv_file in file_ls:
+        try:
+            df = pd.read_csv(csv_file)
+
+            # If duplicate Feature columns exist
+            if col_to_drop:
+                df = df.drop(columns=["Feature"])
+
+            if rename_to:
+                df = df.rename(columns=rename_to)
+
+            df.to_csv(csv_file, index=False)
+            print(f"Fixed: {csv_file}")
+
+        except Exception as e:
+            print(f"Skipped {csv_file}: {e}")

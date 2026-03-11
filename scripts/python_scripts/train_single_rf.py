@@ -99,19 +99,30 @@ test_data  = data.iloc[cut:].copy()
 
 print(f"Train: {train_data.shape}  Test: {test_data.shape}")
 
-model.trainSingleTargetRFModel(
-    data=train_data,
-    target_column=target_col,
-    hyper_params={
-        "n_estimators": [400, 500],
-        "max_features": ["sqrt"],
-        "max_depth": [25, 50],
-        "min_samples_split": [2, 5],
-        "min_samples_leaf": [2, 4],
-    },
-    n_resamples=50,
-    test_size=0.3,
-    save_models=True,
-    save_path=out_dir / identifier,
-    random_seed=model.rng(),
+final_model, _, _, _ = model.trainSingleTargetRFModel(
+                                data=train_data,
+                                target_column=target_col,
+                                hyper_params={
+                                    "n_estimators": [400, 500],
+                                    "max_features": ["sqrt"],
+                                    "max_depth": [25, 50],
+                                    "min_samples_split": [2, 5],
+                                    "min_samples_leaf": [2, 4],
+                                },
+                                n_resamples=50,
+                                test_size=0.3,
+                                save_models=True,
+                                save_path=out_dir,
+                                random_seed=model.rng(),
+                            )
+
+model.predictSingleTargetRF(
+    model=final_model,
+    data = test_data,
+    target_col = target_col,
+    calc_perf=True,
+    save_preds=True
+    save_path=out_dir,
+    preds_filename = "last_20pct_pred",
+    perf_filename = "last_20_pct_perf"
 )

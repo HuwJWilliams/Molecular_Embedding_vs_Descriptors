@@ -3,94 +3,139 @@ Grouping functions for molecular descriptors (RDKit, Mordred, etc.)
 Each function returns a dictionary of descriptor groups.
 """
 
-def getRDKitGroups():
+def getRDKitGroups(prefix="_rdkit"):
     """Return descriptor groups for RDKit descriptors."""
+
+    def p(name):
+        return f"{name}{prefix}"
+
     return {
+
         # --- Size & Mass ---
         "size_mass": [
-            "MolWt","HeavyAtomMolWt","ExactMolWt","NumValenceElectrons",
-            "HeavyAtomCount","FractionCSP3","NumHeteroatoms"
+            p("MolWt"), p("HeavyAtomMolWt"), p("ExactMolWt"),
+            p("NumValenceElectrons"), p("HeavyAtomCount"),
+            p("FractionCSP3"), p("NumHeteroatoms")
         ],
 
         # --- Electronic (scalar descriptors only) ---
         "electronic_charges": [
-            "MaxPartialCharge","MinPartialCharge",
-            "MaxAbsPartialCharge","MinAbsPartialCharge"
+            p("MaxPartialCharge"), p("MinPartialCharge"),
+            p("MaxAbsPartialCharge"), p("MinAbsPartialCharge")
         ],
+
         "electronic_estate_indices": [
-            "MaxEStateIndex","MinEStateIndex",
-            "MaxAbsEStateIndex","MinAbsEStateIndex"
+            p("MaxEStateIndex"), p("MinEStateIndex"),
+            p("MaxAbsEStateIndex"), p("MinAbsEStateIndex")
         ],
 
         # --- All VSA descriptors grouped ---
-        "vsa_peoe": [f"PEOE_VSA{i}" for i in range(1,15)],
-        "vsa_estate": [f"EState_VSA{i}" for i in range(1,11)],
-        "vsa_vsaestate": [f"VSA_EState{i}" for i in range(1,11)],
-        "vsa_logp": [f"SlogP_VSA{i}" for i in range(1,13)],
-        "vsa_mr": [f"SMR_VSA{i}" for i in range(1,11)],
+        "vsa_peoe": [p(f"PEOE_VSA{i}") for i in range(1, 15)],
+        "vsa_estate": [p(f"EState_VSA{i}") for i in range(1, 11)],
+        "vsa_vsaestate": [p(f"VSA_EState{i}") for i in range(1, 11)],
+        "vsa_logp": [p(f"SlogP_VSA{i}") for i in range(1, 13)],
+        "vsa_mr": [p(f"SMR_VSA{i}") for i in range(1, 11)],
 
-        # --- Lipophilicity (non-VSA ones) ---
-        "lipophilicity_basic": ["MolLogP","TPSA","MolMR"],
+        # --- Lipophilicity ---
+        "lipophilicity_basic": [
+            p("MolLogP"), p("TPSA"), p("MolMR")
+        ],
 
         # --- Topological indices ---
         "topological_chi": [
-            "Chi0","Chi0n","Chi0v","Chi1","Chi1n","Chi1v",
-            "Chi2n","Chi2v","Chi3n","Chi3v","Chi4n","Chi4v"
+            p("Chi0"), p("Chi0n"), p("Chi0v"),
+            p("Chi1"), p("Chi1n"), p("Chi1v"),
+            p("Chi2n"), p("Chi2v"),
+            p("Chi3n"), p("Chi3v"),
+            p("Chi4n"), p("Chi4v")
         ],
-        "topological_shape": ["HallKierAlpha","Kappa1","Kappa2","Kappa3"],
-        "topological_complexity": ["BalabanJ","BertzCT","Ipc","AvgIpc"],
+
+        "topological_shape": [
+            p("HallKierAlpha"), p("Kappa1"),
+            p("Kappa2"), p("Kappa3")
+        ],
+
+        "topological_complexity": [
+            p("BalabanJ"), p("BertzCT"),
+            p("Ipc"), p("AvgIpc")
+        ],
 
         # --- BCUT descriptors ---
         "bcut": [
-            "BCUT2D_MWHI","BCUT2D_MWLOW","BCUT2D_CHGHI","BCUT2D_CHGLO",
-            "BCUT2D_LOGPHI","BCUT2D_LOGPLOW","BCUT2D_MRHI","BCUT2D_MRLOW"
+            p("BCUT2D_MWHI"), p("BCUT2D_MWLOW"),
+            p("BCUT2D_CHGHI"), p("BCUT2D_CHGLO"),
+            p("BCUT2D_LOGPHI"), p("BCUT2D_LOGPLOW"),
+            p("BCUT2D_MRHI"), p("BCUT2D_MRLOW")
         ],
 
         # --- Shape/Surface ---
-        "shape_surface": ["LabuteASA","Phi"],
-
-        # --- Rings (split aromatic vs non-aromatic) ---
-        "rings_aromatic": [
-            "NumAromaticCarbocycles","NumAromaticHeterocycles","NumAromaticRings"
+        "shape_surface": [
+            p("LabuteASA"), p("Phi")
         ],
+
+        # --- Rings ---
+        "rings_aromatic": [
+            p("NumAromaticCarbocycles"),
+            p("NumAromaticHeterocycles"),
+            p("NumAromaticRings")
+        ],
+
         "rings_non_aromatic": [
-            "RingCount","NumAliphaticCarbocycles","NumAliphaticHeterocycles","NumAliphaticRings",
-            "NumAmideBonds","NumBridgeheadAtoms","NumSaturatedCarbocycles","NumSaturatedHeterocycles","NumSaturatedRings"
+            p("RingCount"),
+            p("NumAliphaticCarbocycles"),
+            p("NumAliphaticHeterocycles"),
+            p("NumAliphaticRings"),
+            p("NumAmideBonds"),
+            p("NumBridgeheadAtoms"),
+            p("NumSaturatedCarbocycles"),
+            p("NumSaturatedHeterocycles"),
+            p("NumSaturatedRings")
         ],
 
         # --- Hydrogen / Rotatable bonds ---
         "hydrogen_rotatable": [
-            "NumHAcceptors","NumHDonors","NHOHCount","NOCount","NumRotatableBonds"
+            p("NumHAcceptors"), p("NumHDonors"),
+            p("NHOHCount"), p("NOCount"),
+            p("NumRotatableBonds")
         ],
 
         # --- Stereo ---
-        "stereo": ["NumAtomStereoCenters", "NumUnspecifiedAtomStereoCenters"],
+        "stereo": [
+            p("NumAtomStereoCenters"),
+            p("NumUnspecifiedAtomStereoCenters")
+        ],
 
         # --- Fingerprints ---
-        "fingerprints": ["FpDensityMorgan1","FpDensityMorgan2","FpDensityMorgan3"],
+        "fingerprints": [
+            p("FpDensityMorgan1"),
+            p("FpDensityMorgan2"),
+            p("FpDensityMorgan3")
+        ],
 
         # --- Drug-likeness ---
-        "druglikeness": ["qed"]
+        "druglikeness": [
+            p("qed")
+        ]
     }
 
 # %%
-def getMordredGroups():
+def getMordredGroups(prefix="_mordred"):
     """Return descriptor groups for Mordred descriptors."""
+
     from mordred import Calculator, descriptors
 
     groups = {}
 
     calc = Calculator(descriptors, ignore_3D=True)
-    ls = calc.descriptors
 
-    for desc in ls:
-        module = desc.__module__
-        module = module.split(".")[-1]
-        desc = str(desc).split(".")[-1]
-    
-        if module not in groups.keys():
-            groups[module] = []
-        groups.setdefault(module, []).append(desc)
+    for desc in calc.descriptors:
+        module = desc.__module__.split(".")[-1]
+        name = str(desc).split(".")[-1]
+
+        # apply prefix
+        name = f"{name}{prefix}"
+
+        groups.setdefault(module, []).append(name)
 
     return groups
 

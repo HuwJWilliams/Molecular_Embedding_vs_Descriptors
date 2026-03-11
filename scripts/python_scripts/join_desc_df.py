@@ -83,7 +83,11 @@ def _find_bad_ids(df: pd.DataFrame, file: str, n=20):
 
 def combineAllFeats(
     full_smi_df: pd.DataFrame | str | Path = paths["targets"]["all"],
-    feat_set_ls: list = ["rdkit", "mordred", "chemberta", "molformer"],
+    feat_set_ls: list = [
+        # "rdkit", 
+        # "mordred", 
+        "chemberta", 
+        "molformer"],
     feature_paths: dict = paths["full_features"],
     cols_to_drop: list[str] = ["SMILES"],
     properties: list = None,
@@ -180,6 +184,6 @@ def getCommonIDs(
 
 
 
-makeUniqueSMILES()
+# makeUniqueSMILES()
 combineAllFeats(save=True)
 # getCommonIDs()

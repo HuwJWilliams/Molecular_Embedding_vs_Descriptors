@@ -70,7 +70,9 @@ model.trainMultiTargetRFModels(
     targets_df=target_sample,
     rf_regressor_class=RFRegressor,
     output_csv=f"{IDENTIFIER}.csv",
-    existing_performance_csv=f"{IDENTIFIER}.csv",
+    existing_performance_csv= (
+        paths["prediction_output_dirs"]["embedding_and_descriptor_cross_predictions"][IDENTIFIER] / f"{IDENTIFIER}.csv"
+        ),
     hyper_params={
     "n_estimators": [200],
     "max_features": ["sqrt"],
@@ -80,7 +82,7 @@ model.trainMultiTargetRFModels(
     },
     n_resamples=10,
     test_size=0.3,
-    save_path=PROJ_DIR / "results" / "embeddings_and_descriptor_predictions",
+    save_path=paths["prediction_output_dirs"]["embedding_and_descriptor_cross_predictions"][IDENTIFIER],
     skip_existing=True,
     save_models=False,
     random_seed=model.rng()
