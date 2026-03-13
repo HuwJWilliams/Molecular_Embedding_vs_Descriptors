@@ -11,17 +11,14 @@ PALMERCHEM_SOFTWARE = Path.home() / "PalmerChem_Software" / "src" / "models"
 sys.path.insert(0, str(PALMERCHEM_SOFTWARE))
 from RFRegressor import RFRegressor
 
-sys.path.insert(0, "./path")
+SCRIPTS_DIR = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(SCRIPTS_DIR / "path"))
 from get_paths import getPaths
 
-sys.path.insert(0, "./models")
+sys.path.insert(0, str(SCRIPTS_DIR / "models"))
 from transfer_model import TL
 
-# --- Paths
-FILE_DIR = Path(__file__).resolve()
-PROJ_DIR = FILE_DIR.parents[1]
-
-sys.path.insert(0, str(PROJ_DIR / "scripts" / "misc"))
+sys.path.insert(0, str(SCRIPTS_DIR / "misc"))
 from misc_fns import loadData
 
 # ---- Path registry (features, targets, outputs)
@@ -34,6 +31,7 @@ DEFAULT_TARGET = {
     "logd": "LogD",
     "pka":  "pKa",
     "ld50": "LD50",
+    "pic50": "pIC50",
 }
 
 

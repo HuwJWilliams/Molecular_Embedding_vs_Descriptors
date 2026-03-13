@@ -13,15 +13,14 @@ sys.path.insert(0, str(PALMERCHEM_SOFTWARE))
 from RFRegressor import RFRegressor
 
 # --- Paths
-FILE_DIR = Path(__file__).resolve()
-PROJ_DIR = FILE_DIR.parents[2]
-sys.path.insert(0, str(FILE_DIR.parents[1] / "path"))
+SCRIPTS_DIR = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(SCRIPTS_DIR / "path"))
 from get_paths import getPaths
 
-sys.path.insert(0, str(FILE_DIR.parents[1] / "models"))
+sys.path.insert(0, str(SCRIPTS_DIR / "models"))
 from transfer_model import TL
 
-sys.path.insert(0, str(FILE_DIR.parents[1] / "misc"))
+sys.path.insert(0, str(SCRIPTS_DIR / "misc"))
 from misc_fns import loadData
 
 # ---- Path registry (features, targets, outputs)
@@ -119,10 +118,10 @@ final_model, _, _, _ = model.trainSingleTargetRFModel(
 model.predictSingleTargetRF(
     model=final_model,
     data = test_data,
-    target_col = target_col,
+    target_column = target_col,
     calc_perf=True,
-    save_preds=True
+    save_preds=True,
     save_path=out_dir,
-    preds_filename = "last_20pct_pred",
-    perf_filename = "last_20_pct_perf"
+    preds_filename="last_20pct_pred",
+    perf_filename="last_20_pct_perf"
 )

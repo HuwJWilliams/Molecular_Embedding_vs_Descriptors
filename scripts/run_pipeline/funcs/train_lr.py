@@ -6,28 +6,26 @@ import pandas as pd
 from pathlib import Path
 
 # --- Imports
-sys.path.insert(0, "./path")
+SCRIPTS_DIR = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(SCRIPTS_DIR / "path"))
 from get_paths import getPaths
 
-sys.path.insert(0, "./models")
+sys.path.insert(0, str(SCRIPTS_DIR / "models"))
 from transfer_model import TL
 
-sys.path.insert(0, "./misc")
+sys.path.insert(0, str(SCRIPTS_DIR / "misc"))
 from misc_fns import loadData
-
-# --- Paths
-FILE_DIR = Path(__file__).resolve()
-PROJ_DIR = FILE_DIR.parents[1]
 
 data_paths = getPaths()
 print("Paths acquired")
 
 # --- Constants
 DEFAULT_TARGET = {
-    "bp":   "Boiling Point",
+    "bp":   "Boiling_Point",
     "logd": "LogD",
     "pka":  "pKa",
     "ld50": "LD50",
+    "pic50": "pIC50",
 }
 
 # --- Building Parser and Arguments

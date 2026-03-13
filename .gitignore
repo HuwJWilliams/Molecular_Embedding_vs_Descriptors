@@ -1,4 +1,5 @@
 results/
+results_pre_3D/
 *.pkl
 *.csv
 *.out

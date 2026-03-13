@@ -7,8 +7,8 @@ import numpy as np
 
 # --- Paths
 FILE_DIR = Path(__file__).resolve()
-PROJ_DIR = FILE_DIR.parents[2]
-SCRIPTS_DIR = FILE_DIR.parents[1]
+PROJ_DIR = FILE_DIR.parents[3]
+SCRIPTS_DIR = FILE_DIR.parents[2]
 
 sys.path.insert(0, str(SCRIPTS_DIR))
 from models.transfer_model import TL
@@ -80,7 +80,7 @@ model.trainMultiTargetRFModels(
     "min_samples_split": [2],
     "min_samples_leaf": [2],
     },
-    n_resamples=10,
+    n_resamples=1,
     test_size=0.3,
     save_path=paths["prediction_output_dirs"]["embedding_and_descriptor_cross_predictions"][IDENTIFIER],
     skip_existing=True,

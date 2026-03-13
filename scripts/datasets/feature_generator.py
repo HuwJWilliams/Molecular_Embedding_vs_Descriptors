@@ -5,7 +5,7 @@ import logging
 from pathlib import Path
 import sys
 from rdkit import Chem
-from rdkit.Chem import Descriptors, AllChem, rdFingerprintGenerator
+from rdkit.Chem import Descriptors, AllChem, rdFingerprintGenerator, MACCSkeys
 from mordred import Calculator, descriptors
 from transformers import AutoTokenizer, AutoModel
 import torch
@@ -196,31 +196,66 @@ class FeatureGenerator():
             id_ls=parsed_ids, smiles_ls=parsed_smiles, mol_ls=parsed_mols
             )
 
-        self.logger.info(f"Generating dMorgan Fingerprints for {len(df)} valid molecules")
+        self.logger.info(f"Generating Morgan Fingerprints for {len(df)} valid molecules")
 
         fpgen = rdFingerprintGenerator.GetMorganGenerator(
-            radius=radius, fpsize=fingerprint_size
+            radius=radius, 
+            fpSize=fingerprint_size,
+            includeChirality=True,
+            useBondTypes=True
             )
 
         fps = []
 
-        for mol in df["mol"]:
+        for mol in df["Mols"]:
             fp = fpgen.GetFingerprintAsNumPy(mol)
             fps.append(fp)
         
         fp_df = pd.DataFrame(
             fps,
-            index=df.index,
-            columns=[f"morgan_{i}" for i in range(fingerprint_size)]
+            index=parsed_ids,
+            columns=[f"{i}_maccs" for i in range(len(fps[0]))]
         )
-        result_df = pd.concat(
-            [df[["ID", "SMILES"]].reset_index(drop=True), fp_df.reset_index(drop=True)],
-            axis=1
+        fp_df.index.name = "ID"
+
+        return fp_df
+        
+
+    def calcMACCSKeys(
+      self,
+      smiles_ls: list[str],
+      id_ls: list[str]      
+    ):
+          
+        self.logger.info(f"Creating MACCS Keys fingerprints for {len(smiles_ls)} smiles.")
+        (parsed_ids, parsed_smiles, parsed_mols), _ = self._parse_smiles(
+            smiles_ls=smiles_ls,
+            id_ls=id_ls
         )
 
-        return result_df
+        df = self._setup_molecule_df(
+            id_ls=parsed_ids,
+            smiles_ls=parsed_smiles,
+            mol_ls=parsed_mols
+        )
 
-    
+        self.logger.info(f"Generating MACCS Keys for {len(df)} valid molecules")
+
+        fps = []
+
+        for mol in df["Mols"]:
+            fp = MACCSkeys.GenMACCSKeys(mol)
+            fps.append(list(fp))
+
+        fp_df = pd.DataFrame(
+            fps,
+            index=parsed_ids,
+            columns=[f"{i}_maccs" for i in range(len(fps[0]))]
+        )
+        fp_df.index.name = "ID"
+
+        return fp_df
+        
     # ====== Embedding Calculations
 
     def calcChemBERTa(
@@ -882,10 +917,17 @@ class FeatureGenerator():
             )
         
         elif self.feature_set == "morgan":
-            return (self.calcMorganFingerprints(
+            return self.calcMorganFingerprints(
                 smiles_ls=smi_batch,
                 id_ls=id_batch,
-            ))
+            )
+        
+        elif self.feature_set == "maccs":
+            return self.calcMACCSKeys(
+                smiles_ls=smi_batch,
+                id_ls=id_batch
+            )
+
         
         else:
             self.logger.error(f"Feature set ({self.feature_set}) not valid"

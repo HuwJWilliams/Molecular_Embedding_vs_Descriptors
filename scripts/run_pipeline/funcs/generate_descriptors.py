@@ -5,9 +5,8 @@ import pandas as pd
 from pathlib import Path
 
 FILE_DIR = Path(__file__).resolve()
-PROJ_DIR = FILE_DIR.parents[2]
-print(f"Project Reference Dir for file {FILE_DIR.name}:\n{PROJ_DIR}")
-SCRIPTS_DIR = PROJ_DIR / "scripts"
+SCRIPTS_DIR = FILE_DIR.parents[2]
+print(f"Project Reference Dir for file {FILE_DIR.name}:\n{SCRIPTS_DIR}")
 # %%
 sys.path.insert(0, str(SCRIPTS_DIR / "datasets"))
 from feature_generator import FeatureGenerator
@@ -25,7 +24,7 @@ p.add_argument("--task", required=True, choices=list(data_paths["targets"].keys(
 
 # Feature set to generate
 p.add_argument("--feature-set", required=True, dest="feature_set",
-               choices=["rdkit", "mordred", "chemberta", "molformer"])
+               choices=["rdkit", "mordred", "chemberta", "molformer", "morgan", "maccs"])
 
 # Batch size for processing 
 p.add_argument("--batch-size", type=int, default=1000)
@@ -49,6 +48,6 @@ out_df_paths = FG.calcBatchFeatures(
     smiles_ls=in_df["SMILES"].to_list(),
     id_ls = in_df.index.to_list(),
     fpath=out_path,
-    drop_cols=True,
+    drop_cols=False,
     batch_size=batch_size
 )

@@ -228,3 +228,9 @@ def addFeatureSetPaths(
             )
 
     saveJSON(json_contents, json_path)
+
+addFeatureSetPaths(
+    feature_name="maccs",
+    family="fingerprints",
+
+)

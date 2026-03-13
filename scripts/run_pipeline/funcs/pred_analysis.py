@@ -2,10 +2,13 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from pathlib import Path
 from glob import glob
+import sys
 
+SCRIPTS_DIR = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(SCRIPTS_DIR))
 from path.get_paths import getPaths
 
-FILE_DIR = Path(__file__).parent
+FILE_DIR = Path(__file__).resolve().parent
 
 DEFAULT_TARGET = {
     "bp":   "Boiling_Point",

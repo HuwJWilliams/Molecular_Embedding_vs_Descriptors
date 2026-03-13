@@ -2,7 +2,7 @@ import pandas as pd
 from glob import glob
 
 from pathlib import Path
-SCRIPTS_DIR = Path(__file__).parent.parent
+SCRIPTS_DIR = Path(__file__).parent.parent.parent
 
 import sys
 
@@ -86,8 +86,10 @@ def combineAllFeats(
     feat_set_ls: list = [
         # "rdkit", 
         # "mordred", 
-        "chemberta", 
-        "molformer"],
+        # "chemberta", 
+         "molformer",
+        #"morgan"
+        ],
     feature_paths: dict = paths["full_features"],
     cols_to_drop: list[str] = ["SMILES"],
     properties: list = None,
@@ -149,8 +151,6 @@ def combineAllFeats(
             with open(out_path.parent / f"nan_cols_{desc_emb}.txt", "w") as f:
                 for col in dropped_cols:
                     f.write(col + "\n")
-
-    
 
 
 def getCommonIDs(

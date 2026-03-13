@@ -4,7 +4,6 @@ import sys
 from glob import glob
 import matplotlib.pyplot as plt
 import seaborn as sns
-from __future__ import annotations
 import random as rand
 import numpy as np
 import pandas as pd
@@ -13,6 +12,10 @@ from sklearn.decomposition import PCA
 from sklearn.neighbors import LocalOutlierFactor
 from scipy.spatial import ConvexHull
 from matplotlib.patches import Patch
+from sklearn.metrics.pairwise import cosine_similarity
+from scipy.stats import spearmanr, pearsonr
+import json
+
 
 # % ========= Constants =========
 FILE_DIR = Path(__file__).resolve()
@@ -587,34 +590,201 @@ def plotPCA(
     return fig
 
 
+def getSimilarities(
+    descriptor_sets: list[str],
+    sample_set: str = "all",
+    sample_size: int = 4000,
+    data_paths: list[str | Path] = None,
+    random_seed: int = 42,
+    scale: bool = True,
+    cor_save_path: str = str(PROJ_DIR / "datasets" / "all" / "descriptor_analysis")
+):
+    # Load tables
+    if data_paths is None:
+        data_paths = [feat_paths["all"][name] for name in descriptor_sets]
+
+    if len(descriptor_sets) != len(data_paths):
+        raise ValueError("descriptor_sets and data_paths must have the same length")
+
+    tables = {}
+    for name, data_path in zip(descriptor_sets, data_paths):
+        tmp_df = pd.read_csv(data_path, index_col=0)
+        tables[name] = tmp_df
+
+    # Find shared index across all tables
+    shared_idx = pd.Index(tables[descriptor_sets[0]].index)
+    for name in descriptor_sets[1:]:
+        shared_idx = shared_idx.intersection(tables[name].index)
+
+    if sample_set != "all":
+        mask = shared_idx.astype(str).str.contains(sample_set, regex=False)
+        shared_idx = shared_idx[mask]
+
+    if sample_size > len(shared_idx):
+        raise ValueError(
+            f"sample_size ({sample_size}) is larger than available rows ({len(shared_idx)})"
+        )
+
+    sampled_idx = (
+        pd.Series(shared_idx)
+        .sample(n=sample_size, random_state=random_seed, replace=False)
+        .values
+    )
+
+    # Subset all tables to the same sampled molecules
+    for name in descriptor_sets:
+        tables[name] = tables[name].loc[sampled_idx]
+
+    # Helpers
+    def _clean_numeric_table(df: pd.DataFrame, scale: bool = True) -> pd.DataFrame:
+        # Coerce everything possible to numeric
+        df = df.apply(pd.to_numeric, errors="coerce")
+
+        # Keep only numeric columns
+        df = df.select_dtypes(include=[np.number]).copy()
+
+        # Drop columns with any missing values
+        df = df.dropna(axis=1)
+
+        # Drop zero-variance columns
+        nunique = df.nunique(dropna=False)
+        df = df.loc[:, nunique > 1]
+
+        if df.shape[1] == 0:
+            raise ValueError("No usable numeric columns remain after cleaning.")
+
+        if scale:
+            scaler = StandardScaler()
+            df[:] = scaler.fit_transform(df.values)
+
+        return df
+
+    def _cosine_similarity(similarity_df: pd.DataFrame) -> pd.DataFrame:
+        sim = cosine_similarity(similarity_df.values)
+        return pd.DataFrame(sim, index=similarity_df.index, columns=similarity_df.index)
+
+    def _upper_triangle(similarity_df: pd.DataFrame) -> np.ndarray:
+        arr = similarity_df.values
+        iu = np.triu_indices_from(arr, k=1)
+        return arr[iu]
+
+    def _compare_similarity_spaces(tables: dict[str, pd.DataFrame]):
+        cleaned = {}
+        sims = {}
+
+        for name, rep_df in tables.items():
+            cleaned[name] = _clean_numeric_table(rep_df, scale=scale)
+            sims[name] = _cosine_similarity(cleaned[name])
+
+        names = list(sims.keys())
+        correlations = {}
+
+        for i in range(len(names)):
+            for j in range(i + 1, len(names)):
+                a, b = names[i], names[j]
+                va = _upper_triangle(sims[a])
+                vb = _upper_triangle(sims[b])
+
+                rho_s, pval_s = spearmanr(va, vb)
+                rho_p, pval_p = pearsonr(va, vb)
+
+                correlations[(a, b)] = {
+                    "spearman_r": rho_s,
+                    "spearman_p_value": pval_s,
+                    "pearson_r": rho_p,
+                    "pearson_p_value": pval_p,
+                }
+
+        return cleaned, sims, correlations
+
+    cleaned, sims, correlations = _compare_similarity_spaces(tables)
+
+    def _save_correlations_json(correlations, path):
+        json_ready = {
+            f"{a}__{b}": stats
+            for (a,b), stats in correlations.items()
+        }
+
+        save_path = path + "/similarity_correlations.json"
+        with open(save_path, "w") as f:
+            json.dump(json_ready, f, indent=4)
+
+    _save_correlations_json(correlations=correlations, path=cor_save_path)
+
+    return cleaned, sims, correlations
+
+def plotSimilarityHeatmaps(
+    sims: dict[str, pd.DataFrame],
+    out_dir: str | Path = PROJ_DIR / "datasets" / "all" / "descriptor_analysis",
+    cmap: str = "viridis",
+    figsize: tuple = (8, 6),
+):
+    out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    for name, sim_df in sims.items():
+        plt.figure(figsize=figsize, dpi=200)
+
+        sns.heatmap(
+            sim_df,
+            cmap=cmap,
+            square=True,
+            cbar_kws={"label": "Cosine similarity"},
+            xticklabels=False,
+            yticklabels=False,
+        )
+
+        plt.title(f"{name} similarity heatmap")
+        plt.xlabel("Molecule index")
+        plt.ylabel("Molecule index")
+        plt.tight_layout()
+        plt.savefig(out_dir / f"{name}_similarity_heatmap.png")
+        plt.close()
+
+
+cleaned, sims, correlations = getSimilarities(
+    descriptor_sets=["rdkit", "mordred", "molformer", "chemberta"],
+    sample_size=5000,
+    random_seed=42,
+    scale=True,
+)
+
+plotSimilarityHeatmaps(sims)
+
+
+
+
+
 #getAnalysisDescriptors()
 #plotDescriptorAnalysis()
 #plotDescriptorAnalysisBySourceViolin()
 
 
 # Plotting PCA for each dataset
-fig = plotPCA(
-    datasets = rdkit_feats,
-    plot_dir=paths["dataset_analysis"]["descriptor_analysis"]["rdkit"].parent,
-    plot_fname="rdkit_PCA"
-)
+plot_pcas=False
+if plot_pcas:
+    fig = plotPCA(
+        datasets = rdkit_feats,
+        plot_dir=paths["dataset_analysis"]["descriptor_analysis"]["rdkit"].parent,
+        plot_fname="rdkit_PCA"
+    )
 
-fig = plotPCA(
-    datasets = mordred_feats,
-    plot_dir=paths["dataset_analysis"]["descriptor_analysis"]["mordred"].parent,
-    plot_fname="mordred_PCA"
-)
+    fig = plotPCA(
+        datasets = mordred_feats,
+        plot_dir=paths["dataset_analysis"]["descriptor_analysis"]["mordred"].parent,
+        plot_fname="mordred_PCA"
+    )
 
-fig = plotPCA(
-    datasets = chemberta_feats,
-    plot_dir=paths["dataset_analysis"]["descriptor_analysis"]["chemberta"].parent,
-    plot_fname="chemberta_PCA"
-)
+    fig = plotPCA(
+        datasets = chemberta_feats,
+        plot_dir=paths["dataset_analysis"]["descriptor_analysis"]["chemberta"].parent,
+        plot_fname="chemberta_PCA"
+    )
 
-fig = plotPCA(
-    datasets = molformer_feats,
-    plot_dir=paths["dataset_analysis"]["descriptor_analysis"]["molformer"].parent,
-    plot_fname="molformer_PCA"
-)
+    fig = plotPCA(
+        datasets = molformer_feats,
+        plot_dir=paths["dataset_analysis"]["descriptor_analysis"]["molformer"].parent,
+        plot_fname="molformer_PCA"
+    )
 
 

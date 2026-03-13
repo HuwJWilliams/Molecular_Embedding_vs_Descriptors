@@ -10,9 +10,12 @@ from sklearn.feature_selection import f_regression
 from sklearn.metrics import mean_squared_error, r2_score
 from scipy.stats import pearsonr, spearmanr
 from sklearn.preprocessing import StandardScaler
+from sklearn.model_selection import train_test_split
 import logging
 import joblib
 import json
+import torch
+
 
 FILE_DIR = Path(__file__).resolve()
 PROJ_DIR = FILE_DIR.parents[2]
@@ -29,6 +32,9 @@ from performance_calculation import calculatePerformance
 
 sys.path.insert(0, str(PROJ_DIR / "scripts" / "misc"))
 from misc_fns import loadData
+
+sys.path.insert(0, str(PROJ_DIR / "scripts" / "models"))
+from mlp_model import MLPRegressorTrainer, RegressionMLP
 
 # ========== Constants ========== #
 tok_ls          = ["ibm/MoLFormer-XL-both-10pct", "DeepChem/ChemBERTa-100M-MLM"]
@@ -456,6 +462,110 @@ class TL():
             feature_cols
         )
 
+# --- --- Simple MLP
+    def trainMLPModel(
+        self,
+        data: pd.DataFrame,
+        target_column: str,
+        hidden_sizes: list[int] | tuple[int, ...] = (128, 64),
+        random_seed: int = 42,
+        save_models: bool = False,
+        test_size: float = 0.3,
+        save_path: str | Path = "./",
+        epochs: int = 300,
+        learning_rate: float = 1e-3,
+        weight_decay: float = 0.0,
+        batch_size: int | None = None,
+        scale_data: bool = True,
+        dropout: float = 0.0,
+        metadata_columns: list = [],
+    ):
+        if isinstance(save_path, str):
+            save_path = Path(save_path)
+
+        save_path.mkdir(parents=True, exist_ok=True)
+
+        cols_to_drop = ["ID", *metadata_columns]
+        mlp_data = data.drop(columns=cols_to_drop, errors="ignore").copy()
+
+        trainer = MLPRegressorTrainer()
+        result = trainer.train(
+            data=mlp_data,
+            target_column=target_column,
+            hidden_sizes=hidden_sizes,
+            test_size=test_size,
+            random_seed=random_seed,
+            epochs=epochs,
+            learning_rate=learning_rate,
+            weight_decay=weight_decay,
+            batch_size=batch_size,
+            scale_features=scale_data,
+            dropout=dropout,
+            save_models=False,
+            save_path=save_path,
+        )
+
+        self.mlp_model = result.model
+        self.mlp_scaler = result.scaler
+
+        feature_cols = [
+            col for col in mlp_data.columns
+            if col not in [target_column, "SMILES"]
+        ]
+
+        params = {
+            "hidden_sizes": list(hidden_sizes),
+            "test_rmse": float(result.metrics["test_rmse"]),
+            "test_r2": float(result.metrics["test_r2"]),
+            "epochs": epochs,
+            "learning_rate": learning_rate,
+            "weight_decay": weight_decay,
+            "batch_size": batch_size,
+            "dropout": dropout,
+            "feature_order": feature_cols,
+        }
+
+        perf_dict = {
+            "test_rmse": float(result.metrics["test_rmse"]),
+            "test_r2": float(result.metrics["test_r2"]),
+            "train_loss_history": result.history["train_loss"],
+            "test_loss_history": result.history["test_loss"],
+        }
+
+        if save_models:
+            torch.save(
+                {
+                    "state_dict": result.model.state_dict(),
+                    "input_size": len(feature_cols),
+                    "hidden_sizes": list(hidden_sizes),
+                    "output_size": 1,
+                    "feature_order": feature_cols,
+                },
+                save_path / "final_model.pt",
+            )
+
+            with open(save_path / "training_params.json", "w") as file:
+                json.dump(params, file, indent=4)
+
+            with open(save_path / "performance_stats.json", "w") as file:
+                json.dump(perf_dict, file, indent=4)
+
+            result.predictions.to_csv(
+                save_path / "test_predictions.csv",
+                index_label="ID",
+            )
+
+            if result.scaler is not None:
+                joblib.dump(result.scaler, save_path / "scaler.pkl")
+
+        return (
+            self.mlp_model,
+            params,
+            self.mlp_scaler,
+            perf_dict,
+            feature_cols,
+        )
+
 # --- Making Predictions
 # --- --- Random Forests
     def predictSingleTargetRF(
@@ -598,6 +708,95 @@ class TL():
         
         return preds_df, perf_dict
 
+# --- --- Simple MLP
+    def predictSingleTargetMLP(
+            self,
+            feature_data: pd.DataFrame | str | Path,
+            target_column: str,
+            mlp_model,
+            feature_cols: list[str] | None = None,
+            save_preds: bool = False,
+            save_path: str | Path = None,
+            filename: str | None = None,
+            scaler: StandardScaler | None = None,
+            test_data: pd.DataFrame | None = None
+    ):
+        feature_data = loadData(feature_data, index_col="ID")
+
+        if feature_cols is not None:
+            feature_data = feature_data[feature_cols].copy()
+        else:
+            feature_data = feature_data.drop(columns=[target_column, "SMILES"], errors="ignore").copy()
+
+        scaler = scaler or getattr(self, "mlp_scaler", None)
+
+        if scaler is not None:
+            scaled_feats = scaler.transform(feature_data.to_numpy())
+            feature_data = pd.DataFrame(
+                scaled_feats,
+                columns=feature_data.columns,
+                index=feature_data.index,
+            )
+
+        if isinstance(mlp_model, (str, Path)):
+            checkpoint = torch.load(mlp_model, map_location="cpu")
+            input_size = checkpoint["input_size"]
+            hidden_sizes = tuple(checkpoint["hidden_sizes"])
+            output_size = checkpoint.get("output_size", 1)
+
+            model = RegressionMLP(
+                input_size=input_size,
+                hidden_sizes=hidden_sizes,
+                output_size=output_size,
+            )
+            model.load_state_dict(checkpoint["state_dict"])
+
+            feature_cols = feature_cols or checkpoint.get("feature_order")
+            if feature_cols is not None:
+                feature_data = feature_data[feature_cols].copy()
+
+        else:
+            model = mlp_model
+
+        model.eval()
+
+        feature_tensor = self._df_2_tensor(feature_data)
+        with torch.no_grad():
+            preds = model(feature_tensor).cpu().numpy().reshape(-1)
+
+        preds_df = pd.DataFrame(
+            {f"{target_column}_pred": preds},
+            index=feature_data.index
+        )
+
+        if test_data is not None:
+            perf_dict = self._calculate_performance(
+                true_targs=np.asarray(test_data[target_column]),
+                pred_targs=preds,
+            )
+        else:
+            perf_dict = {}
+
+        if save_preds:
+            if not save_path or not filename:
+                raise ValueError(
+                    "Both save_path and filename must be provided to save predictions"
+                )
+
+            preds_df.to_csv(
+                f"{save_path}/{filename}.csv.gz",
+                index_label="ID",
+                compression="gzip",
+            )
+
+            if perf_dict:
+                with open(f"{save_path}/performance_stats.json", "w") as file:
+                    json.dump(perf_dict, file, indent=4)
+
+        return preds_df, perf_dict
+
+
+
 # --- Miscellaneous Functions
     def rng(self) -> int:
         if self.seed is None:
@@ -714,3 +913,8 @@ class TL():
                 ]
         
         return feats_to_drop
+    
+    def _df_2_tensor(
+            self, df: pd.DataFrame, dtype = torch.float32
+    ):
+        return torch.tensor(df.to_numpy(), dtype=dtype)
