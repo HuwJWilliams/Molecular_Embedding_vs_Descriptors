@@ -406,7 +406,7 @@ class Visualise():
             data: pd.DataFrame,
             descriptor_groups: dict,
             metrics: list[str],
-            exclude: list[str]=None
+            exclude: list[str]=None,
         ) -> pd.DataFrame:
         """
         Computes the average performance metrics for each descriptor group.
@@ -660,6 +660,150 @@ class Visualise():
             save_fname=save_fname,
             dpi=dpi,
             description="descriptor-grouped radar plot",
+        )
+
+    def plotMemberBar(
+        self,
+        perf_df,
+        group_map: dict[str, list[str]],
+        group_name: str,
+        value_col: str | None = None,
+        title: str | None = None,
+        figsize: tuple = (11, 11),
+        title_fontsize: int = 16,
+        label_fontsize: int = 11,
+        tick_fontsize: int = 9,
+        save_plot: bool = False,
+        save_path: Union[str, Path] = None,
+        save_fname: str | None = None,
+        dpi: int = 400,
+        wrap_labels: bool = True,
+        wrap_width: int = 14,
+        rotate_labels: bool = True,
+    ):
+        if group_name not in group_map:
+            raise ValueError(f"Group '{group_name}' not found in group_map")
+
+        members = group_map[group_name]
+
+        present = [m for m in members if m in perf_df.index]
+        missing = [m for m in members if m not in perf_df.index]
+
+        if not present:
+            raise ValueError(
+                f"No members from group '{group_name}' are present in perf_df.index"
+            )
+
+        if missing:
+            print(f"Skipping missing group members for '{group_name}': {missing}")
+
+        member_df = perf_df.loc[present].copy()
+
+        if value_col is None:
+            numeric_cols = member_df.select_dtypes(include="number").columns
+            if len(numeric_cols) == 0:
+                raise ValueError("perf_df has no numeric columns to plot.")
+            value_col = numeric_cols[0]
+
+        values = member_df[value_col].to_numpy(dtype=float)
+        labels = member_df.index.astype(str).tolist()
+
+        pretty_labels = []
+        for lab in labels:
+            lab2 = lab.replace("_", " ")
+            if wrap_labels:
+                lab2 = "\n".join(textwrap.wrap(lab2, width=wrap_width))
+            pretty_labels.append(lab2)
+
+        fig = plt.figure(figsize=figsize)
+        ax = fig.add_subplot(111)
+
+        bar_colours = [self._getColour(label) for label in labels]
+        x_positions = np.arange(len(labels))
+
+        ax.bar(
+            x_positions,
+            values,
+            color=bar_colours,
+            edgecolor="black",
+            linewidth=0.8,
+            alpha=0.85,
+        )
+
+        ax.set_xticks(x_positions)
+        rotation = 45 if rotate_labels else 0
+        ha = "right" if rotate_labels else "center"
+        ax.set_xticklabels(
+            pretty_labels,
+            fontsize=label_fontsize,
+            fontweight="bold",
+            rotation=rotation,
+            ha=ha,
+        )
+
+        ax.set_ylabel(value_col, fontsize=label_fontsize, fontweight="bold")
+        ax.tick_params(axis="y", labelsize=tick_fontsize)
+        ax.set_axisbelow(True)
+        ax.grid(axis="y", linestyle="--", alpha=0.35)
+
+        y_min = min(0, float(np.min(values)) * 1.05)
+        y_max = float(np.max(values)) * 1.1 if len(values) else 1.0
+        if np.isclose(y_min, y_max):
+            y_max = y_min + 1.0
+        ax.set_ylim(y_min, y_max)
+
+        plot_title = title or f"{group_name} member performance"
+        ax.set_title(plot_title, fontsize=title_fontsize, fontweight="bold", pad=18)
+
+        plt.subplots_adjust(top=0.88, bottom=0.22, left=0.10, right=0.96)
+
+        self._savePlot(
+            save_plot=save_plot,
+            save_path=save_path,
+            save_fname=save_fname or f"{group_name}_member_bar",
+            dpi=dpi,
+            description=f"{group_name} member bar plot",
+            fig=fig,
+        )
+
+    def plotMemberRadar(
+        self,
+        perf_df,
+        group_map: dict[str, list[str]],
+        group_name: str,
+        value_col: str | None = None,
+        title: str | None = None,
+        figsize: tuple = (11, 11),
+        title_fontsize: int = 16,
+        label_fontsize: int = 11,
+        tick_fontsize: int = 9,
+        save_plot: bool = False,
+        save_path: Union[str, Path] = None,
+        save_fname: str | None = None,
+        dpi: int = 400,
+        wrap_labels: bool = True,
+        wrap_width: int = 14,
+        rotate_labels: bool = True,
+    ):
+        """Backward-compatible wrapper for the renamed member bar chart."""
+
+        return self.plotMemberBar(
+            perf_df=perf_df,
+            group_map=group_map,
+            group_name=group_name,
+            value_col=value_col,
+            title=title,
+            figsize=figsize,
+            title_fontsize=title_fontsize,
+            label_fontsize=label_fontsize,
+            tick_fontsize=tick_fontsize,
+            save_plot=save_plot,
+            save_path=save_path,
+            save_fname=save_fname,
+            dpi=dpi,
+            wrap_labels=wrap_labels,
+            wrap_width=wrap_width,
+            rotate_labels=rotate_labels,
         )
 
     def plotGroupBar(

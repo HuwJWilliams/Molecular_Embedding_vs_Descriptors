@@ -59,6 +59,166 @@ PKA_features = feat_paths["pka"][DESCRIPTOR_SET]
 LD50_features = feat_paths["ld50"][DESCRIPTOR_SET]
 PIC50_features = feat_paths["pic50"][DESCRIPTOR_SET]
 
+
+def getLowVarianceColumns(
+        input_df: str | Path,
+        threshold: float = 0.95,
+        index_col: str | None = "ID",
+        exclude_columns: list[str] | None = None,
+    ) -> list[str]:
+    """
+    Identify columns where the most common value accounts for at least
+    ``threshold`` of all rows.
+
+    Parameters
+    ----------
+    input_df : str | Path
+        Path to the CSV file to inspect.
+    threshold : float, optional
+        Minimum fraction of rows occupied by the most common value for a column
+        to be flagged. Default = 0.95.
+    index_col : str | None, optional
+        Column to use as the index when reading the CSV. Default = "ID".
+    exclude_columns : list[str] | None, optional
+        Columns to skip, e.g. metadata such as "SMILES". Default = None.
+
+    Returns
+    -------
+    list[str]
+        Column names flagged as near-constant by the threshold rule.
+    """
+
+    if not 0 <= threshold <= 1:
+        raise ValueError("threshold must be between 0 and 1.")
+
+    exclude_columns = set(exclude_columns or [])
+
+    df = pd.read_csv(input_df, index_col=index_col)
+
+    low_variance_cols = []
+
+    for col in df.columns:
+        if col in exclude_columns:
+            continue
+
+        dominant_fraction = df[col].value_counts(normalize=True, dropna=False).iloc[0]
+
+        if dominant_fraction >= threshold:
+            low_variance_cols.append(col)
+
+    return low_variance_cols
+
+
+def getLowVarianceSummary(
+        input_df: str | Path,
+        threshold: float = 0.95,
+        index_col: str | None = "ID",
+        exclude_columns: list[str] | None = None,
+    ) -> pd.DataFrame:
+    """
+    Summarise the dominant-value fraction for each column in a CSV file.
+
+    Returns a dataframe sorted in descending order of dominant-value fraction so
+    near-constant columns appear first.
+    """
+
+    if not 0 <= threshold <= 1:
+        raise ValueError("threshold must be between 0 and 1.")
+
+    exclude_columns = set(exclude_columns or [])
+    df = pd.read_csv(input_df, index_col=index_col)
+
+    summary_rows = []
+
+    for col in df.columns:
+        if col in exclude_columns:
+            continue
+
+        value_fractions = df[col].value_counts(normalize=True, dropna=False)
+        dominant_value = value_fractions.index[0]
+        dominant_fraction = value_fractions.iloc[0]
+
+        summary_rows.append({
+            "feature": col,
+            "dominant_value": dominant_value,
+            "dominant_fraction": dominant_fraction,
+            "n_unique": df[col].nunique(dropna=False),
+            "flag_low_variance": dominant_fraction >= threshold,
+        })
+
+    summary_df = pd.DataFrame(summary_rows)
+    summary_df = summary_df.sort_values(
+        by="dominant_fraction",
+        ascending=False,
+    ).reset_index(drop=True)
+
+    return summary_df
+
+
+def plotLowVarianceColumns(
+        input_df: str | Path,
+        threshold: float = 0.95,
+        index_col: str | None = "ID",
+        exclude_columns: list[str] | None = None,
+        output_path: str | Path | None = None,
+        save_name: str = "low_variance_features",
+        top_n: int | None = None,
+    ) -> pd.DataFrame:
+    """
+    Plot the dominant-value fraction for each feature as a descending bar chart.
+    """
+
+    summary_df = getLowVarianceSummary(
+        input_df=input_df,
+        threshold=threshold,
+        index_col=index_col,
+        exclude_columns=exclude_columns,
+    )
+
+    plot_df = summary_df.head(top_n).copy() if top_n is not None else summary_df.copy()
+
+    fig_width = max(12, len(plot_df) * 0.22)
+    plt.figure(figsize=(fig_width, 6), dpi=150)
+
+    bar_colors = [
+        "tab:red" if is_flagged else "tab:blue"
+        for is_flagged in plot_df["flag_low_variance"]
+    ]
+
+    plt.bar(
+        plot_df["feature"],
+        plot_df["dominant_fraction"],
+        color=bar_colors,
+        edgecolor="black",
+        linewidth=0.5,
+    )
+
+    plt.axhline(
+        threshold,
+        color="black",
+        linestyle="--",
+        linewidth=1,
+        label=f"threshold = {threshold:.2f}",
+    )
+
+    plt.xlabel("Feature", fontsize=12)
+    plt.ylabel("Dominant value fraction", fontsize=12)
+    plt.title("Low-variance feature summary", fontsize=13)
+    plt.xticks(rotation=90, fontsize=8)
+    plt.yticks(fontsize=10)
+    plt.legend(frameon=False)
+    plt.tight_layout()
+
+    if output_path is not None:
+        output_path = Path(output_path)
+        output_path.mkdir(parents=True, exist_ok=True)
+        plt.savefig(output_path / f"{save_name}.png")
+        plot_df.to_csv(output_path / f"{save_name}.csv")
+
+    plt.close()
+
+    return summary_df
+
 def getAnalysisDescriptors(
         descriptors: list[str]=[
             "MolWt",
@@ -162,6 +322,39 @@ def plotDescriptorAnalysis(
         plt.savefig(output_path / f"total_{col}_desc_analysis.png")
         plt.close()
 
+def plotDescriptorAnalysisViolin(
+        input_df: Path,
+        descriptor_columns: list[str],
+        output_path: Path,
+        save_name: str = "descriptor_violin_plot"
+    ):
+    df = pd.read_csv(input_df, index_col="ID")
+
+    missing = [col for col in descriptor_columns if col not in df.columns]
+    if missing:
+        raise ValueError(f"These descriptor columns are missing from the input data: {missing}")
+
+    output_path.mkdir(parents=True, exist_ok=True)
+
+    plot_df = df[descriptor_columns].copy()
+    long_df = plot_df.melt(var_name="Descriptor", value_name="Value")
+
+    plt.figure(figsize=(max(10, len(descriptor_columns) * 1.2), 6), dpi=150)
+    sns.violinplot(
+        data=long_df,
+        x="Descriptor",
+        y="Value",
+        inner=None,
+        cut=0,
+    )
+
+    plt.xlabel("Descriptor", fontsize=12)
+    plt.ylabel("Value", fontsize=12)
+    plt.title("Descriptor Distributions", fontsize=13)
+    plt.xticks(rotation=45, ha="right")
+    plt.tight_layout()
+    plt.savefig(output_path / f"{save_name}.png")
+    plt.close()
 
 def plotDescriptorAnalysisBySourceViolin(
     input_df: Path = paths["dataset_analysis"]["descriptor_analysis"]["rdkit"],
@@ -742,16 +935,23 @@ def plotSimilarityHeatmaps(
         plt.close()
 
 
-cleaned, sims, correlations = getSimilarities(
-    descriptor_sets=["rdkit", "mordred", "molformer", "chemberta"],
-    sample_size=5000,
-    random_seed=42,
-    scale=True,
-)
+# cleaned, sims, correlations = getSimilarities(
+#     descriptor_sets=["rdkit", "mordred", "molformer", "chemberta"],
+#     sample_size=5000,
+#     random_seed=42,
+#     scale=True,
+# )
 
-plotSimilarityHeatmaps(sims)
+# plotSimilarityHeatmaps(sims)
 
-
+# plotDescriptorAnalysisViolin(
+#         input_df = "/users/yhb18174/TL_project/datasets/all/all_rdkit.csv",
+#         descriptor_columns=
+#         ["Kappa3_rdkit"],
+#         output_path=Path("/users/yhb18174/TL_project/datasets/all/descriptor_analysis"),
+#         save_name="kappa3_distribution"
+        
+#     )
 
 
 
@@ -786,5 +986,3 @@ if plot_pcas:
         plot_dir=paths["dataset_analysis"]["descriptor_analysis"]["molformer"].parent,
         plot_fname="molformer_PCA"
     )
-
-

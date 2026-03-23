@@ -9,6 +9,7 @@ from rdkit.Chem import Descriptors, AllChem, rdFingerprintGenerator, MACCSkeys
 from mordred import Calculator, descriptors
 from transformers import AutoTokenizer, AutoModel
 import torch
+import selfies
 
 FILE_DIR = Path(__file__).resolve()
 PROJ_DIR = FILE_DIR.parents[2]
@@ -24,11 +25,14 @@ from misc_fns import (setupLogger, loadData)
 # --- Constants
 TOKENIZERS = {
     "MolFormer": "ibm/MoLFormer-XL-both-10pct",
-    "ChemBERTa" : "DeepChem/ChemBERTa-100M-MLM"
+    "ChemBERTa" : "DeepChem/ChemBERTa-100M-MLM",
+    "SELFormer": "HUBioDataLab/SELFormer"
 }
 MODELS = {
     "MolFormer": "ibm/MoLFormer-XL-both-10pct",
-    "ChemBERTa" : "DeepChem/ChemBERTa-100M-MLM"
+    "ChemBERTa" : "DeepChem/ChemBERTa-100M-MLM",
+    "SELFormer": "HUBioDataLab/SELFormer",
+
 }
 
 LOG_LEVEL = logging.DEBUG
@@ -73,11 +77,20 @@ class FeatureGenerator():
         self.encoder = "Uninitialised"
 
         if self.feature_set == "chemberta":
-            self._initialise_embedding_models(tokeniser=TOKENIZERS['ChemBERTa'], model=MODELS['ChemBERTa'])
+            self._initialise_embedding_models(
+                tokeniser=TOKENIZERS['ChemBERTa'], model=MODELS['ChemBERTa']
+                )
 
         elif self.feature_set == "molformer":
-            self._initialise_embedding_models(tokeniser=TOKENIZERS['MolFormer'], model=MODELS['MolFormer'])
+            self._initialise_embedding_models(
+                tokeniser=TOKENIZERS['MolFormer'], model=MODELS['MolFormer']
+                )
 
+        elif self.feature_set == "selformer":
+            self._initialise_embedding_models(
+                tokeniser=TOKENIZERS["SELFormer"], model=MODELS["SELFormer"]
+                )
+            
         if self.encoder != "Uninitialised":
             self.encoder.eval()
 
@@ -497,6 +510,129 @@ class FeatureGenerator():
 
         return final_df
     
+    def calcSELFormer(
+            self,
+            smiles_ls: list[str],
+            id_ls: list[str],
+            batch_size: int=64,
+            max_token_len: int=202,
+            drop_cols: bool=False,
+            min_unique: int=MIN_UNIQUE,
+            pooling: str ="mean"
+        ) -> pd.DataFrame:
+        """
+        Description
+        -----------
+        Function to calculate SELFormer embeddings for a list of smiles
+
+        Parameters
+        ----------
+        smiles_ls           list[str]   List of SMILES
+        id_ls               list[str]   List of IDs corresponding to each SMILE
+        batch_size          int         Size of batch to process
+        max_token_len         int         Maximum length of the generated embeddings
+        drop_cols           bool        Flag to drop columns with low variance
+        min_unique          int         Variance threshold for dopping columns       
+        pooling             str         Pooling strategy: "cls" or "mean"
+        """
+
+        valid_ids, valid_selfies, _ = self._smiles2selfies(
+            smiles_ls=smiles_ls, id_ls=id_ls
+            )
+        
+        if pooling not in {"cls", "mean"}:
+            raise ValueError("pooling must be either 'cls' or 'mean'.")
+        
+        if len(valid_selfies) != len(valid_ids):
+            self.logger.error(
+                f"Length of SMILES and IDs not the same."
+                f"(SMILES = {len(valid_selfies)}, IDs = {len(valid_ids)})"
+            )
+            raise ValueError("len(smiles_ls) != len(id_ls)")
+
+        self.logger.info(f"Creating SELFormer embeddings for {len(valid_selfies)} smiles.")
+        self.logger.debug(f"Tokeniser:\n{TOKENIZERS['SELFormer']}\nEncoder:\n{MODELS['SELFormer']}")
+        self.logger.info(f"Pooling strategy: {pooling}")
+
+        embeddings = []
+        device = next(self.encoder.parameters()).device
+
+        n_smiles = len(valid_selfies)
+        total_batches = (n_smiles + batch_size - 1) // batch_size
+        self.logger.info(f"Generating embeddings in {total_batches} batches")
+
+        for i in range(0, n_smiles, batch_size):
+            batch = [
+                s for s in valid_selfies[i: i + batch_size]
+            ]
+            current_batch_no = i // batch_size + 1
+
+            self.logger.debug(f"SMILES for batch {current_batch_no}:\n{batch}")
+
+            enc = self.tokeniser(
+                batch,
+                padding=True,
+                truncation=True,
+                max_length=max_token_len,
+                return_tensors="pt",
+                add_special_tokens=True
+            )
+
+            enc = {k: v.to(device) for k, v in enc.items()}
+
+            with torch.no_grad():
+                output = self.encoder(**enc)
+
+                if hasattr(output, "last_hidden_state"):
+                    hidden = output.last_hidden_state  # (B, L, H)
+
+                    if pooling == "cls":
+                        pooled = hidden[:, 0, :]
+
+                    elif pooling == "mean":
+                        mask = enc["attention_mask"].unsqueeze(-1).float()  # (B, L, 1)
+                        pooled = (hidden * mask).sum(dim=1) / mask.sum(dim=1).clamp(min=1)
+
+                    else:
+                        raise RuntimeError(f"Unexpected pooling strategy: {pooling}")
+
+                elif isinstance(output, torch.Tensor):
+                    pooled = output
+
+                elif hasattr(output, "pooler_output"):
+                    pooled = output.pooler_output
+
+                else:
+                    raise RuntimeError("Unknown output structure from encoder")
+            
+            embeddings.append(pooled.cpu().numpy().astype(np.float32))
+
+            self.logger.info(f"Processed batch {current_batch_no} of {total_batches}")
+
+        try:
+            emb_array = np.vstack(embeddings)
+        except ValueError as e:
+            self.logger.error(f"Could not stack the embedding arrays:\n{e}")
+            return pd.DataFrame()
+
+        final_df = pd.DataFrame(
+            emb_array,
+            index=valid_ids,
+            columns=[f"emb_{i}" for i in range(1, emb_array.shape[1] + 1)]
+        )
+
+        final_df['SMILES'] = valid_selfies
+        final_df = final_df.add_suffix(f"_chemberta_{pooling}")
+        final_df.index.name, final_df.index = "ID", valid_ids
+
+        if drop_cols:
+            final_df = self._drop_columns(df=final_df, min_unique=min_unique)
+            self.logger.info(f"Embedding data frame created with shape: {final_df.shape}")
+
+        return final_df
+        
+
+    
     # ====== Batch Feature Calculations
  
     def calcBatchFeatures(
@@ -757,7 +893,7 @@ class FeatureGenerator():
                 )
             
             self.tokeniser = AutoTokenizer.from_pretrained(tokeniser, trust_remote_code=True)
-            self.encoder =  AutoModel.from_pretrained(tokeniser, trust_remote_code=True).eval().to("cpu")
+            self.encoder =  AutoModel.from_pretrained(model, trust_remote_code=True).eval().to("cpu")
         else:
             self.logger.error("No valid tokeniser or model provided:"
                               f"Tokeniser = {tokeniser}",
@@ -907,7 +1043,7 @@ class FeatureGenerator():
                 batch_size=64,
                 max_token_len=max_token_len
             )
-        
+            
         elif self.feature_set == "molformer":
             return self.calcMolFormer(
                 smiles_ls=smi_batch,
@@ -915,6 +1051,15 @@ class FeatureGenerator():
                 batch_size=64,
                 max_token_len=max_token_len
             )
+        
+        elif self.feature_set == "selformer":
+            return self.calcSELFormer(
+                smiles_ls=smi_batch,
+                id_ls=id_batch,
+                batch_size=64,
+                max_token_len=max_token_len
+            )
+
         
         elif self.feature_set == "morgan":
             return self.calcMorganFingerprints(
@@ -931,5 +1076,37 @@ class FeatureGenerator():
         
         else:
             self.logger.error(f"Feature set ({self.feature_set}) not valid"
-                                f"Select from: [rdkit, mordred, chemberta, molformer]")
+                                f"Select from: [rdkit, mordred, chemberta, molformer, selformer, morgan or maccs]")
             raise ValueError(f"Feature set not allowed {self.feature_set}")
+        
+    def _smiles2selfies(self, 
+                        smiles_ls:list[str]=None, 
+                        id_ls:list[str]=None, 
+                        smiles_df:pd.DataFrame=None, 
+                        smiles_col: str="SMILES",
+                        id_col:str="ID"):
+
+        if smiles_df:
+            smiles_df = smiles_df.copy().reset_index()
+            smiles_ls = smiles_df[smiles_col].tolist()
+            id_ls = smiles_df[id_col]
+
+        valid_selfies = []
+        valid_ids = []
+
+        invalid_ids = []
+
+        for mol_id, smi in zip(id_ls, smiles_ls):
+            try:
+                selfies_str = selfies.encoder(smi)
+                valid_selfies.append(selfies_str)
+                valid_ids.append(mol_id)
+            except Exception as e:
+                invalid_ids.append(mol_id)
+                example_error_code = e
+        
+        self.logger.warning(
+            f"SMILES unable to be converted to SELFIES:\n{invalid_ids}\n{example_error_code}"
+            )
+            
+        return valid_ids, valid_selfies, invalid_ids

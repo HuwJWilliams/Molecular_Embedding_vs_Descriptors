@@ -9,18 +9,14 @@ FILE_DIR = Path(__file__).resolve()
 PROJ_DIR = FILE_DIR.parents[2]
 RESULTS_DIR = PROJ_DIR / "results"
 
-EMB_AND_DESC_PREDS = "embeddings_and_descriptor_predictions"
-LD50_PREDS_RF = "LD50_predictions_rf"
-
 sys.path.insert(0, str(PROJ_DIR / "scripts" / "path"))
-from get_paths_new import getPaths, addNewDatasetPaths, addFeatureSetPaths
+from get_paths import getPaths, addNewDatasetPaths, addFeatureSetPaths
 
 sys.path.insert(0, str(PROJ_DIR / "scripts" / 'datasets'))
 from group_descriptors import getGroups
+from analyse_datasets import getLowVarianceColumns, plotLowVarianceColumns
 
 paths = getPaths()
-addNewDatasetPaths("solubility", "boiling_point.csv", "SOLUBILITY", "solubility")
-addFeatureSetPaths("MCCV", "fingerprints")
 
 # ------------------- Setup -------------------
 vis = Visualise(save_all=False)
@@ -29,28 +25,55 @@ print("Visualise module loaded")
 
 
 # %% ------------------- Multi-task Performance
-# experiment = "pred_rdkit_tr_molformer"
+# experiment = "pred_mordred_tr_molformer"
 # mt_perf_path = paths["prediction_output_dirs"]["embedding_and_descriptor_cross_predictions"][experiment]
 # multitask_performance_df = pd.read_csv(mt_perf_path / f"{experiment}.csv", index_col=0)
 # multitask_performance_df.index.name = "Feature"
 # vis.plotMultiTaskPerformance(multitask_performance_df, x_col="Pearson_r", y_col="Feature")
 
 # %% ------------------- Computing Group Performances
-# experiment = "pred_rdkit_tr_chemberta"
-# mt_perf_path = paths["prediction_output_dirs"]["embedding_and_descriptor_cross_predictions"][experiment]
-# multitask_performance_df = pd.read_csv(mt_perf_path / f"{experiment}.csv", index_col=0)
-# group_performance_df = vis.computeGroupPerf(
-#     data=multitask_performance_df,
-#     descriptor_groups=getGroups("rdkit"),
-#     metrics=["Pearson_r", "r2", "RMSE", "Bias"],
-# )
+experiment = "pred_rdkit_tr_mordred"
+mt_perf_path = paths["prediction_output_dirs"]["embedding_and_descriptor_cross_predictions"][experiment]
+low_variance_columns = getLowVarianceColumns(paths["full_features"]["all"]["rdkit"], threshold=0.9)
+# plotLowVarianceColumns(
+#     input_df=paths["full_features"]["all"]["mordred"], 
+#     threshold=0.9,
+#     output_path="/users/yhb18174/TL_project/datasets/all/descriptor_analysis/",
+#     save_name="low_variance_features_mordred")
+
+# print(getGroups("mordred").keys())
+
+multitask_performance_df = pd.read_csv(mt_perf_path / f"{experiment}.csv", index_col=0)
+group_performance_df = vis.computeGroupPerf(
+    data=multitask_performance_df,
+    descriptor_groups=getGroups("rdkit"),
+    metrics=["Pearson_r", "r2", "RMSE", "Bias"],
+    exclude=low_variance_columns
+)
 
 
-# vis.plotGroupRadar(group_performance_df,
-#                 title=f"RDKit Prediction (ChemBERTa trained)",
-#                    save_plot=True,
-#                    save_path=mt_perf_path,
-#                    save_fname=f"{experiment}_radar")
+vis.plotGroupRadar(group_performance_df,
+                   title=f"RDKit Prediction (Mordred trained)",
+                   save_plot=True,
+                   save_path=mt_perf_path,
+                   save_fname=f"{experiment}_radar_excl_low_var")
+
+
+# for group_name in getGroups("mordred").keys():
+#     try:
+#         vis.plotMemberBar(
+#             perf_df=multitask_performance_df,
+#             group_map=getGroups("mordred"),
+#             group_name=group_name,
+#             value_col="Pearson_r",
+#             save_plot=True,
+#             save_path=mt_perf_path,
+#             save_fname=f"{experiment}_{group_name}_mordred_bar")
+#     except Exception as e:
+#         print(e)
+#         continue
+
+
 
 # # %% ------------------- Comparing Group Performances
 # vis.plotGroupBar(group_performance_df, labels=["chemberta"], save_plot=True, 
@@ -58,11 +81,11 @@ print("Visualise module loaded")
 #                  save_fname="pred_rdkit_tr_molformer_bar")
 
 # %% -------------------  for cross-embedding predictions
-# emb_desc_keys = paths["prediction_output_dirs"]["embedding_and_descriptor_predictions"].keys()
+# emb_desc_keys = paths["prediction_output_dirs"]["embedding_and_descriptor_cross_predictions"].keys()
 
 # emb_desc_dfs = []
 # for k in emb_desc_keys:
-#     df_ = pd.read_csv(paths["prediction_output_dirs"]["embedding_and_descriptor_predictions"][k], index_col=0)
+#     df_ = pd.read_csv(paths["prediction_output_dirs"]["embedding_and_descriptor_cross_predictions"][k], index_col=0)
 #     df_.index.name = "Feature"
 #     emb_desc_dfs.append(df_)
 
@@ -172,4 +195,3 @@ emb_desc_key = "pred_rdkit_tr_chemberta"
 
 #
 # %%
-

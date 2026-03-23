@@ -85,10 +85,10 @@ def combineAllFeats(
     full_smi_df: pd.DataFrame | str | Path = paths["targets"]["all"],
     feat_set_ls: list = [
         # "rdkit", 
-        # "mordred", 
+        "mordred", 
         # "chemberta", 
-         "molformer",
-        #"morgan"
+        # "molformer",
+        # "morgan"
         ],
     feature_paths: dict = paths["full_features"],
     cols_to_drop: list[str] = ["SMILES"],

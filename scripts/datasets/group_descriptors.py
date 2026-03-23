@@ -115,6 +115,10 @@ def getRDKitGroups(prefix="_rdkit"):
         # --- Drug-likeness ---
         "druglikeness": [
             p("qed")
+        ],
+
+        "fragment_counts": [
+            p("fr_Al_COO"), p("fr_Al_OH"), p("fr_Ar_N"), ...
         ]
     }
 

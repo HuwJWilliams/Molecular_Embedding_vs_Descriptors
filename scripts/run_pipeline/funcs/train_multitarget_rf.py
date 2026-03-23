@@ -34,7 +34,6 @@ print(IDENTIFIER)
 
 
 
-
 RDKIT_DESC_PATH = aligned_feats['rdkit']
 MORDRED_DESC_PATH = aligned_feats['mordred']
 CHEMBERTA_EMB_PATH = aligned_feats['chemberta']
@@ -52,6 +51,7 @@ train_df = datasets[TRAIN_NAME]
 target_df = datasets[TEST_NAME]
 
 common_idx = train_df.index.intersection(target_df.index)
+print(len(common_idx))
 sample_size = 10000
 random_idx = np.random.choice(common_idx, size=sample_size, replace=False)
 random_idx_df = pd.DataFrame({"ID": random_idx})
