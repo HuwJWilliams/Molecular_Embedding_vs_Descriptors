@@ -2,19 +2,26 @@
 import sys
 from pathlib import Path
 import pandas as pd
-from vis import Visualise
 
 # ------------------ Pathing ------------------
 FILE_DIR = Path(__file__).resolve()
 PROJ_DIR = FILE_DIR.parents[2]
 RESULTS_DIR = PROJ_DIR / "results"
+SCRIPTS_DIR = PROJ_DIR / "scripts"
+SRC_DIR = SCRIPTS_DIR / "src"
 
-sys.path.insert(0, str(PROJ_DIR / "scripts" / "path"))
+sys.path.insert(0, str(SRC_DIR / "visualisation"))
+from vis import Visualise
+
+sys.path.insert(0, str(SRC_DIR / "pathing")) 
 from get_paths import getPaths, addNewDatasetPaths, addFeatureSetPaths
 
-sys.path.insert(0, str(PROJ_DIR / "scripts" / 'datasets'))
+sys.path.insert(0, str(SRC_DIR / "datasets"))
 from group_descriptors import getGroups
-from analyse_datasets import getLowVarianceColumns, plotLowVarianceColumns
+from analyse_datasets import getLowVarianceColumns, plotLowVarianceColumns, getOutlierSummary
+
+sys.path.insert(0, str(SRC_DIR / "misc"))
+from misc_fns import getFeatures
 
 paths = getPaths()
 
@@ -25,67 +32,89 @@ print("Visualise module loaded")
 
 
 # %% ------------------- Multi-task Performance
-# experiment = "pred_mordred_tr_molformer"
-# mt_perf_path = paths["prediction_output_dirs"]["embedding_and_descriptor_cross_predictions"][experiment]
-# multitask_performance_df = pd.read_csv(mt_perf_path / f"{experiment}.csv", index_col=0)
-# multitask_performance_df.index.name = "Feature"
-# vis.plotMultiTaskPerformance(multitask_performance_df, x_col="Pearson_r", y_col="Feature")
 
-# %% ------------------- Computing Group Performances
-experiment = "pred_rdkit_tr_mordred"
-mt_perf_path = paths["prediction_output_dirs"]["embedding_and_descriptor_cross_predictions"][experiment]
-low_variance_columns = getLowVarianceColumns(paths["full_features"]["all"]["rdkit"], threshold=0.9)
-# plotLowVarianceColumns(
-#     input_df=paths["full_features"]["all"]["mordred"], 
-#     threshold=0.9,
-#     output_path="/users/yhb18174/TL_project/datasets/all/descriptor_analysis/",
-#     save_name="low_variance_features_mordred")
+do_multitask_performance = True
+if do_multitask_performance:
+    # experiment = "pred_mordred_tr_molformer"
+    # mt_perf_path = paths["prediction_output_dirs"]["cross_feature_predictions"][experiment]
+    # multitask_performance_df = pd.read_csv(mt_perf_path / f"{experiment}.csv", index_col=0)
+    # multitask_performance_df.index.name = "Feature"
+    # vis.plotMultiTaskPerformance(multitask_performance_df, x_col="Pearson_r", y_col="Feature")
 
-# print(getGroups("mordred").keys())
+#%% ------------------- Computing Group Performances
+    pred = "rdkit"
+    tr = "morgan"
+    threshold = 0.7
+    experiment = f"pred_{pred}_tr_{tr}"
+    mt_perf_path = paths["prediction_output_dirs"]["lipinski_cross_feature_predictions"][experiment]
+    low_variance_columns = getLowVarianceColumns(paths["full_features"]["all"][pred], threshold=threshold)
+    print(low_variance_columns)
 
-multitask_performance_df = pd.read_csv(mt_perf_path / f"{experiment}.csv", index_col=0)
-group_performance_df = vis.computeGroupPerf(
-    data=multitask_performance_df,
-    descriptor_groups=getGroups("rdkit"),
-    metrics=["Pearson_r", "r2", "RMSE", "Bias"],
-    exclude=low_variance_columns
-)
-
-
-vis.plotGroupRadar(group_performance_df,
-                   title=f"RDKit Prediction (Mordred trained)",
-                   save_plot=True,
-                   save_path=mt_perf_path,
-                   save_fname=f"{experiment}_radar_excl_low_var")
+   
+    plotLowVarianceColumns(
+        input_df=paths["full_features"]["all"][pred], 
+        threshold=threshold,
+        output_path="/users/yhb18174/TL_project/datasets/all/descriptor_analysis/",
+        save_name=f"low_variance_features_{pred}")
+    
+    multitask_performance_df = pd.read_csv(mt_perf_path / f"{experiment}.csv", index_col=0)
 
 
-# for group_name in getGroups("mordred").keys():
-#     try:
-#         vis.plotMemberBar(
-#             perf_df=multitask_performance_df,
-#             group_map=getGroups("mordred"),
-#             group_name=group_name,
-#             value_col="Pearson_r",
-#             save_plot=True,
-#             save_path=mt_perf_path,
-#             save_fname=f"{experiment}_{group_name}_mordred_bar")
-#     except Exception as e:
-#         print(e)
-#         continue
+    # getOutlierSummary(pd.read_csv(paths["full_features"]["all"][pred], index_col=0))
+
+    group_performance_df = vis.computeGroupPerf(
+        data=multitask_performance_df,
+        descriptor_groups=getGroups(pred),
+        metrics=["Pearson_r", "r2", "RMSE", "Bias"],
+        exclude=low_variance_columns
+    )
+
+
+
+    vis.plotGroupRadar(group_performance_df,
+                       title=f"{pred.capitalize()} Prediction ({tr.capitalize()} trained)",
+                       save_plot=True,
+                       save_path=mt_perf_path,
+                       save_fname=f"{experiment}_radar_excl_low_var")
+
+
+    for group_name in getGroups(pred).keys():
+        try:
+            vis.plotMemberBar(
+                perf_df=multitask_performance_df,
+                group_map=getGroups(pred),
+                group_name=group_name,
+                value_col="Pearson_r",
+                save_plot=True,
+                save_path=mt_perf_path,
+                save_fname=f"{experiment}_{group_name}_{pred}_bar")
+        except Exception as e:
+            print(e)
+            continue
+
+        vis.plotPoorPredictionFeatureDistribution(
+                perf_df=multitask_performance_df,
+                full_features=paths["full_features"]["all"][pred],
+                group_map=getGroups(pred),
+                group_name=group_name,
+                value_col="Pearson_r",
+                save_plot=True,
+                save_path=mt_perf_path,            
+        )
 
 
 
 # # %% ------------------- Comparing Group Performances
 # vis.plotGroupBar(group_performance_df, labels=["chemberta"], save_plot=True, 
-#                  save_path=paths["prediction_output_dirs"]["embedding_and_descriptor_cross_predictions"][experiment],
+#                  save_path=paths["prediction_output_dirs"]["cross_feature_predictions"][experiment],
 #                  save_fname="pred_rdkit_tr_molformer_bar")
 
 # %% -------------------  for cross-embedding predictions
-# emb_desc_keys = paths["prediction_output_dirs"]["embedding_and_descriptor_cross_predictions"].keys()
+# emb_desc_keys = paths["prediction_output_dirs"]["cross_feature_predictions"].keys()
 
 # emb_desc_dfs = []
 # for k in emb_desc_keys:
-#     df_ = pd.read_csv(paths["prediction_output_dirs"]["embedding_and_descriptor_cross_predictions"][k], index_col=0)
+#     df_ = pd.read_csv(paths["prediction_output_dirs"]["cross_feature_predictions"][k], index_col=0)
 #     df_.index.name = "Feature"
 #     emb_desc_dfs.append(df_)
 
@@ -155,21 +184,138 @@ vis.plotGroupRadar(group_performance_df,
 
 
 # %% ------------------- PCA of embeddings
-# data_dict = {
-#     "chemberta" : all_data["raw_features"]["chemberta"]
-# }
+do_pca = False 
+if do_pca:
+    def center_rows(df):
+        return df.sub(df.mean(axis=1), axis=0)
+
+    def scale_rows(df):
+        denom = df.abs().max(axis=1).replace(0, 1)
+        return df.div(denom, axis=0)
+
+    def center_columns(df):
+        return df.sub(df.mean(axis=0), axis=1)
+
+    def scale_columns(df):
+        denom = df.abs().max(axis=0).replace(0, 1)
+        return df.div(denom, axis=1)
 
 
-# fig, pca_df, loadings_df, abs_loadings_df = vis.plotPCA(
-#     data_dict=data_dict,
-#     n_components=5,
-#     plot_area=False,
-#     save_plot=False,
-#     save_path=RESULTS_DIR,
-# )
+    def filter_molecules_by_mw(
+        df: pd.DataFrame,
+        min_mw: float | None = None,
+        max_mw: float | None = None,
+        mw_column_candidates: tuple[str, ...] = ("MolWt_rdkit", "MW_mordred", "MolWt"),
+    ) -> pd.DataFrame:
+        """Filter a feature dataframe by an existing molecular-weight descriptor column."""
+
+        if min_mw is None and max_mw is None:
+            return df
+
+        mw_column = next((col for col in mw_column_candidates if col in df.columns), None)
+        if mw_column is None:
+            raise ValueError(
+                "No molecular-weight column found. "
+                f"Tried: {list(mw_column_candidates)}"
+            )
+
+        filtered_df = df.copy()
+
+        if min_mw is not None:
+            filtered_df = filtered_df[filtered_df[mw_column] >= min_mw]
+
+        if max_mw is not None:
+            filtered_df = filtered_df[filtered_df[mw_column] <= max_mw]
+
+        return filtered_df
+
+
+    def get_ids_in_mw_range(
+        df: pd.DataFrame,
+        min_mw: float | None = None,
+        max_mw: float | None = None,
+        mw_column_candidates: tuple[str, ...] = ("MolWt_rdkit", "MW_mordred", "MolWt"),
+    ) -> pd.Index:
+        """Get the IDs that fall within a molecular-weight range."""
+
+        filtered_df = filter_molecules_by_mw(
+            df=df,
+            min_mw=min_mw,
+            max_mw=max_mw,
+            mw_column_candidates=mw_column_candidates,
+        )
+        return filtered_df.index
+
+
+
+    # experiments = {
+    #     # "scale_rows_only": lambda df: scale_rows(df),
+    #     # "center_and_scale_rows": lambda df: scale_rows(center_rows(df)),
+    #     # "center_scale_rows_then_scale_columns": lambda df: scale_columns(scale_rows(center_rows(df))),
+    #     "center_scale_rows_then_center_scale_columns": lambda df: scale_columns(center_columns(scale_rows(center_rows(df)))),
+    # }
+
+    # feature_names = ["chemberta", "molformer", "mordred", "rdkit"]
+    # # feature_names = ["molformer-c3-1b", "molformer", "selformer", "chemberta", "chembertasey"]
+    # MIN_MW = 500
+    # MAX_MW = None
+
+    # for experiment_name, transform in experiments.items():
+    #     final_df = pd.DataFrame()
+    #     rdkit_df = pd.read_csv(paths["full_features"]["all"]["rdkit"], index_col=0)
+    #     selected_ids = get_ids_in_mw_range(rdkit_df, min_mw=MIN_MW, max_mw=MAX_MW)
+
+    #     for feat in feature_names:
+    #         temp_df = pd.read_csv(paths["full_features"]["all"][feat], index_col=0)
+    #         temp_df = temp_df.loc[temp_df.index.intersection(selected_ids)].copy()
+    #         temp_df = temp_df.T
+    #         temp_scaled = transform(temp_df)
+    #         temp_scaled["Source"] = feat
+    #         final_df = pd.concat([final_df, temp_scaled], axis=0)
+
+    #     print(experiment_name, final_df.shape)
+    #     final_df = final_df.dropna(axis=1)
+    #     print(experiment_name, final_df.shape)
+
+    #     fig, pca_df, loadings_df, abs_loadings_df = vis.plotPCA(
+    #         data_dict={"Data": final_df},
+    #         n_components=5,
+    #         plot_area=False,
+    #         save_plot=True,
+    #         save_path=RESULTS_DIR,
+    #         save_fname=f"mw__inverted_feature_pcs_{experiment_name}",
+    #         axis_fontsize=14,
+    #     )
+
+
+
+
+# for feat in feature_names:
+#     print(feat)
+#     for p in prop:
+#         print(p)
+#         df = pd.read_csv(paths["full_features"]['all'][feat], index_col=0)
+#         train = getFeatures(paths["imp_dirs"]["datasets_dir"] / "training_data" / f"{p}_model_training.csv", feature_name=feat)
+#         val = getFeatures(paths["imp_dirs"]["datasets_dir"] / "training_data" / f"{p}_model_validation.csv", feature_name=feat)
+
+#         data4 = {
+#             "train" : train,
+#             "val" : val
+#         }
+
+#         for data in [data4]:
+#             dataset_name = next(iter(data))
+#             fig, pca_df, loadings_df, abs_loadings_df = vis.plotPCA(
+#                 data_dict=data,
+#                 n_components=5,
+#                 plot_area=False,
+#                 save_plot=True,
+#                 save_path=RESULTS_DIR,
+#                 save_fname=f"{p}_tr_val_pca",
+#             )
 
 # %% ------------------- Unique counts
-feature_set = "rdkit"
+# feature_set = "rdkit"
 # vis.plotNumUniqueDescValues(data=all_data["raw_features"][feature_set],
 #                             save_plot=True,
 #                             save_path=PROJ_DIR / "datasets" / "descriptors",
@@ -181,8 +327,8 @@ feature_set = "rdkit"
 #                             )
 
 # %%------------------- Perf vs uniqueness
-feature_set = "rdkit"
-emb_desc_key = "pred_rdkit_tr_chemberta"
+# feature_set = "rdkit"
+# emb_desc_key = "pred_rdkit_tr_chemberta"
 
 # vis.plotNumUniqueDescVsPerf(
 #     train_data=all_data["raw_features"][feature_set],

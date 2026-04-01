@@ -4,6 +4,7 @@ results_pre_3D/
 *.csv
 *.out
 *.log
+*.key
 *.sh
 */__pycache/*
 *.zip

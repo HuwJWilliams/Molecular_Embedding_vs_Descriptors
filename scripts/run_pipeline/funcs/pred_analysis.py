@@ -5,8 +5,9 @@ from glob import glob
 import sys
 
 SCRIPTS_DIR = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(SCRIPTS_DIR))
-from path.get_paths import getPaths
+SRC_DIR = SCRIPTS_DIR / "src"
+sys.path.insert(0, str(SRC_DIR / "pathing"))
+from get_paths import getPaths
 
 FILE_DIR = Path(__file__).resolve().parent
 

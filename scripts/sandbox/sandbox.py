@@ -1,20 +1,17 @@
+from pathlib import Path
 import pandas as pd
 import sys
-from pathlib import Path
-from glob import glob
 
-sys.path.insert(0, str(Path(__file__).parent.parent / "path"))
+SCRIPTS_DIR = Path(__file__).resolve().parents[1]
+SRC_DIR = SCRIPTS_DIR / "src"
+
+sys.path.insert(0, str(SRC_DIR / "pathing"))
 from get_paths import getPaths
 
-from transformers import AutoConfig
 
-# config = AutoConfig.from_pretrained("ibm/MoLFormer-XL-both-10pct", trust_remote_code=True)
-# print(config.max_position_embeddings)
+paths = getPaths()
 
-
-# config = AutoConfig.from_pretrained("ibm/MoLFormer-XL-both-10pct", trust_remote_code=True)
-# print(config.max_position_embeddings)
-
-paths=getPaths()
-
-print(paths["prediction_output_dirs"]["embedding_and_descriptor_cross_predictions"])
+fingerprints = paths["full_features"]["all"]
+for key, path in fingerprints.items():
+    print(key)
+    print(len(pd.read_csv(path, index_col=0).columns))
