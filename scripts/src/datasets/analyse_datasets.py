@@ -165,6 +165,7 @@ def plotLowVarianceColumns(
         output_path: str | Path | None = None,
         save_name: str = "low_variance_features",
         top_n: int | None = None,
+        title: str="Low-variance feature summary"
     ) -> pd.DataFrame:
     """
     Plot the dominant-value fraction for each feature as a descending bar chart.
@@ -205,7 +206,7 @@ def plotLowVarianceColumns(
 
     plt.xlabel("Feature", fontsize=12)
     plt.ylabel("Dominant value fraction", fontsize=12)
-    plt.title("Low-variance feature summary", fontsize=13)
+    plt.title(tite, fontsize=13)
     plt.xticks(rotation=90, fontsize=8)
     plt.yticks(fontsize=10)
     plt.legend(frameon=False)
@@ -214,7 +215,16 @@ def plotLowVarianceColumns(
     if output_path is not None:
         output_path = Path(output_path)
         output_path.mkdir(parents=True, exist_ok=True)
-        plt.savefig(output_path / f"{save_name}.png")
+        plt.savefig(
+            output_path / f"{save_name}.png",
+            dpi=600,
+            bbox_inches="tight",
+            metadata={
+                "Title": title,
+                "Description": f"Bar plot showing the value variance compared to the most common value \
+                    for each feature. Threshold = {threshold}"
+            }
+            )
         plot_df.to_csv(output_path / f"{save_name}.csv")
 
     plt.close()

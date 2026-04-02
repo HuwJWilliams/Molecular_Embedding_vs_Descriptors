@@ -59,7 +59,7 @@ python standardise_datasets.py \
   Plot descriptor distributions for:
   `MolWt`, `MolLogP`, `NumAromaticRings`, `NumRotatableBonds`, `NumHDonors`, `NumHAcceptors`.
 
-## Notes
+### Notes
 
 - Do not pass `--id-col None`; omit `--id-col` entirely if you do not have one.
 - `--rename-cols` should be valid JSON (double quotes).
@@ -129,7 +129,37 @@ python cross_feature_predictions.py \
 - `--save-models`
   Flag to save trained models
 
-## Notes
+### Notes
 
 - For more information about the Random Forest settings look at the SciKit-Learn documentation:
 https://scikit-learn.org/stable/modules/generated/sklearn.ensemble.RandomForestRegressor.html
+
+## 6. Run Cross-Prediction Analysis
+
+## Example
+
+```bash
+python run_cross_feature_analysis.py \
+  --results-dir \
+  --run-all \
+  --exclude-low-var \
+  --show-var \
+  --var-threshold 0.8
+```
+
+### Arguments
+- `--results-dir`
+  Name of the directory key in the pathing json under "prediction_output_dirs"
+- `--run-all`
+  Flag to run all available cross-feature analysis
+- `--run-experiments`
+  Option to run cross-feature analysis on a select number of experiments.
+  Here you reference an experiment as its identifier (e.g., pred_rdkit_tr_chemberta)
+- `--exclude-low-var`
+  Flag to exclude features with particularly low variance which were missed in the initial
+  filtering process. Variance defined as fraction of molecules which have the same common value.
+-  `--show-var`
+  Show the variance of the feature columns
+-  `--var-threshold`
+  Threshold for the fraction of molecules having the same common value
+  (i.e., 0.7 means if more than 70% of the data in a column has the same value, remove it)

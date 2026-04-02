@@ -107,7 +107,8 @@ class Visualise():
             save_fname: str, 
             dpi: int,
             description: str="Saved plot",
-            fig: plt.Figure | None=None
+            fig: plt.Figure | None=None,
+            metadata:dict={}
             ):
         """
         Saves a matplotlib figure.
@@ -155,7 +156,7 @@ class Visualise():
 
             # use provided figure, or fall back to the current one
             fig_to_save = fig or plt.gcf()
-            fig_to_save.savefig(full_save_path, dpi=dpi, bbox_inches="tight")
+            fig_to_save.savefig(full_save_path, dpi=dpi, bbox_inches="tight", metadata=metadata)
 
             print(f"Saved {description} to\n{full_save_path}")
 
@@ -480,6 +481,7 @@ class Visualise():
         wrap_labels: bool = True,
         wrap_width: int = 14,
         rotate_labels: bool = True,
+        metadata:dict={}
     ):
         
         """
@@ -662,6 +664,7 @@ class Visualise():
             save_fname=save_fname,
             dpi=dpi,
             description="descriptor-grouped radar plot",
+            metadata=metadata
         )
 
     def plotMemberBar(
@@ -682,6 +685,7 @@ class Visualise():
         wrap_labels: bool = True,
         wrap_width: int = 14,
         rotate_labels: bool = True,
+        metadata:dict={}
     ):
         if group_name not in group_map:
             raise ValueError(f"Group '{group_name}' not found in group_map")
@@ -766,6 +770,7 @@ class Visualise():
             dpi=dpi,
             description=f"{group_name} member bar plot",
             fig=fig,
+            metadata=metadata
         )
 
     def plotPoorPredictionFeatureDistribution(self,
