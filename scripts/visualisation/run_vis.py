@@ -2,6 +2,7 @@
 import sys
 from pathlib import Path
 import pandas as pd
+import numpy as np
 
 # ------------------ Pathing ------------------
 FILE_DIR = Path(__file__).resolve()
@@ -33,7 +34,7 @@ print("Visualise module loaded")
 
 # %% ------------------- Multi-task Performance
 
-do_multitask_performance = True
+do_multitask_performance = False
 if do_multitask_performance:
     # experiment = "pred_mordred_tr_molformer"
     # mt_perf_path = paths["prediction_output_dirs"]["cross_feature_predictions"][experiment]
@@ -89,7 +90,7 @@ if do_multitask_performance:
                 save_path=mt_perf_path,
                 save_fname=f"{experiment}_{group_name}_{pred}_bar")
         except Exception as e:
-            print(e)
+            print(e)   
             continue
 
         vis.plotPoorPredictionFeatureDistribution(
@@ -184,7 +185,7 @@ if do_multitask_performance:
 
 
 # %% ------------------- PCA of embeddings
-do_pca = False 
+do_pca = True 
 if do_pca:
     def center_rows(df):
         return df.sub(df.mean(axis=1), axis=0)
@@ -248,44 +249,119 @@ if do_pca:
 
 
 
-    # experiments = {
-    #     # "scale_rows_only": lambda df: scale_rows(df),
-    #     # "center_and_scale_rows": lambda df: scale_rows(center_rows(df)),
-    #     # "center_scale_rows_then_scale_columns": lambda df: scale_columns(scale_rows(center_rows(df))),
-    #     "center_scale_rows_then_center_scale_columns": lambda df: scale_columns(center_columns(scale_rows(center_rows(df)))),
-    # }
+    feature_names = ["chemberta", "molformer", "mordred", "rdkit"]
+    property_names = ["bp", "logd", "pka", "ld50", "pic50"]
 
-    # feature_names = ["chemberta", "molformer", "mordred", "rdkit"]
-    # # feature_names = ["molformer-c3-1b", "molformer", "selformer", "chemberta", "chembertasey"]
-    # MIN_MW = 500
-    # MAX_MW = None
+    # Keep transposed workflow available (features as rows, IDs as columns)
+    do_pca_transposed = False
+    do_full_pca_transposed = False
+    if do_pca_transposed:
+        experiments = {
+            "center_scale_rows_then_center_scale_columns": lambda df: scale_columns(center_columns(scale_rows(center_rows(df)))),
+        }
+        MIN_MW = None
+        MAX_MW = None
+        sampled_ids = None
 
-    # for experiment_name, transform in experiments.items():
-    #     final_df = pd.DataFrame()
-    #     rdkit_df = pd.read_csv(paths["full_features"]["all"]["rdkit"], index_col=0)
-    #     selected_ids = get_ids_in_mw_range(rdkit_df, min_mw=MIN_MW, max_mw=MAX_MW)
+        for experiment_name, transform in experiments.items():
+            final_df_t = pd.DataFrame()
+            rdkit_df = pd.read_csv(paths["full_features"]["all"]["rdkit"], index_col=0)
+            selected_ids = get_ids_in_mw_range(rdkit_df, min_mw=MIN_MW, max_mw=MAX_MW)
+            if sampled_ids is None:
+                n_ids = min(2000, len(selected_ids))
+                sampled_ids = (
+                    pd.Index(selected_ids)
+                    .to_series()
+                    .sample(n=n_ids, random_state=42, replace=False)
+                    .index
+                )
 
-    #     for feat in feature_names:
-    #         temp_df = pd.read_csv(paths["full_features"]["all"][feat], index_col=0)
-    #         temp_df = temp_df.loc[temp_df.index.intersection(selected_ids)].copy()
-    #         temp_df = temp_df.T
-    #         temp_scaled = transform(temp_df)
-    #         temp_scaled["Source"] = feat
-    #         final_df = pd.concat([final_df, temp_scaled], axis=0)
+            for feat in feature_names:
+                temp_df = pd.read_csv(paths["full_features"]["all"][feat], index_col=0)
+                temp_df = temp_df.loc[temp_df.index.intersection(sampled_ids)].copy()
+                temp_df = temp_df.T
+                temp_scaled = transform(temp_df)
+                temp_scaled["Source"] = feat
+                final_df_t = pd.concat([final_df_t, temp_scaled], axis=0)
 
-    #     print(experiment_name, final_df.shape)
-    #     final_df = final_df.dropna(axis=1)
-    #     print(experiment_name, final_df.shape)
+            print(f"{experiment_name} (with .T) before dropna:", final_df_t.shape)
+            final_df_t = final_df_t.dropna(axis=1)
+            print(f"{experiment_name} (with .T) after dropna:", final_df_t.shape)
 
-    #     fig, pca_df, loadings_df, abs_loadings_df = vis.plotPCA(
-    #         data_dict={"Data": final_df},
-    #         n_components=5,
-    #         plot_area=False,
-    #         save_plot=True,
-    #         save_path=RESULTS_DIR,
-    #         save_fname=f"mw__inverted_feature_pcs_{experiment_name}",
-    #         axis_fontsize=14,
-    #     )
+            fig, pca_df, loadings_df, abs_loadings_df = vis.plotPCABiplot(
+                data_dict={"Data": final_df_t},
+                pc_x=1,
+                pc_y=2,
+                n_components=5,
+                top_n_loadings=20,
+                plot_area=False,
+                save_plot=True,
+                save_path=RESULTS_DIR,
+                save_fname=f"inverted_feature_biplot_{experiment_name}",
+                axis_fontsize=14,
+                label_fontsize=10,
+                legend_fontsize=10,
+            )
+
+            if do_full_pca_transposed:
+                fig, pca_df, loadings_df, abs_loadings_df = vis.plotPCA(
+                    data_dict={"Data": final_df_t},
+                    n_components=5,
+                    plot_area=False,
+                    save_plot=True,
+                    save_path=RESULTS_DIR,
+                    save_fname=f"inverted_feature_pca_{experiment_name}",
+                    axis_fontsize=14,
+                )
+
+    # Property-wise biplots (no transpose)
+    do_property_full_pca = False
+    for prop in property_names:
+        for feat in feature_names:
+            train_path = paths["imp_dirs"]["datasets_dir"] / "training_data" / f"{prop}_model_training.csv"
+            val_path = paths["imp_dirs"]["datasets_dir"] / "training_data" / f"{prop}_model_validation.csv"
+
+            train_df = getFeatures(train_path, feature_name=feat)
+            val_df = getFeatures(val_path, feature_name=feat)
+
+            # Keep common descriptor columns for train/val before PCA
+            common_cols = train_df.columns.intersection(val_df.columns)
+            if len(common_cols) == 0:
+                print(f"Skipping {prop}/{feat}: no common descriptor columns between train and val.")
+                continue
+
+            train_df = train_df[common_cols].copy()
+            val_df = val_df[common_cols].copy()
+
+            print(f"{prop} / {feat}: train={train_df.shape}, val={val_df.shape}")
+
+            fig, pca_df, loadings_df, abs_loadings_df = vis.plotPCABiplot(
+                data_dict={"train": train_df, "val": val_df},
+                pc_x=1,
+                pc_y=2,
+                n_components=5,
+                top_n_loadings=25,
+                plot_area=False,
+                remove_outliers=False,
+                scale=True,
+                save_plot=True,
+                save_path=RESULTS_DIR / "property_biplots" / prop,
+                save_fname=f"{prop}_{feat}_train_val_biplot",
+                axis_fontsize=14,
+                label_fontsize=10,
+                legend_fontsize=10,
+            )
+
+            if do_property_full_pca:
+                fig, pca_df, loadings_df, abs_loadings_df = vis.plotPCA(
+                    data_dict={"train": train_df, "val": val_df},
+                    n_components=5,
+                    plot_area=False,
+                    save_plot=True,
+                    save_path=RESULTS_DIR / "property_biplots" / prop,
+                    save_fname=f"{prop}_{feat}_train_val_pca",
+                    axis_fontsize=14,
+                )
 
 
 

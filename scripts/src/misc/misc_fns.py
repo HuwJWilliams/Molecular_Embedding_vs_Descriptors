@@ -187,3 +187,62 @@ def getFeatures(
     rows = feature_df.loc[feature_df.index.intersection(id_ls)]
 
     return rows
+
+def center_rows(df):
+    return df.sub(df.mean(axis=1), axis=0)
+
+def scale_rows(df):
+    denom = df.abs().max(axis=1).replace(0, 1)
+    return df.div(denom, axis=0)
+
+def center_columns(df):
+    return df.sub(df.mean(axis=0), axis=1)
+
+def scale_columns(df):
+    denom = df.abs().max(axis=0).replace(0, 1)
+    return df.div(denom, axis=1)
+
+def filter_molecules_by_mw(
+    df: pd.DataFrame,
+    min_mw: float | None = None,
+    max_mw: float | None = None,
+    mw_column_candidates: tuple[str, ...] = ("MolWt_rdkit", "MW_mordred", "MolWt"),
+) -> pd.DataFrame:
+    """Filter a feature dataframe by an existing molecular-weight descriptor column."""
+
+    if min_mw is None and max_mw is None:
+        return df
+
+    mw_column = next((col for col in mw_column_candidates if col in df.columns), None)
+    if mw_column is None:
+        raise ValueError(
+            "No molecular-weight column found. "
+            f"Tried: {list(mw_column_candidates)}"
+        )
+
+    filtered_df = df.copy()
+
+    if min_mw is not None:
+        filtered_df = filtered_df[filtered_df[mw_column] >= min_mw]
+
+    if max_mw is not None:
+        filtered_df = filtered_df[filtered_df[mw_column] <= max_mw]
+
+    return filtered_df
+
+
+def get_ids_in_mw_range(
+    df: pd.DataFrame,
+    min_mw: float | None = None,
+    max_mw: float | None = None,
+    mw_column_candidates: tuple[str, ...] = ("MolWt_rdkit", "MW_mordred", "MolWt"),
+) -> pd.Index:
+    """Get the IDs that fall within a molecular-weight range."""
+
+    filtered_df = filter_molecules_by_mw(
+        df=df,
+        min_mw=min_mw,
+        max_mw=max_mw,
+        mw_column_candidates=mw_column_candidates,
+    )
+    return filtered_df.index

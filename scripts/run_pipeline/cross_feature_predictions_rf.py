@@ -7,7 +7,6 @@ Script to train Random Forest Regressors on one set of features to predict anoth
 import sys
 import pandas as pd
 from pathlib import Path
-import numpy as np
 import argparse
 
 # --- Paths

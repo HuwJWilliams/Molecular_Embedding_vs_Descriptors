@@ -1792,6 +1792,411 @@ class Visualise():
             )
 
         return fig, pca_df, loadings_df, abs_loadings_df
+
+    def plotPCABiplot(
+        self,
+        data_dict: dict[str, pd.DataFrame | Path | str],
+        pc_x: int = 1,
+        pc_y: int = 2,
+        n_components: int | None = None,
+        contamination: float = 0.00001,
+        remove_outliers: bool = True,
+        random_seed: int = None,
+        scale: bool = True,
+        top_n_loadings: int = 15,
+        loadings_scale: float | str = "auto",
+        loading_color: str = "black",
+        loading_alpha: float = 0.8,
+        point_alpha: float = 0.4,
+        point_size: int = 30,
+        plot_area: bool = False,
+        plot_title: str = "PCA Biplot",
+        axis_fontsize: int = 18,
+        label_fontsize: int = 12,
+        legend_fontsize: int = 12,
+        show_legend: bool = True,
+        max_feature_label_len: int = 30,
+        save_plot: bool = False,
+        save_path: Path = Path("./"),
+        save_fname: str = "PCA_biplot",
+        dpi: int = 400,
+        save_extra_data: bool = False,
+        loadings_filename: str = "pca_biplot_loadings",
+        pca_df_filename: str = "pca_biplot_components",
+        wildcard: str = "*",
+    ):
+        """
+        Generate a PCA biplot for two selected principal components.
+
+        The function combines all datasets, keeps only common numeric descriptors,
+        performs PCA, and visualises sample scores as a scatter plot with feature
+        loading vectors overlaid as arrows.
+
+        Parameters
+        ----------
+        data_dict : dict[str, pd.DataFrame | Path | str]
+                        Dictionary mapping dataset names to either in-memory DataFrames
+                        or data file paths.
+        pc_x : int, optional
+                        Principal component index for the x-axis (1-based). Default is 1.
+        pc_y : int, optional
+                        Principal component index for the y-axis (1-based). Default is 2.
+        n_components : int | None, optional
+                        Number of components to compute. If None, it is set to
+                        max(pc_x, pc_y). Default is None.
+        contamination : float, optional
+                        Expected outlier fraction for Local Outlier Factor when
+                        remove_outliers=True. Default is 1e-5.
+        remove_outliers : bool, optional
+                        Whether to remove score outliers before plotting. Default is True.
+        random_seed : int | None, optional
+                        Random seed for reproducibility. If None, one is generated.
+        scale : bool, optional
+                        Whether to standardise descriptors before PCA. Default is True.
+        top_n_loadings : int, optional
+                        Number of strongest feature vectors to draw, ranked by loading
+                        magnitude in the selected PC plane. Default is 15.
+        loadings_scale : float | str, optional
+                        Scale factor for loading vectors. Use "auto" to infer from data.
+                        Default is "auto".
+        loading_color : str, optional
+                        Colour for loading vectors and labels. Default is "black".
+        loading_alpha : float, optional
+                        Transparency for loading vectors and labels. Default is 0.8.
+        point_alpha : float, optional
+                        Transparency for PCA points. Default is 0.4.
+        point_size : int, optional
+                        Marker size for PCA points. Default is 30.
+        plot_area : bool, optional
+                        Whether to overlay convex hulls by source. Default is False.
+        plot_title : str, optional
+                        Plot title. Default is "PCA Biplot".
+        axis_fontsize : int, optional
+                        Font size for axis labels. Default is 18.
+        label_fontsize : int, optional
+                        Font size for loading labels and ticks. Default is 12.
+        legend_fontsize : int, optional
+                        Font size for legend. Default is 12.
+        show_legend : bool, optional
+                        Whether to show the source legend. Default is True.
+        max_feature_label_len : int, optional
+                        Maximum loading-label length before truncation. Default is 30.
+        save_plot : bool, optional
+                        Whether to save the generated figure. Default is False.
+        save_path : Path, optional
+                        Output folder for plots/data. Default is current directory.
+        save_fname : str, optional
+                        Output filename for the biplot image. Default is "PCA_biplot".
+        dpi : int, optional
+                        Figure DPI used when saving. Default is 400.
+        save_extra_data : bool, optional
+                        Whether to export PCA scores and loadings to CSV. Default is False.
+        loadings_filename : str, optional
+                        Base filename for saving loading tables. Default is "pca_biplot_loadings".
+        pca_df_filename : str, optional
+                        Base filename for saving PCA score table. Default is "pca_biplot_components".
+        wildcard : str, optional
+                        Wildcard passed to loadData for multi-file inputs. Default is "*".
+
+        Returns
+        -------
+        fig : matplotlib.figure.Figure
+                        Generated biplot figure.
+        pca_df : pd.DataFrame
+                        PCA score table with source labels.
+        loadings_df : pd.DataFrame
+                        PCA loading table.
+        abs_loadings_df : pd.DataFrame
+                        Absolute PCA loading table.
+        """
+
+        if pc_x == pc_y:
+            raise ValueError("pc_x and pc_y must be different component indices.")
+        if pc_x < 1 or pc_y < 1:
+            raise ValueError("pc_x and pc_y must be 1-based positive indices.")
+
+        if n_components is None:
+            n_components = max(pc_x, pc_y)
+        if n_components < max(pc_x, pc_y):
+            raise ValueError("n_components must be >= max(pc_x, pc_y).")
+
+        if random_seed is None:
+            random_seed = rand.randint(0, 2**31)
+            print(f"PCA biplot random seed: {random_seed}")
+        np.random.seed(random_seed)
+
+        full_loaded_data = {}
+        numeric_cols = {}
+
+        # Load and label all datasets
+        for key, df in data_dict.items():
+            loaded_df = loadData(df=df, index_col="ID", wildcard=wildcard)
+            if "Source" not in loaded_df.columns:
+                loaded_df["Source"] = key
+            full_loaded_data[key] = loaded_df
+
+            numeric_cols[key] = [
+                col for col in loaded_df.columns
+                if pd.to_numeric(loaded_df[col], errors="coerce").notna().all()
+            ]
+
+        data_dict = full_loaded_data
+
+        # Keep only common numeric columns
+        common_cols = set.intersection(*[set(cols) for cols in numeric_cols.values()])
+        common_cols = list(common_cols)
+        if not common_cols:
+            raise ValueError("No common numeric columns found across datasets.")
+
+        # Combine rows from all sources
+        combined_df = pd.concat(
+            [df[common_cols + ["Source"]] for df in data_dict.values()],
+            axis=0
+        ).dropna()
+
+        if scale:
+            scaler = StandardScaler()
+            scaled = pd.DataFrame(
+                scaler.fit_transform(combined_df[common_cols]),
+                columns=common_cols,
+                index=combined_df.index,
+            )
+            scaled["Source"] = combined_df["Source"]
+        else:
+            scaled = combined_df[common_cols].copy()
+            scaled["Source"] = combined_df["Source"]
+
+        pca = PCA(n_components=n_components)
+        principal_components = pca.fit_transform(scaled[common_cols])
+        explained_var = pca.explained_variance_ratio_ * 100
+
+        # Loadings
+        loadings = pca.components_.T * np.sqrt(pca.explained_variance_)
+        loadings_df = pd.DataFrame(
+            loadings,
+            columns=[f"PC{i+1}" for i in range(n_components)],
+            index=common_cols
+        )
+        abs_loadings_df = loadings_df.abs().rename_axis("Features")
+
+        if save_extra_data:
+            save_path.mkdir(parents=True, exist_ok=True)
+            loadings_df.to_csv(save_path / f"{loadings_filename}.csv", index_label="Features")
+            abs_loadings_df.to_csv(save_path / f"{loadings_filename}_abs.csv", index_label="Features")
+
+        pca_df = pd.DataFrame(
+            principal_components,
+            columns=[f"PC{i+1}" for i in range(n_components)],
+            index=combined_df.index
+        )
+        pca_df["Source"] = combined_df["Source"]
+
+        if remove_outliers:
+            lof = LocalOutlierFactor(n_neighbors=20, contamination=contamination)
+            mask = lof.fit_predict(pca_df[[f"PC{i+1}" for i in range(n_components)]])
+            pca_df = pca_df[mask == 1]
+
+        if save_extra_data:
+            pca_df.to_csv(save_path / f"{pca_df_filename}.csv.gz", index_label="ID", compression="gzip")
+
+        pcx_name = f"PC{pc_x}"
+        pcy_name = f"PC{pc_y}"
+        if pcx_name not in pca_df.columns or pcy_name not in pca_df.columns:
+            raise ValueError("Selected PC axis is out of range for computed PCA output.")
+
+        # Colors
+        palette = sns.color_palette("dark")
+        source_labels = pca_df["Source"].unique()
+        source_colors = {src: palette[i % len(palette)] for i, src in enumerate(source_labels)}
+
+        fig, ax = plt.subplots(figsize=(9, 8))
+
+        sns.scatterplot(
+            x=pcx_name,
+            y=pcy_name,
+            hue="Source",
+            data=pca_df,
+            ax=ax,
+            palette=source_colors,
+            alpha=point_alpha,
+            s=point_size,
+            edgecolor=None,
+        )
+
+        if plot_area:
+            for src in source_labels:
+                pts = pca_df[pca_df["Source"] == src][[pcx_name, pcy_name]].values
+                if len(pts) > 3:
+                    hull = ConvexHull(pts)
+                    hull_pts = np.append(hull.vertices, hull.vertices[0])
+                    ax.fill(
+                        pts[hull_pts, 0],
+                        pts[hull_pts, 1],
+                        alpha=0.15,
+                        color=source_colors[src],
+                        edgecolor=source_colors[src],
+                    )
+
+        # Choose strongest vectors in selected 2D plane
+        selected_loadings = loadings_df[[pcx_name, pcy_name]].copy()
+        selected_loadings["magnitude"] = np.sqrt(
+            selected_loadings[pcx_name] ** 2 + selected_loadings[pcy_name] ** 2
+        )
+        selected_loadings = selected_loadings.sort_values("magnitude", ascending=False).head(top_n_loadings)
+
+        # Scale loadings so arrows are visible in score space
+        x_span = pca_df[pcx_name].max() - pca_df[pcx_name].min()
+        y_span = pca_df[pcy_name].max() - pca_df[pcy_name].min()
+        max_loading_x = selected_loadings[pcx_name].abs().max()
+        max_loading_y = selected_loadings[pcy_name].abs().max()
+
+        if loadings_scale == "auto":
+            scale_x = (x_span / (2 * max_loading_x)) if max_loading_x > 0 else 1.0
+            scale_y = (y_span / (2 * max_loading_y)) if max_loading_y > 0 else 1.0
+            arrow_scale = 0.85 * min(scale_x, scale_y)
+        else:
+            arrow_scale = float(loadings_scale)
+
+        arrow_ends = []
+        for feature, row in selected_loadings.iterrows():
+            x_end = row[pcx_name] * arrow_scale
+            y_end = row[pcy_name] * arrow_scale
+            arrow_ends.append((x_end, y_end))
+            ax.annotate(
+                "",
+                xy=(x_end, y_end),
+                xytext=(0, 0),
+                arrowprops=dict(arrowstyle="-|>", lw=1.2, color=loading_color, alpha=loading_alpha),
+            )
+            label = textwrap.shorten(str(feature), width=max_feature_label_len, placeholder="...")
+            ax.text(
+                x_end * 1.04,
+                y_end * 1.04,
+                label,
+                fontsize=label_fontsize,
+                color=loading_color,
+                alpha=loading_alpha,
+                ha="center",
+                va="center",
+            )
+
+        # Keep origin centered and axes square with equal numeric span.
+        point_extent = float(
+            np.nanmax(
+                np.abs(
+                    pca_df[[pcx_name, pcy_name]].to_numpy(dtype=float)
+                )
+            )
+        )
+        if arrow_ends:
+            arrow_extent = float(np.nanmax(np.abs(np.array(arrow_ends, dtype=float))))
+            axis_extent = max(point_extent, arrow_extent * 1.08)
+        else:
+            axis_extent = point_extent
+
+        if not np.isfinite(axis_extent) or axis_extent <= 0:
+            axis_extent = 1.0
+        axis_extent *= 1.10
+
+        ax.set_xlim(-axis_extent, axis_extent)
+        ax.set_ylim(-axis_extent, axis_extent)
+        ax.set_aspect("equal", adjustable="box")
+        if hasattr(ax, "set_box_aspect"):
+            ax.set_box_aspect(1)
+
+        ax.axhline(0, color="grey", lw=0.8, alpha=0.4)
+        ax.axvline(0, color="grey", lw=0.8, alpha=0.4)
+        ax.set_xlabel(f"{pcx_name} ({explained_var[pc_x - 1]:.1f}% var)", fontsize=axis_fontsize)
+        ax.set_ylabel(f"{pcy_name} ({explained_var[pc_y - 1]:.1f}% var)", fontsize=axis_fontsize)
+        ax.set_title(plot_title, fontsize=axis_fontsize + 2, pad=12)
+        ax.tick_params(axis="both", labelsize=label_fontsize)
+
+        legend = ax.get_legend()
+        if legend is not None:
+            if show_legend:
+                legend.set_title("Source")
+                plt.setp(legend.get_texts(), fontsize=legend_fontsize)
+                if legend.get_title() is not None:
+                    legend.get_title().set_fontsize(legend_fontsize)
+            else:
+                legend.remove()
+
+        fig.tight_layout()
+
+        self._savePlot(
+            save_plot=save_plot,
+            save_path=save_path,
+            save_fname=save_fname,
+            dpi=dpi,
+            description="PCA biplot",
+            fig=fig
+        )
+
+        return fig, pca_df, loadings_df, abs_loadings_df
+    
+    def plotLoadingsHeatmap(
+        self,
+        loadings_df: pd.DataFrame,
+        pc_x: int = 1,
+        pc_y: int = 2,
+        top_n: int = 100,
+        cmap: str = "coolwarm",
+        center: float = 0.0,
+        figsize: tuple | None = None,
+        title: str | None = None,
+        label_fontsize: int = 12,
+        tick_fontsize: int = 10,
+        save_plot: bool = False,
+        save_path: Union[str, Path] = Path("./"),
+        save_fname: str = "pca_loadings_heatmap",
+        dpi: int = 400,
+    ):
+        """
+        Plot a heatmap of top PCA loadings for two selected principal components.
+
+        Features are ranked by loading magnitude in the selected PC plane:
+        sqrt(PCx^2 + PCy^2), then the top-N rows are visualised.
+        """
+        pcx_name = f"PC{pc_x}"
+        pcy_name = f"PC{pc_y}"
+        for col in [pcx_name, pcy_name]:
+            if col not in loadings_df.columns:
+                raise ValueError(f"{col} not found in loadings_df columns.")
+
+        heat_df = loadings_df[[pcx_name, pcy_name]].copy()
+        heat_df["magnitude"] = np.sqrt((heat_df[pcx_name] ** 2) + (heat_df[pcy_name] ** 2))
+        heat_df = heat_df.sort_values("magnitude", ascending=False).head(top_n).drop(columns="magnitude")
+
+        if figsize is None:
+            fig_height = max(8, min(28, 0.22 * len(heat_df)))
+            figsize = (8, fig_height)
+
+        fig, ax = plt.subplots(figsize=figsize)
+        sns.heatmap(
+            heat_df,
+            cmap=cmap,
+            center=center,
+            linewidths=0.15,
+            linecolor="white",
+            ax=ax,
+            cbar_kws={"label": "Loading"},
+        )
+        ax.set_title(title or f"Top {len(heat_df)} loadings heatmap ({pcx_name} / {pcy_name})")
+        ax.set_xlabel("Principal Components", fontsize=label_fontsize)
+        ax.set_ylabel("Features", fontsize=label_fontsize)
+        ax.tick_params(axis="both", labelsize=tick_fontsize)
+        fig.tight_layout()
+
+        self._savePlot(
+            save_plot=save_plot,
+            save_path=save_path,
+            save_fname=save_fname,
+            dpi=dpi,
+            description="PCA loadings heatmap",
+            fig=fig,
+        )
+
+        return fig, heat_df
     
     def plotNumUniqueDescValues(
             self,

@@ -11,3 +11,4 @@ results_pre_3D/
 *.xml
 *.png
 *.json
+.codex
