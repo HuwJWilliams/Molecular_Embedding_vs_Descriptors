@@ -456,7 +456,6 @@ elif args.type == "joined":
     aligned_blocks = []
     for feat, temp_df in joined_blocks:
         aligned_df = temp_df.loc[shared_ids].copy()
-        aligned_df = aligned_df.add_prefix(f"{feat}__")
         aligned_blocks.append(aligned_df)
 
     final_pca_df = pd.concat(aligned_blocks, axis=1).dropna(axis=0)
