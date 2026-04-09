@@ -823,7 +823,6 @@ class Visualise():
                 save_path.mkdir(parents=True, exist_ok=True)
                 plt.savefig(save_path / f"{p_desc}_distribution.png")
 
-
     def plotMemberRadar(
         self,
         perf_df,
@@ -2541,14 +2540,15 @@ class Visualise():
     
     def shapAnalysis(
             self,
-            model,
-            features,
-            output_dir,
-            max_bg,
-            max_explain, 
+            model: str | Path,
+            features: str | Path,
+            pred_feature: str,
+            output_dir:  Path,
+            max_bg: int,
+            max_explain: int, 
             explainer: shap.Explainer= shap.TreeExplainer,
             plot:bool=False,
-            max_display: int=20
+            max_display: int=20,
     ):
         
         model = joblib.load(model)
@@ -2579,10 +2579,10 @@ class Visualise():
             plt.figure(figsize=(10, 6))
             shap.plots.beeswarm(shap_values, max_display=max_display, show=False)
             plt.tight_layout()
-            plt.savefig(output_dir / f"shap_beeswarm_top{max_display}.png", dpi=200)
+            plt.savefig(output_dir / f"{pred_feature}_shap_beeswarm_top{max_display}.png", dpi=200)
             plt.close()
 
-            print(f"Saved: {output_dir / f'shap_beeswarm_top{max_display}.png'}")
+            print(f"Saved: {output_dir / f'{pred_feature}_shap_beeswarm_top{max_display}.png'}")
 
         return shap_values, feat_explain, loaded_explainer
 
@@ -2590,9 +2590,10 @@ class Visualise():
     def shapDependencePlot(
             self,
             shap_values,
-            feat_explain,
+            feat_explain: pd.DataFrame,
             explainer,
-            output_dir
+            output_dir: Path,
+            pred_feature: str,
     ):
 
         # Normalize SHAP output to a plain numeric matrix
@@ -2623,20 +2624,20 @@ class Visualise():
             plt.figure(figsize=(8, 5))
             shap.plots.scatter(exp[:, feat], show=False)
             plt.tight_layout()
-            out = output_dir / f"shap_dependence_{feat}.png"
+            out = output_dir / f"{pred_feature}_shap_dependence_{feat}.png"
             plt.savefig(out, dpi=200)
             plt.close()
             print(f"Saved: {out}")
 
     def shapAnalysisForGroups(
         self,
-        models_dir,
-        features,
-        output_dir,
-        max_bg,
-        max_explain,
-        descriptor_groups,
-        top_n=12,
+        models_dir: Path,
+        features: Path,
+        output_dir: Path,
+        max_bg: int,
+        max_explain: int,
+        descriptor_groups: dict,
+        top_n: int=12,
     ):
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)

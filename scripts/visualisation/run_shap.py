@@ -138,6 +138,7 @@ tr_feat_path = results_dir / "training_features.csv.gz"
 shap_v, feat_explain, explainer = v.shapAnalysis(
     model=model_path,
     features=tr_feat_path,
+    pred_feature=pred_feat,
     output_dir=shap_dir,
     max_bg=bg,
     max_explain=exp,
@@ -148,6 +149,7 @@ shap_v, feat_explain, explainer = v.shapAnalysis(
 if args.plot_dep:
     v.shapDependencePlot(
         shap_values=shap_v,
+        pred_feature=pred_feat,
         feat_explain=feat_explain, 
         explainer=explainer,
         output_dir=shap_dir
