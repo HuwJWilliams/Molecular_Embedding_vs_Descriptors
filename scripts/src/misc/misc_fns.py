@@ -230,7 +230,6 @@ def filter_molecules_by_mw(
 
     return filtered_df
 
-
 def get_ids_in_mw_range(
     df: pd.DataFrame,
     min_mw: float | None = None,
@@ -246,3 +245,20 @@ def get_ids_in_mw_range(
         mw_column_candidates=mw_column_candidates,
     )
     return filtered_df.index
+
+def check_path_exists(path, expect=None, non_empty=False, name="path"):
+    p = Path(path)
+
+    if not p.exists():
+        raise FileNotFoundError(f"{name} does not exist: {p}")
+
+    if expect == "file" and not p.is_file():
+        raise NotADirectoryError(f"{name} is not a file: {p}")
+
+    if expect == "dir" and not p.is_dir():
+        raise NotADirectoryError(f"{name} is not a directory: {p}")
+
+    if non_empty and p.is_file() and p.stat().st_size == 0:
+        raise ValueError(f"{name} is empty: {p}")
+
+    return p

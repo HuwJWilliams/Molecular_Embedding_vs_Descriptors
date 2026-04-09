@@ -6,18 +6,14 @@ import numpy as np
 import shap
 import matplotlib.pyplot as plt
 import joblib
+from glob import glob
 
-sys.path.insert(0, "users/yhb18174/TL_project/scripts/config/pathing")
+sys.path.insert(0, "/users/yhb18174/TL_project/scripts/src/pathing/")
 from get_paths import getPaths
+
+sys.path.insert(0, "/users/yhb18174/TL_project/scripts/src/datasets")
+from group_descriptors import getGroups
 
 paths=getPaths()
 
-test_dir=paths["imp_dirs"]["results_dir"] / "test_dir"
-model_path = test_dir / "training_data" / "final_model.pkl"
-training_features = test_dir / "training_data" / "training_features.csv.gz"
-output_dir = test_dir / "shap_test"
-# endregion
-
-
-# region Asset loading
-
+#endregion

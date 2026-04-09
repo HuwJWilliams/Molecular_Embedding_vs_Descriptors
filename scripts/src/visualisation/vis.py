@@ -1,7 +1,7 @@
 """
 Script that holds the functions used to visualise all of the data in this project
 """
-# %% --- Imports
+# region --- Imports
 import pandas as pd
 from pathlib import Path
 import sys
@@ -17,7 +17,9 @@ from sklearn.neighbors import LocalOutlierFactor
 from scipy.spatial import ConvexHull
 import random as rand
 from typing import Union
+import shap
 import textwrap
+import joblib
 
 FILE_DIR = Path(__file__).resolve()
 PROJ_DIR = FILE_DIR.parents[3]
@@ -32,9 +34,10 @@ from group_descriptors import getGroups
 
 sys.path.insert(0, str(SRC_DIR / "misc"))
 from misc_fns import loadData
+# endregion
 
 # %% --- Visualisation Class
-
+# region Established Code
 class Visualise():
     """
     Class containing all visualisation and plotting functions used in this project.
@@ -2490,11 +2493,6 @@ class Visualise():
         plt.show()
         return summary_df
 
-    def plotPredictions(
-            self,
-    ):
-        return
-
     def plotCrossFeatureCorrelationHeatmap(
         self,
         df_a: pd.DataFrame,
@@ -2537,26 +2535,230 @@ class Visualise():
         plt.tight_layout()
         plt.savefig(out_dir / f"{name_a}_vs_{name_b}_correlation_heatmap.png")
         plt.close()
-
-
-    def featImportanceCorrelationTripartite(
-            importance_df_ls,
-            tr_df,
-            te_df,
+# endregion
+    
+# region Code in Progress
+    
+    def shapAnalysis(
+            self,
+            model,
+            features,
+            output_dir,
+            max_bg,
+            max_explain, 
+            explainer: shap.Explainer= shap.TreeExplainer,
+            plot:bool=False,
+            max_display: int=20
     ):
         
-        importance_df_ls = glob(importance_df_ls)
-        tr_df = pd.read_csv(tr_df, index_col=0)
-        te_df = pd.read_csv(te_df, index_col=0)
+        model = joblib.load(model)
+        feats = pd.read_csv(features, index_col=0)
 
-        common_ids = tr_df.index.intersection(te_df.index)
-        X = tr_df.loc[common_ids].select_dtypes("number")
-        Y = te_df.loc[common_ids].select_dtypes("number")
+        print(f"Loaded model type: {type(model)}")
+        print(f"X shape: {feats.shape}")
+        print(f"First 5 feature columns: {list(feats.columns[:5])}")
 
-        cross_corr = pd.DataFrame(
-            np.corrcoes(X.tonumpy().T, Y.to_numpy().T)[:X.shape[1], X.shape[1]:],
-            index=X.columns,
-            columns=Y.columns
+        # If model exposes expected feature count, confirm it matches
+        n_features_model = getattr(model, "n_features_in_", None)
+        if n_features_model is not None and n_features_model != feats.shape[1]:
+            raise ValueError(
+                f"Feature mismatch: model expects {n_features_model}, X has {feats.shape[1]}"
+            )
+
+
+        bg = feats.sample(min(max_bg, len(feats)), random_state=42)
+        feat_explain = feats.sample(min(max_explain, len(feats)), random_state=4)
+
+        loaded_explainer = explainer(model, bg)
+
+        shap_values = loaded_explainer(feat_explain)
+
+
+        # Global feature impact summary (distribution across explained rows)
+        if plot:
+            plt.figure(figsize=(10, 6))
+            shap.plots.beeswarm(shap_values, max_display=max_display, show=False)
+            plt.tight_layout()
+            plt.savefig(output_dir / f"shap_beeswarm_top{max_display}.png", dpi=200)
+            plt.close()
+
+            print(f"Saved: {output_dir / f'shap_beeswarm_top{max_display}.png'}")
+
+        return shap_values, feat_explain, loaded_explainer
+
+
+    def shapDependencePlot(
+            self,
+            shap_values,
+            feat_explain,
+            explainer,
+            output_dir
+    ):
+
+        # Normalize SHAP output to a plain numeric matrix
+        sv_obj = shap_values[0] if isinstance(shap_values, list) else shap_values
+        sv = sv_obj.values if hasattr(sv_obj, "values") else np.asarray(sv_obj)
+
+        # Rank by mean absolute SHAP
+        mean_abs = np.abs(sv).mean(axis=0)
+        rank_idx = np.argsort(mean_abs)[::-1]
+        top_n = 12
+        top_idx = rank_idx[:top_n]
+        top_feats = feat_explain.columns[top_idx].tolist()
+
+        print("Top SHAP features:")
+        for i, fidx in enumerate(top_idx, 1):
+            print(f"{i:02d}. {feat_explain.columns[fidx]}  mean|SHAP|={mean_abs[fidx]:.6g}")
+
+        # 3) Build Explanation object for scatter API
+        exp = shap.Explanation(
+            values=sv,
+            base_values=np.repeat(explainer.expected_value, feat_explain.shape[0]),
+            data=feat_explain.values,
+            feature_names=feat_explain.columns.tolist()
         )
 
-        print(cross_corr.head(10))
+        # 4) Save scatter/dependence plot for each top feature
+        for feat in top_feats:
+            plt.figure(figsize=(8, 5))
+            shap.plots.scatter(exp[:, feat], show=False)
+            plt.tight_layout()
+            out = output_dir / f"shap_dependence_{feat}.png"
+            plt.savefig(out, dpi=200)
+            plt.close()
+            print(f"Saved: {out}")
+
+    def shapAnalysisForGroups(
+        self,
+        models_dir,
+        features,
+        output_dir,
+        max_bg,
+        max_explain,
+        descriptor_groups,
+        top_n=12,
+    ):
+        output_dir = Path(output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        model_ls = glob(str(models_dir) + "/*.pkl")
+        features = pd.read_csv(features, index_col=0)
+
+        bg = features.sample(min(max_bg, len(features)), random_state=42)
+        feat_explain = features.sample(min(max_explain, len(features)), random_state=4)
+
+        all_group_summary = []
+        all_descriptor_summary = []
+
+        for group_name, desc_ls in descriptor_groups.items():
+            print("Processing group:", group_name)
+            shap_values_ls = []
+            valid_descs = []
+
+            for desc in desc_ls:
+                print("   \n-Descriptor:", desc)
+
+                model_path = next((p for p in model_ls if desc in Path(p).name), None)
+                if model_path is None:
+                    print(f"No model .pkl found for descriptor: {desc}")
+                    continue
+
+                model = joblib.load(model_path)
+                explainer = shap.TreeExplainer(model, bg)
+                shap_values = explainer(feat_explain)
+
+                shap_values_ls.append(shap_values)
+                valid_descs.append(desc)
+
+            group_rows = []
+            agg_stack = []
+
+            for desc, shap_v in zip(valid_descs, shap_values_ls):
+                vals = shap_v.values if hasattr(shap_v, "values") else np.asarray(shap_v)
+                if vals.ndim == 1:
+                    vals = vals.reshape(-1, 1)
+
+                desc_mean_abs = float(np.abs(vals).mean())
+                group_rows.append(
+                    {
+                        "group": group_name,
+                        "descriptor": desc,
+                        "mean_abs_shap": desc_mean_abs,
+                    }
+                )
+
+                if vals.shape[1] == feat_explain.shape[1]:
+                    agg_stack.append(vals)
+
+            group_df = pd.DataFrame(group_rows)
+            if group_df.empty:
+                print(f"No SHAP rows for group: {group_name}")
+                continue
+
+            group_summary = pd.DataFrame(
+                [
+                    {
+                        "group": group_name,
+                        "n_descriptors": int(group_df["descriptor"].nunique()),
+                        "group_sum_mean_abs_shap": float(group_df["mean_abs_shap"].sum()),
+                        "group_mean_mean_abs_shap": float(group_df["mean_abs_shap"].mean()),
+                    }
+                ]
+            )
+
+            print(group_summary)
+            all_descriptor_summary.append(group_df)
+            all_group_summary.append(group_summary)
+
+            # Boxplots (signed + absolute), keeping same top features for comparison
+            if agg_stack:
+                group_shap = np.mean(np.stack(agg_stack, axis=0), axis=0)
+                mean_abs = np.abs(group_shap).mean(axis=0)
+                top_idx = np.argsort(mean_abs)[::-1][:top_n]
+                top_feats = features.columns[top_idx]
+
+                # Signed SHAP violin plot
+                box_df_signed = pd.DataFrame(group_shap[:, top_idx], columns=top_feats)
+                box_long_signed = box_df_signed.melt(var_name="feature", value_name="shap_value")
+
+                plt.figure(figsize=(12, 6))
+                data_signed = [box_df_signed[col].dropna().values for col in box_df_signed.columns]
+                pos = np.arange(1, len(top_feats) + 1)
+                plt.violinplot(data_signed, positions=pos, showmeans=False, showmedians=True, showextrema=False)
+                plt.xticks(pos, top_feats, rotation=45, ha="right")
+                plt.title(f"Grouped SHAP Distribution (Signed): {group_name}")
+                plt.xlabel("Feature")
+                plt.ylabel("Aggregated SHAP value")
+                plt.tight_layout()
+                plt.savefig(output_dir / f"{group_name}_shap_violin_signed_top{top_n}.png", dpi=200)
+                plt.close()
+
+                # Absolute SHAP violin plot
+                box_df_abs = pd.DataFrame(np.abs(group_shap[:, top_idx]), columns=top_feats)
+                box_long_abs = box_df_abs.melt(var_name="feature", value_name="shap_value")
+
+                plt.figure(figsize=(12, 6))
+                data_abs = [box_df_abs[col].dropna().values for col in box_df_abs.columns]
+                pos = np.arange(1, len(top_feats) + 1)
+                plt.violinplot(data_abs, positions=pos, showmeans=False, showmedians=True, showextrema=False)
+                plt.xticks(pos, top_feats, rotation=45, ha="right")
+                plt.title(f"Grouped SHAP Distribution (Absolute): {group_name}")
+                plt.xlabel("Feature")
+                plt.ylabel("Aggregated |SHAP| value")
+                plt.tight_layout()
+                plt.savefig(output_dir / f"{group_name}_shap_violin_abs_top{top_n}.png", dpi=200)
+                plt.close()
+
+        # Save summaries
+        if all_descriptor_summary:
+            pd.concat(all_descriptor_summary, ignore_index=True).to_csv(
+                output_dir / "descriptor_shap_summary.csv", index=False
+            )
+        if all_group_summary:
+            pd.concat(all_group_summary, ignore_index=True).to_csv(
+                output_dir / "group_shap_summary.csv", index=False
+            )
+
+
+# end region
+

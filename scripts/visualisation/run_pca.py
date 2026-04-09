@@ -30,8 +30,6 @@ from misc_fns import (getFeatures, center_rows, scale_rows,
 
 sys.path.insert(0, str(SCRIPTS_DIR / "config"))
 from pipeline_config import DEFAULT_TARGET_COLUMNS, SUPPORTED_FEATURE_SETS, resolve_target_column
-
-
 # endregion
 
 # region Class and Parser Setup

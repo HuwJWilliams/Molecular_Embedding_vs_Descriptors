@@ -1,8 +1,6 @@
-# PCA Visualisation
+# 1. Run PCA Analysis (`run_pca.py`)
 
-## 1. Run PCA Analysis (`run_pca.py`)
-
-### Example: Molecule PCA per Feature Set
+## Example: Molecule PCA per Feature Set
 
 ```bash
 python run_pca.py \
@@ -14,7 +12,7 @@ python run_pca.py \
   --n-loadings 20
 ```
 
-### Example: Feature PCA (Descriptors as Points)
+## Example: Feature PCA (Descriptors as Points)
 
 ```bash
 python run_pca.py \
@@ -38,7 +36,7 @@ python run_pca.py \
   --heatmap
 ```
 
-### Arguments
+## Arguments
 
 - `--type`
   PCA mode:
@@ -96,3 +94,72 @@ python run_pca.py \
 - `feat` mode: data are transposed before PCA; this is descriptor-space analysis.
 - `joined` mode: selected feature sets are joined column-wise on common molecule IDs.
 - If using preprocessing flags (`--scale-*`, `--center-*`), avoid over-normalising unintentionally.
+
+---
+
+# 2. Run SHAP Analysis (`run_shap.py`)
+
+## Example: Beeswarm + Dependence for One Predicted Descriptor
+
+```bash
+python run_shap.py \
+  --pred-set rdkit \
+  --train-set maccs \
+  --pred-feat MaxAbsEStateIndex \
+  --results-dir lipinski_cross_feature_predictions \
+  --plot-shap \
+  --plot-dep \
+  --max-bg 200 \
+  --max-exp 500 \
+  --n-display 20
+```
+
+## Example: Group SHAP (RDKit/Mordred only)
+
+```bash
+python run_shap.py \
+  --pred-set rdkit \
+  --train-set maccs \
+  --pred-feat MaxAbsEStateIndex \
+  --results-dir lipinski_cross_feature_predictions \
+  --group-shap \
+  --top-n 12 \
+  --max-bg 100 \
+  --max-exp 300
+```
+
+## Arguments
+
+- `--pred-set`
+  Predicted feature family. Choices are from `SUPPORTED_FEATURE_SETS`.
+- `--train-set`
+  Training feature family. Choices are from `SUPPORTED_FEATURE_SETS`.
+- `--pred-feat`
+  Descriptor/target name to select the model file (script appends `_{pred_set}` internally).
+- `--results-dir`
+  Key under `paths["prediction_output_dirs"]` (for example `cross_feature_predictions` or `lipinski_cross_feature_predictions`).
+- `--max-bg`
+  Maximum rows used for SHAP background baseline sampling.
+- `--max-exp`
+  Maximum rows used for SHAP explanation sampling.
+- `--n-display`
+  Number of features to show in SHAP beeswarm.
+- `--plot-shap`
+  Save SHAP beeswarm.
+- `--plot-dep`
+  Save SHAP dependence plots for top-ranked features.
+- `--group-shap`
+  Run grouped SHAP analysis (supported for `rdkit` and `mordred` predicted sets).
+- `--top-n`
+  Number of top features to include in grouped SHAP violin plots.
+
+## Outputs
+
+- Saved under `<prediction_run_dir>/shap/`
+- Typical files:
+  - `shap_beeswarm_top*.png`
+  - `shap_dependence_*.png`
+  - `*_shap_violin_signed_top*.png`
+  - `*_shap_violin_abs_top*.png`
+  - `descriptor_shap_summary.csv`
+  - `group_shap_summary.csv`
