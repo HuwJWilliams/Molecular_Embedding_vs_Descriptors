@@ -224,7 +224,7 @@ class FeatureGenerator():
         fp_df = pd.DataFrame(
             fps,
             index=parsed_ids,
-            columns=[f"{i}_maccs" for i in range(len(fps[0]))]
+            columns=[f"{i}_morgan" for i in range(len(fps[0]))]
         )
         fp_df.index.name = "ID"
 

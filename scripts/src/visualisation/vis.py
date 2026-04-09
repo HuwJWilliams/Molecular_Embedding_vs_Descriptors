@@ -2537,3 +2537,26 @@ class Visualise():
         plt.tight_layout()
         plt.savefig(out_dir / f"{name_a}_vs_{name_b}_correlation_heatmap.png")
         plt.close()
+
+
+    def featImportanceCorrelationTripartite(
+            importance_df_ls,
+            tr_df,
+            te_df,
+    ):
+        
+        importance_df_ls = glob(importance_df_ls)
+        tr_df = pd.read_csv(tr_df, index_col=0)
+        te_df = pd.read_csv(te_df, index_col=0)
+
+        common_ids = tr_df.index.intersection(te_df.index)
+        X = tr_df.loc[common_ids].select_dtypes("number")
+        Y = te_df.loc[common_ids].select_dtypes("number")
+
+        cross_corr = pd.DataFrame(
+            np.corrcoes(X.tonumpy().T, Y.to_numpy().T)[:X.shape[1], X.shape[1]:],
+            index=X.columns,
+            columns=Y.columns
+        )
+
+        print(cross_corr.head(10))

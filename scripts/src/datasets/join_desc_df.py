@@ -26,7 +26,7 @@ paths = getPaths()
 def makeUniqueSMILES(
         properties: list=["Boiling_Point", "LogD", "LD50", "pKa", "pIC50"],
         target_dict: dict=paths["targets"],
-        override_full_csv: bool=True
+        override_full_csv: bool=True,
         ):
     """
     Creates a Data Frame which contains only unique SMILES from across all specified properties
@@ -101,6 +101,7 @@ def combineAllFeats(
     cols_to_drop: list[str] = ["SMILES"],
     properties: list = None,
     save: bool=True,
+    save_path: str | Path=paths["full_features"]["all"],
     align_common_ids: bool = False,
     max_mw: float | None = None,
     max_atoms: int | None = None,
@@ -121,8 +122,10 @@ def combineAllFeats(
         full_smi_df = pd.read_csv(full_smi_df, index_col="ID")
 
     keep_ids = set(full_smi_df.index.astype(str))
+    original_ids = set(keep_ids)
 
     if max_atoms is not None:
+        prev_keep_ids = set(keep_ids)
         atom_keep_ids = set(
             _get_ids_below_atom_threshold(
                 full_smi_df=full_smi_df,
@@ -133,6 +136,7 @@ def combineAllFeats(
         print(f"Keeping {len(keep_ids)} IDs after atom-count filter (< {max_atoms})")
 
     if max_mw is not None:
+        prev_keep_ids = set(keep_ids)
         mw_keep_ids = set(
             _get_ids_below_mw_threshold(
                 full_smi_df=full_smi_df,
@@ -143,6 +147,7 @@ def combineAllFeats(
         print(f"Keeping {len(keep_ids)} IDs after molecular-weight filter (< {max_mw})")
 
     if lipinski_criteria:
+        prev_keep_ids = set(keep_ids)
         lipinski_keep_ids = set(
             checkLipinskiCriteria(
                 df=feature_paths["all"]["rdkit"],
@@ -207,7 +212,8 @@ def combineAllFeats(
             print(f"Dropping duplicate IDs for {desc_emb}")
             full_feat_df_clean = full_feat_df_clean.loc[~full_feat_df_clean.index.duplicated(keep="first")]
 
-        if max_atoms is not None or max_mw is not None:
+        if max_atoms is not None or max_mw is not None or lipinski_criteria:
+            before_filter_ids = set(full_feat_df_clean.index.astype(str))
             full_feat_df_clean = full_feat_df_clean.loc[
                 full_feat_df_clean.index.astype(str).isin(keep_ids)
             ].copy()
@@ -222,6 +228,7 @@ def combineAllFeats(
             save=False,
         )
         for desc_emb, aligned_df in zip(built_feature_dfs.keys(), aligned_dfs):
+            before_align_ids = set(built_feature_dfs[desc_emb].index.astype(str))
             built_feature_dfs[desc_emb] = aligned_df
             print(f"Retained {len(common_ids)} common IDs for {desc_emb}")
 

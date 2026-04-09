@@ -142,7 +142,8 @@ class TL():
         save_path: str = "./",
         log_level=logging.DEBUG,
         trim_by_percentile: bool=True,
-        percentile: float=0.99
+        percentile: float=0.99,
+        save_feat_imp:bool=False
     ) -> pd.DataFrame:
         """
         Train Random Forest models for multiple target columns using logging.
@@ -183,6 +184,7 @@ class TL():
         save_path = Path(save_path)
         save_path.mkdir(parents=True, exist_ok=True)
         output_csv = save_path / output_csv
+        combined_feat_importance_csv = save_path / "all_feature_importance.csv"
 
         # Loop through each target
         for i, target_column in enumerate(targets_df.columns):
@@ -262,8 +264,40 @@ class TL():
                     plot_feat_importance=False,
                     batch_size=batch_size,
                     n_jobs=1,
-                    final_rf_seed=random_seed
-                )
+                    final_rf_seed=random_seed,
+                    final_model_name=f"{target_column}_model"
+                    )
+
+                # Maintain one cumulative feature-importance CSV:
+                # Feature, Importance_<target1>, Importance_<target2>, ...
+                if save_feat_imp and not feat_importance_df.empty:
+                    safe_target_column = str(target_column).replace("/", "_").replace("\\", "_")
+                    fi_df = feat_importance_df.copy()
+                    if "Feature" not in fi_df.columns:
+                        fi_df = fi_df.reset_index().rename(columns={"index": "Feature"})
+
+                    if "Importance" in fi_df.columns:
+                        imp_col = f"Importance_{safe_target_column}"
+                        fi_df = fi_df[["Feature", "Importance"]].rename(columns={"Importance": imp_col})
+                        fi_df = fi_df.drop_duplicates(subset=["Feature"], keep="first")
+
+                        if combined_feat_importance_csv.exists():
+                            combined_df = pd.read_csv(combined_feat_importance_csv)
+                            if "Feature" not in combined_df.columns:
+                                combined_df = combined_df.reset_index().rename(columns={"index": "Feature"})
+                            combined_df = combined_df.drop_duplicates(subset=["Feature"], keep="first")
+                            combined_df = combined_df.merge(fi_df, on="Feature", how="outer")
+                        else:
+                            combined_df = fi_df
+
+                        combined_df.to_csv(combined_feat_importance_csv, index=False)
+                    else:
+                        self.logger.warning(
+                            f"  Feature importance for {target_column} has no 'Importance' column; "
+                            "skipping cumulative feature-importance update."
+                        )
+                else:
+                    self.logger.warning(f"  No feature importance dataframe returned for {target_column}")
 
                 # Convert dict → DataFrame
                 perf_df = pd.DataFrame([performance_dict], index=[target_column])
@@ -272,8 +306,6 @@ class TL():
                 total_performance_df = pd.concat([total_performance_df, perf_df])
 
                 # Append to CSV under save_path
-
-
                 write_header = not output_csv.exists()
 
                 perf_df.to_csv(

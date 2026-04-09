@@ -30,13 +30,11 @@ from RFRegressor import RFRegressor
 # !!! NEED TO COPY PALMERCHEM RFR IN THIS REPO !!! ""
 
 paths = getPaths()
-feature_paths = paths["full_features"]
-full_feats = feature_paths["all"]
 # endregion
 
 # region Function Definitions
-def _load_feature_datasets(name: str) -> pd.DataFrame:
-    df = pd.read_csv(full_feats[name], index_col="ID")
+def _load_feature_datasets(name: str, mols:str="all") -> pd.DataFrame:
+    df = pd.read_csv(paths["full_features"][mols][name], index_col="ID")
     df = df.drop(columns=["SMILES"], errors="ignore")
     return df
 
@@ -134,6 +132,24 @@ parser.add_argument(
     help="Flag to save trained models"
 )
 
+parser.add_argument(
+    "--shuffle-data",
+    action="store_true",
+    help="Flag to shuffle the data prior to training"
+)
+
+parser.add_argument(
+    "--save-feat-imp",
+    action="store_true",
+    help="Flag to save feature importance data"
+)
+
+parser.add_argument(
+    "--lipinski-mols",
+    action="store_true",
+    help="Flag to do cross-feature predictions on Lipinksi-fitting molecules only \
+        (if created using join_all_target_molecule_datasets.py, otherwise it will crash)"
+)
 
 args = parser.parse_args()
 test = args.test
@@ -144,13 +160,22 @@ identifier = f"pred_{test}_tr_{train}"
 # endregion
 
 # region Data Handling
-train_df = _load_feature_datasets(train)
-target_df = _load_feature_datasets(test)
+mols="fit_lipinski" if args.lipinski_mols else "all"
+
+train_df = _load_feature_datasets(name=train, mols=mols)
+target_df = _load_feature_datasets(name=test, mols=mols)
 
 common_idx = train_df.index.intersection(target_df.index)
 print(f"Length of common IDs: {len(common_idx)}")
 
 train_df, target_df = train_df.loc[common_idx], target_df.loc[common_idx]
+
+if args.shuffle_data:
+    shuffled_idx = train_df.sample(
+        frac=1, replace=False, random_state=42
+        ).index
+    train_df = train_df.loc[shuffled_idx]
+    target_df = target_df.loc[shuffled_idx]
 # endregion
 
 # region Model Training
@@ -178,5 +203,6 @@ model.trainMultiTargetRFModels(
     save_path=paths["prediction_output_dirs"][save_dir][identifier],
     skip_existing=args.skip_existing,
     save_models=args.save_models,
-    random_seed=42
+    random_seed=42,
+    save_feat_imp=args.save_feat_imp
 )

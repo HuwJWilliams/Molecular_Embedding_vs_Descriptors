@@ -9,7 +9,7 @@ sys.path.insert(0, str(SRC_DIR / "pathing"))
 from get_paths import getPaths
 
 sys.path.insert(0, str(SRC_DIR / "datasets"))
-from join_desc_df import makeUniqueSMILES, combineAllFeats, getCommonIDs
+from join_desc_df import makeUniqueSMILES, combineAllFeats
 
 sys.path.insert(0, str(SCRIPTS_DIR / "config"))
 from pipeline_config import DEFAULT_TARGET_COLUMNS, SUPPORTED_FEATURE_SETS
@@ -81,19 +81,19 @@ def main():
     parser.add_argument(
         "--logp-limit",
         type=float,
-        default=5.0
+        default=6.0
     )
 
     parser.add_argument(
         "--hbd-limit",
         type=int,
-        default=5
+        default=6
     )
 
     parser.add_argument(
         "--hba-limit",
         type=int,
-        default=10
+        default=11
     )
 
     args = parser.parse_args()

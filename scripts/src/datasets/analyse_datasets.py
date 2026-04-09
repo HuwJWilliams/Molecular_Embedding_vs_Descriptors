@@ -15,13 +15,14 @@ from matplotlib.patches import Patch
 from sklearn.metrics.pairwise import cosine_similarity
 from scipy.stats import spearmanr, pearsonr
 import json
-
+import networkx as nx
 
 # % ========= Constants =========
-FILE_DIR = Path(__file__).resolve()
-PROJ_DIR = FILE_DIR.parents[3]
+FILE_DIR = Path(__file__).parent
+SRC_DIR = FILE_DIR.parent
+PROJ_DIR = SRC_DIR.parent.parent
 
-sys.path.insert(0, f"{str(FILE_DIR.parents[1])}/path")
+sys.path.insert(0, f"{str(SRC_DIR)}/pathing/")
 from get_paths import getPaths
 
 
@@ -1164,59 +1165,763 @@ def checkLipinskiCriteria(
 
     return trimmed_df.index
 
-    
-    
+def featNetworkCorrelation(df, threshold=0.3, save_path="/users/yhb18174/TL_project/results/test_network.png"):
+    corr_matrix = df.corr(numeric_only=True)
+
+    G = nx.Graph()
+    variables = list(corr_matrix.columns)
+    G.add_nodes_from(variables)
+
+    for i in range(len(variables)):
+        for j in range(i + 1, len(variables)):
+            corr = corr_matrix.iloc[i, j]
+            if pd.notna(corr) and abs(corr) > threshold:
+                G.add_edge(variables[i], variables[j], weight=float(corr))
+
+    plt.figure(figsize=(12, 10))
+    pos = nx.spring_layout(G, k=0.5, iterations=100, seed=42)
+
+    nx.draw_networkx_nodes(G, pos, node_size=500, alpha=0.9)
+
+    edges = G.edges(data=True)
+    edge_colors = ["tab:red" if d["weight"] > 0 else "tab:blue" for _, _, d in edges]
+    edge_widths = [1 + 4 * abs(d["weight"]) for _, _, d in edges]
+
+    nx.draw_networkx_edges(G, pos, edge_color=edge_colors, width=edge_widths, alpha=0.6)
+    nx.draw_networkx_labels(G, pos, font_size=7)
+
+    plt.axis("off")
+    plt.tight_layout()
+    plt.savefig(save_path, dpi=300)
+    plt.close()
+
+# featNetworkCorrelation(pd.read_csv(paths["full_features"]["all"]["rdkit"], index_col=0))
+
+# def featArcCorrelationDiagram(
+#     df,
+#     threshold=0.3,
+#     max_labels=80,
+#     figsize=(18, 6),
+#     save_path="/users/yhb18174/TL_project/results/test_arc_network.png",
+# ):
+#     """
+#     Arc diagram: features on a line, arcs connect correlated feature pairs.
+#     Red = positive correlation, Blue = negative correlation.
+#     """
+#     import numpy as np
+#     import pandas as pd
+#     import matplotlib.pyplot as plt
+#     from matplotlib.patches import Arc
+
+#     corr_matrix = df.corr(numeric_only=True)
+#     features = list(corr_matrix.columns)
+
+#     # Optional cap for readability
+#     if len(features) > max_labels:
+#         var_rank = corr_matrix.var(axis=0).sort_values(ascending=False).index[:max_labels]
+#         corr_matrix = corr_matrix.loc[var_rank, var_rank]
+#         features = list(corr_matrix.columns)
+
+#     n = len(features)
+#     x_pos = np.arange(n)
+
+#     # Collect edges above threshold
+#     edges = []
+#     for i in range(n):
+#         for j in range(i + 1, n):
+#             c = corr_matrix.iloc[i, j]
+#             if pd.notna(c) and abs(c) >= threshold:
+#                 edges.append((i, j, float(c)))
+
+#     plt.figure(figsize=figsize)
+#     ax = plt.gca()
+
+#     # Draw baseline and nodes
+#     ax.hlines(0, 0, n - 1, color="black", linewidth=1)
+#     ax.scatter(x_pos, np.zeros(n), s=25, color="black", zorder=3)
+
+#     # Draw arcs
+#     for i, j, c in edges:
+#         mid = (i + j) / 2
+#         width = j - i
+#         height = max(0.2, width * 0.35)
+#         color = "tab:red" if c > 0 else "tab:blue"
+#         lw = 0.6 + 2.5 * abs(c)
+#         arc = Arc((mid, 0), width=width, height=height, angle=0,
+#                   theta1=0, theta2=180, color=color, linewidth=lw, alpha=0.6)
+#         ax.add_patch(arc)
+
+#     # Labels
+#     for i, f in enumerate(features):
+#         ax.text(i, -0.08, f, rotation=90, ha="right", va="top", fontsize=7)
+
+#     ax.set_xlim(-1, n)
+#     ax.set_ylim(-0.2, max([1.0] + [((j - i) * 0.35) for i, j, _ in edges]) + 0.5)
+#     ax.axis("off")
+#     plt.tight_layout()
+#     plt.savefig(save_path, dpi=300)
+#     plt.close()
+
+
+from group_descriptors import getGroups
+import matplotlib.pyplot as plt
+
+def build_feature_group_map(feature_set: str):
+    group_map = getGroups(feature_set)  # {group_name: [feature1, feature2, ...]}
+    feat_to_group = {}
+    for g, feats in group_map.items():
+        for f in feats:
+            feat_to_group[f] = g
+    return feat_to_group
+
+def _strip_last_token(name: str) -> str:
+    """Split by '_' and drop the final token: emb_1_chemberta -> emb_1."""
+    parts = str(name).split("_")
+    return "_".join(parts[:-1]) if len(parts) > 1 else str(name)
+
+def _resolve_group(feature_name: str, feat_to_group: dict) -> str | None:
+    """Resolve group by exact feature name, then by stripped fallback."""
+    if feature_name in feat_to_group:
+        return feat_to_group[feature_name]
+    stripped = _strip_last_token(feature_name)
+    return feat_to_group.get(stripped)
+
+
+def featArcCorrelationDiagram(
+    df,
+    feature_set="rdkit",
+    threshold=0.6,
+    max_labels=120,
+    figsize=(20, 7),
+    label_fontsize=12,
+    connection_width=1.0,
+    save_path="/users/yhb18174/TL_project/results/test_arc_network.png",
+):
+    import numpy as np
+    import pandas as pd
+    import matplotlib.pyplot as plt
+    from matplotlib.collections import LineCollection
+    from group_descriptors import getGroups
+
+    # --- correlations
+    corr_matrix = df.corr(numeric_only=True)
+
+    # --- feature->group map from getGroups
+    group_map = getGroups(feature_set)  # {group: [feature names]}
+    feat_to_group = {}
+    for g, feats in group_map.items():
+        for f in feats:
+            feat_to_group[f] = g
+
+    # keep only columns that can be resolved to a descriptor group
+    features = [f for f in corr_matrix.columns if _resolve_group(f, feat_to_group) is not None]
+    if len(features) == 0:
+        raise ValueError(f"No columns matched groups for feature_set='{feature_set}'")
+
+    # optional cap by variance for readability
+    if len(features) > max_labels:
+        var_rank = corr_matrix[features].var(axis=0).sort_values(ascending=False).index[:max_labels]
+        features = list(var_rank)
+
+    # sort by group, then name (makes grouped blocks on x-axis)
+    features = sorted(features, key=lambda f: (_resolve_group(f, feat_to_group) or "zzz", f))
+    corr_matrix = corr_matrix.loc[features, features]
+
+    # group colors
+    groups = sorted({_resolve_group(f, feat_to_group) for f in features})
+    cmap = plt.get_cmap("tab20")
+    group_color = {g: cmap(i % 20) for i, g in enumerate(groups)}
+    node_colors = [group_color[_resolve_group(f, feat_to_group)] for f in features]
+
+    # build edge list
+    edges = []
+    for i in range(len(features)):
+        for j in range(i + 1, len(features)):
+            c = corr_matrix.iloc[i, j]
+            if pd.notna(c) and abs(c) >= threshold:
+                edges.append((i, j, float(c)))
+
+    def _draw_arc_plot(features_local, node_colors_local, edges_local, out_path):
+        n_local = len(features_local)
+        x = np.arange(n_local, dtype=float)
+
+        fig, ax = plt.subplots(figsize=figsize)
+        ax.hlines(0, 0, max(0, n_local - 1), color="black", linewidth=0.5, alpha=0.4)
+        ax.scatter(x, np.zeros(n_local), s=24, c=node_colors_local, zorder=3)
+
+        def draw_gradient_arc(i, j, corr):
+            x0, x1 = float(i), float(j)
+            mid = 0.5 * (x0 + x1)
+            h = max(0.10, (x1 - x0) * 0.20)
+            t = np.linspace(0, 1, 45)
+            xs = (1 - t) ** 2 * x0 + 2 * (1 - t) * t * mid + t ** 2 * x1
+            ys = 2 * (1 - t) * t * h
+
+            segs = np.stack(
+                [np.column_stack([xs[:-1], ys[:-1]]), np.column_stack([xs[1:], ys[1:]])],
+                axis=1
+            )
+
+            c0 = np.array(node_colors_local[i])
+            c1 = np.array(node_colors_local[j])
+            cols = np.array([c0 * (1 - u) + c1 * u for u in np.linspace(0, 1, len(segs))])
+
+            lw = connection_width * (0.2 + 0.8 * abs(corr))  # thin lines
+            lc = LineCollection(segs, colors=cols, linewidths=lw, alpha=0.55, zorder=2)
+            ax.add_collection(lc)
+
+        for i, j, corr in edges_local:
+            draw_gradient_arc(i, j, corr)
+
+        degree = {i: 0 for i in range(n_local)}
+        for i, j, _ in edges_local:
+            degree[i] += 1
+            degree[j] += 1
+
+        for i, f in enumerate(features_local):
+            ax.text(
+                i,
+                -0.06,
+                f"{_strip_last_token(f)} ({degree.get(i, 0)})",
+                rotation=90,
+                ha="right",
+                va="top",
+                fontsize=label_fontsize,
+            )
+
+        if features_local:
+            prev = _resolve_group(features_local[0], feat_to_group)
+            for i, f in enumerate(features_local[1:], start=1):
+                g = _resolve_group(f, feat_to_group)
+                if g != prev:
+                    ax.vlines(i - 0.5, -0.02, 0.18, color="grey", linewidth=0.6, alpha=0.6)
+                    prev = g
+
+        ymax = max([0.6] + [max(0.10, (j - i) * 0.20) for i, j, _ in edges_local]) + 0.2
+        ax.set_xlim(-1, n_local)
+        ax.set_ylim(-0.18, ymax)
+        ax.axis("off")
+        fig.tight_layout()
+        fig.savefig(out_path, dpi=300)
+        plt.close(fig)
+
+    # Full plot output path
+    base_path = Path(save_path)
+    full_path = base_path.with_name(f"{base_path.stem}_full{base_path.suffix}")
+    connected_only_path = base_path.with_name(f"{base_path.stem}_connected_only{base_path.suffix}")
+
+    # Plot 1: all features
+    _draw_arc_plot(features, node_colors, edges, full_path)
+
+    # Plot 2: remove completely uncorrelated features (degree 0)
+    connected_idx = set()
+    for i, j, _ in edges:
+        connected_idx.add(i)
+        connected_idx.add(j)
+
+    kept = sorted(connected_idx)
+    if kept:
+        features_connected = [features[i] for i in kept]
+        colors_connected = [node_colors[i] for i in kept]
+        idx_map = {old_i: new_i for new_i, old_i in enumerate(kept)}
+        edges_connected = [(idx_map[i], idx_map[j], c) for i, j, c in edges if i in idx_map and j in idx_map]
+        _draw_arc_plot(features_connected, colors_connected, edges_connected, connected_only_path)
+    else:
+        # If no edges pass threshold, still save an empty skeleton plot for transparency.
+        _draw_arc_plot([], [], [], connected_only_path)
+
+    print(f"Saved full arc diagram to: {full_path}")
+    print(f"Saved connected-only arc diagram to: {connected_only_path}")
+
+    return str(full_path), str(connected_only_path)
 
 
 
-# cleaned, sims, correlations = getSimilarities(
-#     descriptor_sets=["rdkit", "mordred", "molformer", "chemberta"],
-#     sample_size=5000,
-#     random_seed=42,
-#     scale=True,
+def featCircularCorrelationDiagram(
+    df,
+    feature_set="rdkit",
+    threshold=0.6,
+    max_labels=200,
+    figsize=(10, 10),
+    label_fontsize=12,
+    connection_width=1.0,
+    save_path="/users/yhb18174/TL_project/results/test_circular_network.png",
+):
+    """
+    Circular correlation diagram with grouped node colours.
+    Saves two plots:
+    - *_full.png
+    - *_connected_only.png (removes degree-0 nodes)
+    """
+    import numpy as np
+    import pandas as pd
+    import matplotlib.pyplot as plt
+    from matplotlib.collections import LineCollection
+
+    corr_matrix = df.corr(numeric_only=True)
+
+    group_map = getGroups(feature_set)
+    feat_to_group = {}
+    for g, feats in group_map.items():
+        for f in feats:
+            feat_to_group[f] = g
+
+    features = [f for f in corr_matrix.columns if _resolve_group(f, feat_to_group) is not None]
+    if len(features) == 0:
+        raise ValueError(f"No columns matched groups for feature_set='{feature_set}'")
+
+    if len(features) > max_labels:
+        var_rank = corr_matrix[features].var(axis=0).sort_values(ascending=False).index[:max_labels]
+        features = list(var_rank)
+
+    features = sorted(features, key=lambda f: (_resolve_group(f, feat_to_group) or "zzz", f))
+    corr_matrix = corr_matrix.loc[features, features]
+
+    groups = sorted({_resolve_group(f, feat_to_group) for f in features})
+    cmap = plt.get_cmap("tab20")
+    group_color = {g: cmap(i % 20) for i, g in enumerate(groups)}
+    node_colors = [group_color[_resolve_group(f, feat_to_group)] for f in features]
+
+    edges = []
+    for i in range(len(features)):
+        for j in range(i + 1, len(features)):
+            c = corr_matrix.iloc[i, j]
+            if pd.notna(c) and abs(c) >= threshold:
+                edges.append((i, j, float(c)))
+
+    def _draw_circular_plot(features_local, node_colors_local, edges_local, out_path):
+        n_local = len(features_local)
+        fig, ax = plt.subplots(figsize=figsize)
+
+        if n_local == 0:
+            ax.axis("off")
+            fig.tight_layout()
+            fig.savefig(out_path, dpi=300)
+            plt.close(fig)
+            return
+
+        theta = np.linspace(0, 2 * np.pi, n_local, endpoint=False)
+        radius = 1.0
+        positions = {i: np.array([radius * np.cos(t), radius * np.sin(t)]) for i, t in enumerate(theta)}
+
+        for i, j, corr in edges_local:
+            p0 = positions[i]
+            p2 = positions[j]
+            control = 0.18 * (p0 + p2)
+
+            t = np.linspace(0, 1, 40)
+            pts = ((1 - t)[:, None] ** 2) * p0 + (2 * (1 - t)[:, None] * t[:, None]) * control + (t[:, None] ** 2) * p2
+            segs = np.stack([pts[:-1], pts[1:]], axis=1)
+
+            c0 = np.array(node_colors_local[i])
+            c1 = np.array(node_colors_local[j])
+            cols = np.array([c0 * (1 - u) + c1 * u for u in np.linspace(0, 1, len(segs))])
+
+            lw = connection_width * (0.2 + 0.8 * abs(corr))
+            lc = LineCollection(segs, colors=cols, linewidths=lw, alpha=0.5, zorder=1)
+            ax.add_collection(lc)
+
+        degree = {i: 0 for i in range(n_local)}
+        for i, j, _ in edges_local:
+            degree[i] += 1
+            degree[j] += 1
+
+        xy = np.array([positions[i] for i in range(n_local)])
+        ax.scatter(xy[:, 0], xy[:, 1], s=28, c=node_colors_local, zorder=3)
+
+        for i, feat in enumerate(features_local):
+            x, y = positions[i]
+            x_lab, y_lab = 1.12 * x, 1.12 * y
+            angle = np.degrees(np.arctan2(y, x))
+            rotation = angle if -90 <= angle <= 90 else angle + 180
+            ha = "left" if x >= 0 else "right"
+            ax.text(
+                x_lab,
+                y_lab,
+                f"{_strip_last_token(feat)} ({degree.get(i, 0)})",
+                fontsize=label_fontsize,
+                rotation=rotation,
+                rotation_mode="anchor",
+                ha=ha,
+                va="center",
+            )
+
+        ax.set_aspect("equal", adjustable="box")
+        ax.set_xlim(-1.35, 1.35)
+        ax.set_ylim(-1.35, 1.35)
+        ax.axis("off")
+        fig.tight_layout()
+        fig.savefig(out_path, dpi=300)
+        plt.close(fig)
+
+    base_path = Path(save_path)
+    full_path = base_path.with_name(f"{base_path.stem}_full{base_path.suffix}")
+    connected_only_path = base_path.with_name(f"{base_path.stem}_connected_only{base_path.suffix}")
+
+    _draw_circular_plot(features, node_colors, edges, full_path)
+
+    connected_idx = set()
+    for i, j, _ in edges:
+        connected_idx.add(i)
+        connected_idx.add(j)
+    kept = sorted(connected_idx)
+
+    if kept:
+        features_connected = [features[i] for i in kept]
+        colors_connected = [node_colors[i] for i in kept]
+        idx_map = {old_i: new_i for new_i, old_i in enumerate(kept)}
+        edges_connected = [(idx_map[i], idx_map[j], c) for i, j, c in edges if i in idx_map and j in idx_map]
+        _draw_circular_plot(features_connected, colors_connected, edges_connected, connected_only_path)
+    else:
+        _draw_circular_plot([], [], [], connected_only_path)
+
+    print(f"Saved full circular diagram to: {full_path}")
+    print(f"Saved connected-only circular diagram to: {connected_only_path}")
+
+    return str(full_path), str(connected_only_path)
+
+def featLeftRightCorrelationDiagram(
+    df_left,
+    df_right,
+    left_feature_set="rdkit",
+    right_feature_set="chemberta",
+    threshold=0.6,
+    max_labels=120,
+    figsize=(14, 12),
+    save_path="/users/yhb18174/TL_project/results/left_right_corr.png",
+):
+    import numpy as np
+    import pandas as pd
+    import matplotlib.pyplot as plt
+    from matplotlib.collections import LineCollection
+    from group_descriptors import getGroups
+
+    def _strip_last_token(name: str) -> str:
+        parts = str(name).split("_")
+        return "_".join(parts[:-1]) if len(parts) > 1 else str(name)
+
+    def _build_group_map(feature_set: str):
+        gmap = getGroups(feature_set)
+        out = {}
+        for g, feats in gmap.items():
+            for f in feats:
+                out[f] = g
+        return out
+
+    def _resolve_group(name: str, fmap: dict):
+        if name in fmap:
+            return fmap[name]
+        return fmap.get(_strip_last_token(name), None)
+
+    # Numeric only
+    L = df_left.select_dtypes(include=[np.number]).copy()
+    R = df_right.select_dtypes(include=[np.number]).copy()
+
+    # Align molecules by index
+    common_ids = L.index.intersection(R.index)
+    L = L.loc[common_ids]
+    R = R.loc[common_ids]
+
+    if len(common_ids) == 0:
+        raise ValueError("No shared molecule IDs between left and right dataframes.")
+
+    # Optional cap for readability
+    if L.shape[1] > max_labels:
+        L = L[L.var().sort_values(ascending=False).index[:max_labels]]
+    if R.shape[1] > max_labels:
+        R = R[R.var().sort_values(ascending=False).index[:max_labels]]
+
+    # Cross-correlation matrix (left cols x right cols)
+    X = np.corrcoef(L.to_numpy().T, R.to_numpy().T)
+    nL = L.shape[1]
+    cross = X[:nL, nL:]  # shape: (left_features, right_features)
+
+    left_feats = list(L.columns)
+    right_feats = list(R.columns)
+
+    left_group = _build_group_map(left_feature_set)
+    right_group = _build_group_map(right_feature_set)
+
+    # Sort by group then name
+    left_feats = sorted(left_feats, key=lambda f: (_resolve_group(f, left_group) or "zzz", f))
+    right_feats = sorted(right_feats, key=lambda f: (_resolve_group(f, right_group) or "zzz", f))
+
+    # Reindex cross matrix to sorted order
+    iL = [list(L.columns).index(f) for f in left_feats]
+    iR = [list(R.columns).index(f) for f in right_feats]
+    cross = cross[np.ix_(iL, iR)]
+
+    # Colors by group; fallback black if ungrouped
+    cmap = plt.get_cmap("tab20")
+
+    left_groups = sorted({g for g in (_resolve_group(f, left_group) for f in left_feats) if g is not None})
+    right_groups = sorted({g for g in (_resolve_group(f, right_group) for f in right_feats) if g is not None})
+
+    left_group_color = {g: cmap(i % 20) for i, g in enumerate(left_groups)}
+    right_group_color = {g: cmap(i % 20) for i, g in enumerate(right_groups)}
+
+    left_colors = [left_group_color.get(_resolve_group(f, left_group), "black") for f in left_feats]
+    right_colors = [right_group_color.get(_resolve_group(f, right_group), "black") for f in right_feats]
+
+    # Positions
+    yL = np.linspace(1, 0, len(left_feats))
+    yR = np.linspace(1, 0, len(right_feats))
+    xL, xR = 0.0, 1.0
+
+    fig, ax = plt.subplots(figsize=figsize)
+
+    # Nodes
+    ax.scatter(np.full(len(left_feats), xL), yL, c=left_colors, s=40, zorder=3)
+    ax.scatter(np.full(len(right_feats), xR), yR, c=right_colors, s=40, zorder=3)
+
+    # Labels
+    for i, f in enumerate(left_feats):
+        ax.text(xL - 0.02, yL[i], _strip_last_token(f), ha="right", va="center", fontsize=11)
+    for j, f in enumerate(right_feats):
+        ax.text(xR + 0.02, yR[j], _strip_last_token(f), ha="left", va="center", fontsize=11)
+
+    # Edges (only strong cross-correlations)
+    segs = []
+    cols = []
+    widths = []
+    for i in range(len(left_feats)):
+        for j in range(len(right_feats)):
+            c = cross[i, j]
+            if np.isfinite(c) and abs(c) >= threshold:
+                segs.append([(xL, yL[i]), (xR, yR[j])])
+                cols.append("tab:red" if c > 0 else "tab:blue")
+                widths.append(0.2 + 1.2 * abs(c))
+
+    if segs:
+        lc = LineCollection(segs, colors=cols, linewidths=widths, alpha=0.35, zorder=1)
+        ax.add_collection(lc)
+
+    ax.set_xlim(-0.25, 1.25)
+    ax.set_ylim(-0.05, 1.05)
+    ax.axis("off")
+    fig.tight_layout()
+    fig.savefig(save_path, dpi=300)
+    plt.close(fig)
+
+
+def featBipartiteCorrelationDiagram(
+    df_left,
+    df_right,
+    left_feature_set="rdkit",
+    right_feature_set="chemberta",
+    threshold=0.6,
+    max_labels=120,
+    figsize=(14, 12),
+    label_fontsize=11,
+    connection_width=1.0,
+    save_path="/users/yhb18174/TL_project/results/left_right_corr.png",
+):
+    """
+    Bipartite left-right correlation diagram.
+
+    - Left feature set nodes are arranged vertically on the left.
+    - Right feature set nodes are arranged vertically on the right.
+    - Edges are drawn for cross-feature correlations with |r| >= threshold.
+    - Nodes not resolved to descriptor groups are coloured black.
+    - Saves two plots each call:
+      *_full.png and *_connected_only.png
+    """
+    import numpy as np
+    import pandas as pd
+    import matplotlib.pyplot as plt
+    from matplotlib.collections import LineCollection
+
+    L = df_left.select_dtypes(include=[np.number]).copy()
+    R = df_right.select_dtypes(include=[np.number]).copy()
+
+    common_ids = L.index.intersection(R.index)
+    L = L.loc[common_ids]
+    R = R.loc[common_ids]
+
+    if len(common_ids) == 0:
+        raise ValueError("No shared molecule IDs between left and right dataframes.")
+
+    if L.shape[1] > max_labels:
+        keep_left = L.var(axis=0).sort_values(ascending=False).index[:max_labels]
+        L = L[keep_left]
+    if R.shape[1] > max_labels:
+        keep_right = R.var(axis=0).sort_values(ascending=False).index[:max_labels]
+        R = R[keep_right]
+
+    try:
+        left_group_map = build_feature_group_map(left_feature_set)
+    except Exception:
+        left_group_map = {}
+
+    try:
+        right_group_map = build_feature_group_map(right_feature_set)
+    except Exception:
+        right_group_map = {}
+
+    left_features = [f for f in L.columns]
+    right_features = [f for f in R.columns]
+
+    left_features = sorted(left_features, key=lambda f: (_resolve_group(f, left_group_map) or "zzz", f))
+    right_features = sorted(right_features, key=lambda f: (_resolve_group(f, right_group_map) or "zzz", f))
+
+    L = L[left_features]
+    R = R[right_features]
+
+    corr_full = np.corrcoef(L.to_numpy(dtype=float).T, R.to_numpy(dtype=float).T)
+    nL = L.shape[1]
+    cross_corr = corr_full[:nL, nL:]
+
+    left_groups = sorted({g for g in (_resolve_group(f, left_group_map) for f in left_features) if g is not None})
+    right_groups = sorted({g for g in (_resolve_group(f, right_group_map) for f in right_features) if g is not None})
+
+    cmap = plt.get_cmap("tab20")
+    left_group_color = {g: cmap(i % 20) for i, g in enumerate(left_groups)}
+    right_group_color = {g: cmap(i % 20) for i, g in enumerate(right_groups)}
+
+    left_colors = [left_group_color.get(_resolve_group(f, left_group_map), "black") for f in left_features]
+    right_colors = [right_group_color.get(_resolve_group(f, right_group_map), "black") for f in right_features]
+
+    edges = []
+    for i in range(len(left_features)):
+        for j in range(len(right_features)):
+            c = cross_corr[i, j]
+            if np.isfinite(c) and abs(c) >= threshold:
+                edges.append((i, j, float(c)))
+
+    def _draw_bipartite_plot(l_feats, r_feats, l_cols, r_cols, e_list, out_path):
+        fig, ax = plt.subplots(figsize=figsize)
+
+        if len(l_feats) == 0 and len(r_feats) == 0:
+            ax.axis("off")
+            fig.tight_layout()
+            fig.savefig(out_path, dpi=300)
+            plt.close(fig)
+            return
+
+        yL = np.linspace(1.0, 0.0, max(1, len(l_feats)))
+        yR = np.linspace(1.0, 0.0, max(1, len(r_feats)))
+        xL, xR = 0.0, 1.0
+
+        left_degree = {i: 0 for i in range(len(l_feats))}
+        right_degree = {j: 0 for j in range(len(r_feats))}
+        for i, j, _ in e_list:
+            if i in left_degree:
+                left_degree[i] += 1
+            if j in right_degree:
+                right_degree[j] += 1
+
+        if len(l_feats) > 0:
+            ax.scatter(np.full(len(l_feats), xL), yL, c=l_cols, s=32, zorder=3)
+            for i, feat in enumerate(l_feats):
+                ax.text(
+                    xL - 0.02,
+                    yL[i],
+                    f"{_strip_last_token(feat)} ({left_degree.get(i, 0)})",
+                    ha="right",
+                    va="center",
+                    fontsize=label_fontsize,
+                )
+
+        if len(r_feats) > 0:
+            ax.scatter(np.full(len(r_feats), xR), yR, c=r_cols, s=32, zorder=3)
+            for j, feat in enumerate(r_feats):
+                ax.text(
+                    xR + 0.02,
+                    yR[j],
+                    f"{_strip_last_token(feat)} ({right_degree.get(j, 0)})",
+                    ha="left",
+                    va="center",
+                    fontsize=label_fontsize,
+                )
+
+        if len(e_list) > 0:
+            segs, cols, widths = [], [], []
+            for i, j, c in e_list:
+                segs.append([(xL, yL[i]), (xR, yR[j])])
+                c0 = np.array(l_cols[i]) if not isinstance(l_cols[i], str) else np.array((0, 0, 0, 1))
+                c1 = np.array(r_cols[j]) if not isinstance(r_cols[j], str) else np.array((0, 0, 0, 1))
+                cols.append(0.5 * c0 + 0.5 * c1)
+                widths.append(connection_width * (0.15 + 0.75 * abs(c)))
+
+            lc = LineCollection(segs, colors=cols, linewidths=widths, alpha=0.38, zorder=1)
+            ax.add_collection(lc)
+
+        ax.set_xlim(-0.3, 1.3)
+        ax.set_ylim(-0.05, 1.05)
+        ax.axis("off")
+        fig.tight_layout()
+        fig.savefig(out_path, dpi=300)
+        plt.close(fig)
+
+    base_path = Path(save_path)
+    full_path = base_path.with_name(f"{base_path.stem}_full{base_path.suffix}")
+    connected_only_path = base_path.with_name(f"{base_path.stem}_connected_only{base_path.suffix}")
+
+    _draw_bipartite_plot(left_features, right_features, left_colors, right_colors, edges, full_path)
+
+    connected_left = sorted({i for i, _, _ in edges})
+    connected_right = sorted({j for _, j, _ in edges})
+
+    if connected_left and connected_right:
+        l_map = {old_i: new_i for new_i, old_i in enumerate(connected_left)}
+        r_map = {old_j: new_j for new_j, old_j in enumerate(connected_right)}
+
+        left_feats_conn = [left_features[i] for i in connected_left]
+        right_feats_conn = [right_features[j] for j in connected_right]
+        left_cols_conn = [left_colors[i] for i in connected_left]
+        right_cols_conn = [right_colors[j] for j in connected_right]
+
+        edges_conn = [
+            (l_map[i], r_map[j], c)
+            for i, j, c in edges
+            if i in l_map and j in r_map
+        ]
+
+        _draw_bipartite_plot(
+            left_feats_conn,
+            right_feats_conn,
+            left_cols_conn,
+            right_cols_conn,
+            edges_conn,
+            connected_only_path,
+        )
+    else:
+        _draw_bipartite_plot([], [], [], [], [], connected_only_path)
+
+    print(f"Saved full bipartite diagram to: {full_path}")
+    print(f"Saved connected-only bipartite diagram to: {connected_only_path}")
+
+    return str(full_path), str(connected_only_path)
+
+
+
+# region Testing Space
+
+
+if __name__ == "__main__":
+    featCircularCorrelationDiagram(
+    pd.read_csv(paths["full_features"]["all"]["mordred"], index_col=0),
+    feature_set="mordred",
+    threshold=0.8,
+    max_labels=2000
+)
+
+# featArcCorrelationDiagram(
+#     pd.read_csv(paths["full_features"]["all"]["rdkit"], index_col=0),
+#     threshold=0.8
 # )
 
-# plotSimilarityHeatmaps(sims)
 
-# plotDescriptorAnalysisViolin(
-#         input_df = "/users/yhb18174/TL_project/datasets/all/all_rdkit.csv",
-#         descriptor_columns=
-#         ["Kappa3_rdkit"],
-#         output_path=Path("/users/yhb18174/TL_project/datasets/all/descriptor_analysis"),
-#         save_name="kappa3_distribution"
-        
-#     )
+# left_df = pd.read_csv(paths["full_features"]["all"]["rdkit"], index_col=0)
+# right_df = pd.read_csv(paths["full_features"]["all"]["mordred"], index_col=0)
 
-
-
-#getAnalysisDescriptors()
-#plotDescriptorAnalysis()
-#plotDescriptorAnalysisBySourceViolin()
-
-
-# Plotting PCA for each dataset
-plot_pcas=False
-if plot_pcas:
-    fig = plotPCA(
-        datasets = rdkit_feats,
-        plot_dir=paths["dataset_analysis"]["descriptor_analysis"]["rdkit"].parent,
-        plot_fname="rdkit_PCA"
-    )
-
-    fig = plotPCA(
-        datasets = mordred_feats,
-        plot_dir=paths["dataset_analysis"]["descriptor_analysis"]["mordred"].parent,
-        plot_fname="mordred_PCA"
-    )
-
-    fig = plotPCA(
-        datasets = chemberta_feats,
-        plot_dir=paths["dataset_analysis"]["descriptor_analysis"]["chemberta"].parent,
-        plot_fname="chemberta_PCA"
-    )
-
-    fig = plotPCA(
-        datasets = molformer_feats,
-        plot_dir=paths["dataset_analysis"]["descriptor_analysis"]["molformer"].parent,
-        plot_fname="molformer_PCA"
-    )
+# featBipartiteCorrelationDiagram(
+#     df_left=left_df,
+#     df_right=right_df,
+#     left_feature_set="rdkit",
+#     right_feature_set="mordred",
+#     threshold=0.75,
+#     max_labels=150,
+#     connection_width=6,
+#     save_path="/users/yhb18174/TL_project/results/rdkit_vs_mordred_corr.png",
+# )

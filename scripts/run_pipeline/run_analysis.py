@@ -78,7 +78,7 @@ parser.add_argument(
 parser.add_argument(
     "--show-var",
     action="store_true",
-    help="Flag to show the variance of target features and plot low variance columns."
+    help="Flag to show the variance of target features"
 )
 
 parser.add_argument(

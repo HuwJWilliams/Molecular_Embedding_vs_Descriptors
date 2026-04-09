@@ -1,17 +1,23 @@
+# region Imports and Pathing
 from pathlib import Path
 import pandas as pd
 import sys
+import numpy as np
+import shap
+import matplotlib.pyplot as plt
+import joblib
 
-SCRIPTS_DIR = Path(__file__).resolve().parents[1]
-SRC_DIR = SCRIPTS_DIR / "src"
-
-sys.path.insert(0, str(SRC_DIR / "pathing"))
+sys.path.insert(0, "users/yhb18174/TL_project/scripts/config/pathing")
 from get_paths import getPaths
 
+paths=getPaths()
 
-paths = getPaths()
+test_dir=paths["imp_dirs"]["results_dir"] / "test_dir"
+model_path = test_dir / "training_data" / "final_model.pkl"
+training_features = test_dir / "training_data" / "training_features.csv.gz"
+output_dir = test_dir / "shap_test"
+# endregion
 
-fingerprints = paths["full_features"]["all"]
-for key, path in fingerprints.items():
-    print(key)
-    print(len(pd.read_csv(path, index_col=0).columns))
+
+# region Asset loading
+
