@@ -180,7 +180,6 @@ def plotLowVarianceColumns(
     )
 
     plot_df = summary_df.head(top_n).copy() if top_n is not None else summary_df.copy()
-
     fig_width = max(12, len(plot_df) * 0.22)
     plt.figure(figsize=(fig_width, 6), dpi=150)
 
@@ -207,7 +206,7 @@ def plotLowVarianceColumns(
 
     plt.xlabel("Feature", fontsize=12)
     plt.ylabel("Dominant value fraction", fontsize=12)
-    plt.title(tite, fontsize=13)
+    plt.title(title, fontsize=13)
     plt.xticks(rotation=90, fontsize=8)
     plt.yticks(fontsize=10)
     plt.legend(frameon=False)
@@ -1898,13 +1897,13 @@ def featBipartiteCorrelationDiagram(
 # region Testing Space
 
 
-if __name__ == "__main__":
-    featCircularCorrelationDiagram(
-    pd.read_csv(paths["full_features"]["all"]["mordred"], index_col=0),
-    feature_set="mordred",
-    threshold=0.8,
-    max_labels=2000
-)
+# if __name__ == "__main__":
+#     featCircularCorrelationDiagram(
+#     pd.read_csv(paths["full_features"]["all"]["mordred"], index_col=0),
+#     feature_set="mordred",
+#     threshold=0.8,
+#     max_labels=2000
+# )
 
 # featArcCorrelationDiagram(
 #     pd.read_csv(paths["full_features"]["all"]["rdkit"], index_col=0),

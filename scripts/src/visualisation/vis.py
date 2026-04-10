@@ -714,6 +714,22 @@ class Visualise():
                 raise ValueError("perf_df has no numeric columns to plot.")
             value_col = numeric_cols[0]
 
+        value_series = pd.to_numeric(member_df[value_col], errors="coerce")
+        finite_mask = np.isfinite(value_series.to_numpy(dtype=float))
+
+        if not finite_mask.all():
+            skipped_nonfinite = member_df.index[~finite_mask].astype(str).tolist()
+            print(
+                f"Skipping non-finite '{value_col}' values for group '{group_name}': "
+                f"{skipped_nonfinite}"
+            )
+
+        member_df = member_df.loc[finite_mask].copy()
+        if member_df.empty:
+            raise ValueError(
+                f"Group '{group_name}' has no finite '{value_col}' values to plot."
+            )
+
         values = member_df[value_col].to_numpy(dtype=float)
         labels = member_df.index.astype(str).tolist()
 
@@ -755,11 +771,7 @@ class Visualise():
         ax.set_axisbelow(True)
         ax.grid(axis="y", linestyle="--", alpha=0.35)
 
-        y_min = min(0, float(np.min(values)) * 1.05)
-        y_max = float(np.max(values)) * 1.1 if len(values) else 1.0
-        if np.isclose(y_min, y_max):
-            y_max = y_min + 1.0
-        ax.set_ylim(y_min, y_max)
+        ax.set_ylim(0.0, 1.1)
 
         plot_title = title or f"{group_name} member performance"
         ax.set_title(plot_title, fontsize=title_fontsize, fontweight="bold", pad=18)
@@ -2762,4 +2774,3 @@ class Visualise():
 
 
 # end region
-

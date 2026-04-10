@@ -126,7 +126,7 @@ for exp in exp_list:
     
     excl_cols = l_var_col if args.exclude_low_var else []
     
-    if args.show_low_var:
+    if args.show_var:
         desc_an_dir = pred_ft_df.parent / "descriptor_analysis"
         save_name = f"low_variance_features_{pred}"
 
@@ -151,7 +151,7 @@ for exp in exp_list:
     )
 
 # --- Plotting the overall cross-prediction performance
-    gr_title=f"{pred.capitalize()} Prediction ({tr.capitalize()} trained)"
+    gr_title=f"{pred.capitalize()} Prediction ({tr.capitalize()} trained): Pearson R"
     timestamp = datetime.now().strftime("%d/%m/%Y %H:%M")
     gr_description=f"Performance when training RFR models on {tr} to predict {pred} features.\n \
                 Plot shows the Pearson R of predictions grouped by similar features \n \
@@ -172,6 +172,13 @@ for exp in exp_list:
     
     for group_name, group_members in group_map.items():
 # --- Plotting performance of individual members of a group
+        present_members = [m for m in group_members if m in exp_perf_df.index]
+        if not present_members:
+            print(
+                f"Skipping group '{group_name}': no members found in performance index."
+            )
+            continue
+
         mb_title=f"Performance for {group_name} (trained {tr.capitalize()}, predicted {pred.capitalize()})"
         timestamp = datetime.now().strftime("%d/%m/%Y %H:%M")
         mb_description = f"Performance on {pred.capitalize()} features in the group '{group_name}.\n \

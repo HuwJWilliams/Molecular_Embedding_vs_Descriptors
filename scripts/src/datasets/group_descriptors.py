@@ -2,47 +2,72 @@
 Grouping functions for molecular descriptors (RDKit, Mordred, etc.)
 Each function returns a dictionary of descriptor groups.
 """
+from rdkit.Chem import Descriptors
+from mordred import Calculator, descriptors
 
 def getRDKitGroups(prefix="_rdkit"):
-    """Return descriptor groups for RDKit descriptors."""
+    """Return RDKit descriptor groups aligned to Mordred descriptor categories."""
 
     def p(name):
         return f"{name}{prefix}"
+    
+    def get_fragment_names():
+        return[
+            f"{name}{prefix}"
+            for name, _ in Descriptors.descList
+            if name.startswith("fr_")
+        ]
 
     return {
 
-        # --- Size & Mass ---
-        "size_mass": [
+        # --- Constitutional / Weight ---
+        "Constitutional": [
             p("MolWt"), p("HeavyAtomMolWt"), p("ExactMolWt"),
             p("NumValenceElectrons"), p("HeavyAtomCount"),
             p("FractionCSP3"), p("NumHeteroatoms")
         ],
 
-        # --- Electronic (scalar descriptors only) ---
-        "electronic_charges": [
+        "Weight": [
+            p("MolWt"), p("ExactMolWt"), p("HeavyAtomMolWt")
+        ],
+
+        # --- Electronic / EState ---
+        "EState": [
+            p("MaxEStateIndex"), p("MinEStateIndex"),
+            p("MaxAbsEStateIndex"), p("MinAbsEStateIndex"),
+            *[p(f"EState_VSA{i}") for i in range(1, 11)],
+            *[p(f"VSA_EState{i}") for i in range(1, 11)],
+        ],
+
+        "TopologicalCharge": [
             p("MaxPartialCharge"), p("MinPartialCharge"),
             p("MaxAbsPartialCharge"), p("MinAbsPartialCharge")
         ],
 
-        "electronic_estate_indices": [
-            p("MaxEStateIndex"), p("MinEStateIndex"),
-            p("MaxAbsEStateIndex"), p("MinAbsEStateIndex")
+        # --- VSA / MOE-type ---
+        "MoeType": [
+            *[p(f"PEOE_VSA{i}") for i in range(1, 15)],
+            *[p(f"SlogP_VSA{i}") for i in range(1, 13)],
+            *[p(f"SMR_VSA{i}") for i in range(1, 11)],
         ],
 
-        # --- All VSA descriptors grouped ---
-        "vsa_peoe": [p(f"PEOE_VSA{i}") for i in range(1, 15)],
-        "vsa_estate": [p(f"EState_VSA{i}") for i in range(1, 11)],
-        "vsa_vsaestate": [p(f"VSA_EState{i}") for i in range(1, 11)],
-        "vsa_logp": [p(f"SlogP_VSA{i}") for i in range(1, 13)],
-        "vsa_mr": [p(f"SMR_VSA{i}") for i in range(1, 11)],
+        # --- Physicochemical ---
+        "SLogP": [
+            p("MolLogP"),
+            *[p(f"SlogP_VSA{i}") for i in range(1, 13)]
+        ],
 
-        # --- Lipophilicity ---
-        "lipophilicity_basic": [
-            p("MolLogP"), p("TPSA"), p("MolMR")
+        "TopoPSA": [
+            p("TPSA")
+        ],
+
+        "Polarizability": [
+            p("MolMR"),
+            *[p(f"SMR_VSA{i}") for i in range(1, 11)]
         ],
 
         # --- Topological indices ---
-        "topological_chi": [
+        "Chi": [
             p("Chi0"), p("Chi0n"), p("Chi0v"),
             p("Chi1"), p("Chi1n"), p("Chi1v"),
             p("Chi2n"), p("Chi2v"),
@@ -50,83 +75,106 @@ def getRDKitGroups(prefix="_rdkit"):
             p("Chi4n"), p("Chi4v")
         ],
 
-        "topological_shape": [
+        "KappaShapeIndex": [
             p("HallKierAlpha"), p("Kappa1"),
             p("Kappa2"), p("Kappa3")
         ],
 
-        "topological_complexity": [
-            p("BalabanJ"), p("BertzCT"),
+        "BalabanJ": [
+            p("BalabanJ")
+        ],
+
+        "BertzCT": [
+            p("BertzCT")
+        ],
+
+        "InformationContent": [
             p("Ipc"), p("AvgIpc")
         ],
 
-        # --- BCUT descriptors ---
-        "bcut": [
+        # --- BCUT ---
+        "BCUT": [
             p("BCUT2D_MWHI"), p("BCUT2D_MWLOW"),
             p("BCUT2D_CHGHI"), p("BCUT2D_CHGLO"),
             p("BCUT2D_LOGPHI"), p("BCUT2D_LOGPLOW"),
             p("BCUT2D_MRHI"), p("BCUT2D_MRLOW")
         ],
 
-        # --- Shape/Surface ---
-        "shape_surface": [
-            p("LabuteASA"), p("Phi")
+        # --- Surface / geometry ---
+        "CPSA": [
+            p("LabuteASA")  # closest proxy
+        ],
+
+        "Geometrical": [
+            p("Phi")
         ],
 
         # --- Rings ---
-        "rings_aromatic": [
+        "RingCount": [
+            p("RingCount"),
+            p("NumAromaticCarbocycles"),
+            p("NumAromaticHeterocycles"),
+            p("NumAromaticRings"),
+            p("NumAliphaticCarbocycles"),
+            p("NumAliphaticHeterocycles"),
+            p("NumAliphaticRings"),
+            p("NumSaturatedCarbocycles"),
+            p("NumSaturatedHeterocycles"),
+            p("NumSaturatedRings"),
+            p("NumBridgeheadAtoms")
+        ],
+
+        "Aromatic": [
             p("NumAromaticCarbocycles"),
             p("NumAromaticHeterocycles"),
             p("NumAromaticRings")
         ],
 
-        "rings_non_aromatic": [
-            p("RingCount"),
-            p("NumAliphaticCarbocycles"),
-            p("NumAliphaticHeterocycles"),
-            p("NumAliphaticRings"),
-            p("NumAmideBonds"),
-            p("NumBridgeheadAtoms"),
-            p("NumSaturatedCarbocycles"),
-            p("NumSaturatedHeterocycles"),
-            p("NumSaturatedRings")
-        ],
-
-        # --- Hydrogen / Rotatable bonds ---
-        "hydrogen_rotatable": [
-            p("NumHAcceptors"), p("NumHDonors"),
-            p("NHOHCount"), p("NOCount"),
+        # --- Bonds / flexibility ---
+        "RotatableBond": [
             p("NumRotatableBonds")
         ],
 
+        "HydrogenBond": [
+            p("NumHAcceptors"), p("NumHDonors"),
+            p("NHOHCount"), p("NOCount")
+        ],
+
+        "BondCount": [
+            p("NumAmideBonds")
+        ],
+
         # --- Stereo ---
-        "stereo": [
+        "Stereochemistry": [
             p("NumAtomStereoCenters"),
             p("NumUnspecifiedAtomStereoCenters")
         ],
 
-        # --- Fingerprints ---
-        "fingerprints": [
-            p("FpDensityMorgan1"),
-            p("FpDensityMorgan2"),
-            p("FpDensityMorgan3")
+        # --- Drug-likeness ---
+        "Lipinski": [
+            p("NumHAcceptors"), p("NumHDonors"),
+            p("MolLogP"), p("MolWt")
         ],
 
-        # --- Drug-likeness ---
-        "druglikeness": [
+        "Druglikeness": [
             p("qed")
         ],
 
-        "fragment_counts": [
-            p("fr_Al_COO"), p("fr_Al_OH"), p("fr_Ar_N"), ...
+        # --- Fragment-based ---
+        "FragmentComplexity":
+            get_fragment_names(),
+
+        # --- Morgan fingerprint density (non-Mordred but useful) ---
+        "FingerprintDensity": [
+            p("FpDensityMorgan1"),
+            p("FpDensityMorgan2"),
+            p("FpDensityMorgan3")
         ]
     }
 
 # %%
 def getMordredGroups(prefix="_mordred"):
     """Return descriptor groups for Mordred descriptors."""
-
-    from mordred import Calculator, descriptors
 
     groups = {}
 
@@ -153,5 +201,4 @@ def getGroups(source):
     else:
         raise ValueError(f"Unknown source '{source}'. Choose 'rdkit' or 'mordred'.")
 
-getGroups(source="mordred")
 # %%
