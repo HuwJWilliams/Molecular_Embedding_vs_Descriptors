@@ -59,8 +59,8 @@ parser.add_argument(
 
 parser.add_argument(
     "--pred-feat",
-    required=True,
-    help="Feature to run SHAP analysis on"
+    default="MolWt",
+    help="Feature to run SHAP analysis on, defaulted to MolWt for testing"
 )
 
 parser.add_argument(
@@ -115,6 +115,20 @@ parser.add_argument(
     help="Showing the number of top impacting features"
 )
 
+parser.add_argument(
+    "--save-full-shap",
+    action="store_true",
+    help="Flag to store the full shap analysis csv so calculations dont need to be \
+        run over and over."
+)
+
+parser.add_argument(
+    "--check-full-shap",
+    action="store_true",
+    help="Flag to look for full shap CSV and use results in there first,\
+    if not present, calculate again"
+)
+
 args = parser.parse_args()
 # endregion
 
@@ -130,10 +144,27 @@ results_dir = \
 shap_dir = results_dir.parent / "shap"
 shap_dir.mkdir(parents=True, exist_ok=True)
 
-available_models = sorted(glob(str(results_dir / "*.pkl")))
+available_models = sorted(glob(str(results_dir / "*.pkl*")))
 
 model_path = next((p for p in available_models if pred_feat in Path(p).name), None)
+if model_path is None and not args.check_full_shap:
+    raise FileNotFoundError(f"No model found for '{pred_feat}' in {results_dir}")
+
 tr_feat_path = results_dir / "training_features.csv.gz"
+full_shap_path = shap_dir / "full_shap_analysis.joblib.gz"
+
+if args.save_full_shap:
+    print(f"Saving full SHAP bundle to: {full_shap_path}")
+    v.shapAnalysisAll(
+        models_dir=results_dir,
+        features=tr_feat_path,
+        output_dir=shap_dir,
+        max_bg=bg,
+        max_explain=exp,
+        save_full=args.save_full_shap,
+        full_shap_name=full_shap_path.name,
+        check_full=args.check_full_shap
+    )
 
 shap_v, feat_explain, explainer = v.shapAnalysis(
     model=model_path,
@@ -143,7 +174,9 @@ shap_v, feat_explain, explainer = v.shapAnalysis(
     max_bg=bg,
     max_explain=exp,
     plot=args.plot_shap,
-    max_display=args.n_display
+    max_display=args.n_display,
+    check_full=args.check_full_shap,
+    full_shap_path=full_shap_path,
 )
 
 if args.plot_dep:
@@ -164,7 +197,8 @@ if args.group_shap:
             max_bg=bg,
             max_explain=exp,
             descriptor_groups=getGroups(pred_set),
-            top_n=args.top_n
+            top_n=args.top_n,
+            save_full=args.save_full_shap
         )
 
     else:

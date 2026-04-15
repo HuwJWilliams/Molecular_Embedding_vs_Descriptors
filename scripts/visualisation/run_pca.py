@@ -24,7 +24,7 @@ sys.path.insert(0, str(SRC_DIR / "visualisation"))
 from vis import Visualise
 
 sys.path.insert(0, str(SRC_DIR / "misc"))
-from misc_fns import (getFeatures, center_rows, scale_rows, 
+from misc_fns import (center_rows, scale_rows, 
                       center_columns, scale_columns,
                       get_ids_in_mw_range)
 

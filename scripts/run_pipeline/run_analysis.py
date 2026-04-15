@@ -8,6 +8,7 @@ import pandas as pd
 from pathlib import Path
 import argparse
 from datetime import datetime
+import matplotlib.pyplot as plt
 
 FILE_DIR = Path(__file__).resolve()
 PROJ_DIR = FILE_DIR.parents[2]
@@ -19,11 +20,11 @@ sys.path.insert(0, str(SRC_DIR / "visualisation"))
 from vis import Visualise
 
 sys.path.insert(0, str(SRC_DIR / "pathing")) 
-from get_paths import getPaths, addNewDatasetPaths, addFeatureSetPaths
+from get_paths import getPaths
 
 sys.path.insert(0, str(SRC_DIR / "datasets"))
 from group_descriptors import getGroups
-from analyse_datasets import getLowVarianceColumns, plotLowVarianceColumns, getOutlierSummary
+from analyse_datasets import getLowVarianceColumns, plotLowVarianceColumns
 
 sys.path.insert(0, str(SRC_DIR / "misc"))
 from misc_fns import getFeatures
@@ -89,6 +90,12 @@ parser.add_argument(
     "(i.e., 0.8 = 20 % of values are different from the most common)"
 )
 
+parser.add_argument(
+    "--no-groups",
+    action="store_true",
+    help="Flag to plot individual features (mostly useful for feature sets without groups)"
+)
+
 # endregion
 
 # region Parsing Arguments
@@ -140,73 +147,98 @@ for exp in exp_list:
                 save_name=save_name)
         else:
             print(f"Low variance column plot exists in following path:\n{desc_an_dir / save_name}")
-        
-    group_map = getGroups(pred)
 
-    group_performance_df = v.computeGroupPerf(
-        data=exp_perf_df,
-        descriptor_groups=group_map,
-        metrics=["Pearson_r", "r2", "RMSE", "Bias"],
-        exclude=excl_cols
-    )
+    if not args.no_groups:
+        group_map = getGroups(pred)
 
-# --- Plotting the overall cross-prediction performance
-    gr_title=f"{pred.capitalize()} Prediction ({tr.capitalize()} trained): Pearson R"
-    timestamp = datetime.now().strftime("%d/%m/%Y %H:%M")
-    gr_description=f"Performance when training RFR models on {tr} to predict {pred} features.\n \
-                Plot shows the Pearson R of predictions grouped by similar features \n \
-                Created: {timestamp}"
-    gr_fname_suffix = "excl_low_var" if args.exclude_low_var else ""
+        group_performance_df = v.computeGroupPerf(
+            data=exp_perf_df,
+            descriptor_groups=group_map,
+            metrics=["Pearson_r", "r2", "RMSE", "Bias"],
+            exclude=excl_cols
+        )
 
-    v.plotGroupRadar(
-        group_performance_df,
-        title=gr_title,
-        save_plot=True,
-        save_path=exp_dir,
-        save_fname=f"{exp}_{gr_fname_suffix}_group_radar",
-        metadata={
-            "Title": gr_title,
-            "Description": gr_description
-        }
-    )
-    
-    for group_name, group_members in group_map.items():
-# --- Plotting performance of individual members of a group
-        present_members = [m for m in group_members if m in exp_perf_df.index]
-        if not present_members:
-            print(
-                f"Skipping group '{group_name}': no members found in performance index."
-            )
-            continue
-
-        mb_title=f"Performance for {group_name} (trained {tr.capitalize()}, predicted {pred.capitalize()})"
+    # --- Plotting the overall cross-prediction performance
+        gr_title=f"{pred.capitalize()} Prediction ({tr.capitalize()} trained): Pearson R"
         timestamp = datetime.now().strftime("%d/%m/%Y %H:%M")
-        mb_description = f"Performance on {pred.capitalize()} features in the group '{group_name}.\n \
-            This group consists of:\n {group_members}"
-    
-        v.plotMemberBar(
-            perf_df=exp_perf_df,
-            group_map=group_map,
-            group_name=group_name,
-            value_col="Pearson_r",
+        gr_description=f"Performance when training RFR models on {tr} to predict {pred} features.\n \
+                    Plot shows the Pearson R of predictions grouped by similar features \n \
+                    Created: {timestamp}"
+        gr_fname_suffix = "excl_low_var" if args.exclude_low_var else ""
+
+        v.plotGroupRadar(
+            group_performance_df,
+            title=gr_title,
             save_plot=True,
             save_path=exp_dir,
-            save_fname=f"{exp}_{group_name}_{pred}_bar",
+            save_fname=f"{exp}_{gr_fname_suffix}_group_radar",
             metadata={
-                "Title": mb_title,
-                "Description": mb_description
+                "Title": gr_title,
+                "Description": gr_description
             }
-            )
+        )
+        
+        for group_name, group_members in group_map.items():
+    # --- Plotting performance of individual members of a group
+            present_members = [m for m in group_members if m in exp_perf_df.index]
+            if not present_members:
+                print(
+                    f"Skipping group '{group_name}': no members found in performance index."
+                )
+                continue
 
-# --- Plotting the feature distribution of poorly predicted features
-        v.plotPoorPredictionFeatureDistribution(
+            mb_title=f"Performance for {group_name} (trained {tr.capitalize()}, predicted {pred.capitalize()})"
+            timestamp = datetime.now().strftime("%d/%m/%Y %H:%M")
+            mb_description = f"Performance on {pred.capitalize()} features in the group '{group_name}.\n \
+                This group consists of:\n {group_members}"
+        
+            v.plotMemberBar(
                 perf_df=exp_perf_df,
-                full_features=paths["full_features"]["all"][pred],
                 group_map=group_map,
                 group_name=group_name,
                 value_col="Pearson_r",
                 save_plot=True,
-                save_path=exp_dir,            
-        )
+                save_path=exp_dir,
+                save_fname=f"{exp}_{group_name}_{pred}_bar",
+                metadata={
+                    "Title": mb_title,
+                    "Description": mb_description
+                }
+                )
+
+    # --- Plotting the feature distribution of poorly predicted features
+            v.plotPoorPredictionFeatureDistribution(
+                    perf_df=exp_perf_df,
+                    full_features=paths["full_features"]["all"][pred],
+                    group_map=group_map,
+                    group_name=group_name,
+                    value_col="Pearson_r",
+                    save_plot=True,
+                    save_path=exp_dir,            
+            )
+    
+    # --- Plotting without groups
+    else:
+        gr_title=f"{pred.capitalize()} Prediction ({tr.capitalize()} trained): Pearson R"
+        timestamp = datetime.now().strftime("%d/%m/%Y %H:%M")
+        gr_description=f"Performance when training RFR models on {tr} to predict {pred} features.\n \
+                    Plot shows the Pearson R of predictions on individual features \n \
+                    Created: {timestamp}"
+        gr_fname_suffix = "excl_low_var" if args.exclude_low_var else ""
+
+        print(exp_perf_df.head(2))
+        print(exp_perf_df.shape)
+        exp_perf_df = exp_perf_df.sort_values(by="Pearson_r", ascending=False)
+        plt.figure(figsize=(14, 6))
+        plt.bar(exp_perf_df.index.astype(str), exp_perf_df["Pearson_r"])
+        plt.xticks([])
+        plt.ylabel("Pearson_r")
+        plt.title(gr_title)
+        plt.ylim(0, 1.05)
+        plt.grid(axis="y", linestyle="--", alpha=0.3)
+        plt.tight_layout()
+        plt.savefig(exp_dir / f"{exp}_{gr_fname_suffix}_feature_bar.png", dpi=300)
+        plt.close()
+
 
 # endregion

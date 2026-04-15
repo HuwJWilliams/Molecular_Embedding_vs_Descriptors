@@ -132,6 +132,11 @@ class FeatureGenerator():
         final_df = pd.concat([df.drop(columns=["Mols"]), desc_df], axis=1)
         final_df.index.name = "ID"
 
+        rdkit_cols = [c for c in final_df.columns if c.endswith("_rdkit")]
+        before = len(final_df)
+        final_df = final_df.dropna(axis=0, subset=rdkit_cols).copy()
+        self.logger.info(f"Dropped {before - len(final_df)} molecules with any NaN RDKit descriptor")
+
         if drop_cols:
             final_df = self._drop_columns(df=final_df, min_unique=min_unique)
             self.logger.info(f"RDKit data frame created with shape: {final_df.shape}")
@@ -178,6 +183,11 @@ class FeatureGenerator():
         desc_df = desc_df.add_suffix("_mordred")
         final_df = pd.concat([df.drop(columns=["Mols"]), desc_df], axis=1)
         final_df.index.name="ID"
+
+        mordred_cols = [c for c in final_df.columns if c.endswith("_mordred")]
+        before = len(final_df)
+        final_df = final_df.dropna(axis=0, subset=mordred_cols).copy()
+        self.logger.info(f"Dropped {before - len(final_df)} molecules with any NaN Mordred descriptor")
 
         if drop_cols:
             final_df = self._drop_columns(df=final_df, min_unique=min_unique)

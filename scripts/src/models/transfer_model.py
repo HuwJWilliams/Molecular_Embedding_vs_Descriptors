@@ -373,7 +373,7 @@ class TL():
             final_rf_seed=random_seed
         )
 
-        joblib.dump(final_model, Path(save_path / f"{target_column}_RF_model.pkl"))
+        joblib.dump(final_model, Path(save_path / f"{target_column}_RF_model.pkl.gz"), compress=("gzip", 3))
 
         with open(Path(save_path / f"{target_column}_best_params.json"), "w") as f:
             json.dump(best_params, f, indent=4)
@@ -489,8 +489,8 @@ class TL():
         if save_models:
             Path(f"{save_path}/training_data").mkdir(parents=True, exist_ok=True)
 
-            self.logger.info(f"Saving final model to:\n{save_path}/final_model.pkl\n")
-            joblib.dump(self.lr_model, f"{save_path}/final_model.pkl")
+            self.logger.info(f"Saving final model to:\n{save_path}/final_model.pkl.gz\n")
+            joblib.dump(self.lr_model, f"{save_path}/final_model.pkl.gz", compress=("gzip", 3))
 
             with open(f"{save_path}/weights_and_bias.json", "w") as file:
                 json.dump(params, file, indent=4)
@@ -512,7 +512,7 @@ class TL():
             )
 
             if scaler is not None:
-                joblib.dump(scaler, f"{save_path}/scaler.pkl")
+                joblib.dump(scaler, f"{save_path}/scaler.pkl.gz", compress=("gzip", 3))
 
         return (
             self.lr_model,
@@ -616,7 +616,7 @@ class TL():
             )
 
             if result.scaler is not None:
-                joblib.dump(result.scaler, save_path / "scaler.pkl")
+                joblib.dump(result.scaler, save_path / "scaler.pkl.gz", compress=("gzip", 3))
 
         return (
             self.mlp_model,

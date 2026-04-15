@@ -472,7 +472,7 @@ def getAnalysisDescriptors(
 
 
 def plotDescriptorAnalysis(
-        input_df: Path = paths["dataset_analysis"]["descriptor_analysis"]["rdkit"],
+        input_df: Path = paths["full_features"]["fit_lipinski"]["rdkit"],
         descriptor_columns: list[str] = [
             "MolWt",
             "NumHDonors",
@@ -480,7 +480,8 @@ def plotDescriptorAnalysis(
             "NumAromaticRings",
             "NumRotatableBonds"
         ],
-        output_path: Path = paths["dataset_analysis"]["descriptor_analysis"]["rdkit"].parent
+        output_path: Path = paths["dataset_analysis"]["descriptor_analysis"]["rdkit"].parent,
+        column_suffix:str="_rdkit"
     ):
 
     """
@@ -502,7 +503,7 @@ def plotDescriptorAnalysis(
     for col in descriptor_columns:
         plt.figure(figsize=(6, 4), dpi=150)
 
-        plt.hist(df[col], bins=50)
+        plt.hist(df[f"{col}{column_suffix}"], bins=50)
 
         plt.xlabel(col, fontsize=12)
         plt.ylabel("Count", fontsize=12)

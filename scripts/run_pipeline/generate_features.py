@@ -21,18 +21,23 @@ from pipeline_config import SUPPORTED_FEATURE_SETS
 
 sys.path.insert(0, str(SRC_DIR / "pathing"))
 from get_paths import getPaths
-
-PATHS_JSON = str(SRC_DIR / "pathing" / "test_paths.json")
-paths = getPaths(PATHS_JSON)
 # endregion
 
 # region Argument Parsing
 p = argparse.ArgumentParser(description="Generate descriptors/embeddings for a target dataset.")
 
 p.add_argument(
+    "--paths-json",
+    default=None,
+    help=(
+        "Optional path to a pathing JSON file. If omitted, uses the canonical "
+        "paths.json via getPaths()."
+    ),
+)
+
+p.add_argument(
     "--task", 
     required=True, 
-    choices=list(paths["targets"].keys()),
     help="Target dataset to generate features for."
     )
 
@@ -53,11 +58,31 @@ p.add_argument(
 
 args = p.parse_args()
 
+paths = getPaths(args.paths_json) if args.paths_json else getPaths()
+
 task = args.task
 feature_set = args.feature_set.lower()
 batch_size = args.batch_size
 
 # --- Paths
+if task not in paths["targets"]:
+    raise KeyError(
+        f"Task '{task}' is not available in paths['targets']. "
+        f"Available tasks: {list(paths['targets'].keys())}"
+    )
+
+if task not in paths["full_features"]:
+    raise KeyError(
+        f"Task '{task}' is not available in paths['full_features']. "
+        f"Available tasks: {list(paths['full_features'].keys())}"
+    )
+
+if feature_set not in paths["full_features"][task]:
+    raise KeyError(
+        f"Feature set '{feature_set}' missing for task '{task}' in paths['full_features']. "
+        f"Available feature sets for '{task}': {list(paths['full_features'][task].keys())}"
+    )
+
 in_path = paths["targets"][task]
 out_path = paths["full_features"][task][feature_set]
 

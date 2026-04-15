@@ -122,10 +122,8 @@ def combineAllFeats(
         full_smi_df = pd.read_csv(full_smi_df, index_col="ID")
 
     keep_ids = set(full_smi_df.index.astype(str))
-    original_ids = set(keep_ids)
 
     if max_atoms is not None:
-        prev_keep_ids = set(keep_ids)
         atom_keep_ids = set(
             _get_ids_below_atom_threshold(
                 full_smi_df=full_smi_df,
@@ -136,7 +134,6 @@ def combineAllFeats(
         print(f"Keeping {len(keep_ids)} IDs after atom-count filter (< {max_atoms})")
 
     if max_mw is not None:
-        prev_keep_ids = set(keep_ids)
         mw_keep_ids = set(
             _get_ids_below_mw_threshold(
                 full_smi_df=full_smi_df,
@@ -147,7 +144,6 @@ def combineAllFeats(
         print(f"Keeping {len(keep_ids)} IDs after molecular-weight filter (< {max_mw})")
 
     if lipinski_criteria:
-        prev_keep_ids = set(keep_ids)
         lipinski_keep_ids = set(
             checkLipinskiCriteria(
                 df=feature_paths["all"]["rdkit"],
