@@ -323,6 +323,11 @@ def trimRowsByPercentile(
         if not pd.api.types.is_numeric_dtype(s):
             raise TypeError(f"Column '{col}' must be numeric for percentile trimming.")
 
+        # numpy/pandas quantile interpolation can fail on boolean dtype
+        # (e.g., "numpy boolean subtract" TypeError). Coerce to float first.
+        if pd.api.types.is_bool_dtype(s):
+            s = s.astype(float)
+
         lower_cutoff = s.quantile(1 - percentile)
         upper_cutoff = s.quantile(percentile)
 
@@ -370,6 +375,9 @@ def collect_outlier_details(
 
         if not pd.api.types.is_numeric_dtype(s):
             continue
+
+        if pd.api.types.is_bool_dtype(s):
+            s = s.astype(float)
 
         lower_cutoff = s.quantile(1 - percentile)
         upper_cutoff = s.quantile(percentile)

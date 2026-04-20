@@ -8,6 +8,7 @@ import sys
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
+from matplotlib.lines import Line2D
 import seaborn as sns
 import json
 from glob import glob
@@ -20,6 +21,7 @@ from typing import Union
 import shap
 import textwrap
 import joblib
+import re
 
 FILE_DIR = Path(__file__).resolve()
 PROJ_DIR = FILE_DIR.parents[3]
@@ -77,102 +79,14 @@ class Visualise():
             "molformer": "#CC79A7",      # magenta
             "chembertasey": "#E69F00",   # orange
             "molformer-c3-1b": "#56B4E9",# sky blue
+            "selformer": "#FF2400",         # scarlet red
             "morgan": "#7A6A00",         # dark mustard
-            "maccs": "#4D4D4D",          # dark gray
+            "maccs": "#012ABF",          # dark gray
         }
 
 
         # Set default colour to black incase labels dont match colour map
         self.default_colour = (0.0, 0.0, 0.0, 1.0)
-
-    def _getColour(self, name:str) -> tuple:
-        """
-        Retrieves the RGBA colour associated with a given label.
-
-        Parameters
-        ----------
-        name : str
-                            Label to look up in the internal colour map.
-
-        Returns
-        -------
-        tuple
-                            An RGBA tuple representing the colour (R, G, B, A).
-        """
-
-
-        lower_name = name.lower()
-
-        # Prefer exact key matches first.
-        if lower_name in self.colour_map:
-            return self.colour_map[lower_name]
-
-        # Fallback: substring match, checking longer keys first to avoid
-        # collisions such as "chemberta" matching "chembertasey".
-        for key in sorted(self.colour_map.keys(), key=len, reverse=True):
-            if key.lower() in lower_name:
-                return self.colour_map[key]
-        return self.default_colour
-
-    def _savePlot(
-            self,
-            save_plot: bool, 
-            save_path: Union[str, Path], 
-            save_fname: str, 
-            dpi: int,
-            description: str="Saved plot",
-            fig: plt.Figure | None=None,
-            metadata:dict={}
-            ):
-        """
-        Saves a matplotlib figure.
-
-        This helper function standardises plot saving across the project. It can save 
-        either a provided matplotlib figure or the current active plot (`plt.gcf()`), 
-        automatically handling directory creation and defaulting to a `.png` extension 
-        if none is specified.
-
-        Parameters
-        ----------
-        save_plot : bool
-                            Whether to save the plot.
-        save_path : str, Path
-                            Directory to save the plot to.
-        save_fname : str
-                            Filename to save the plot under. If no extension is provided,
-                            ".png" will be appended automatically.
-        dpi : int
-                            Dots per inch (image resolution) for the saved figure.
-        description : str (optional)
-                            Message printed to confirm where the plot was saved.
-                            Default = "Saved plot".
-        fig : plt.Figure (optional)
-                            Figure object to save. If None, saves the current active 
-                            figure (`plt.gcf()`).
-                            Default = None.
-
-        Returns
-        -------
-        None
-                            Saves the plot to disk and prints the save location.
-        """
-
-
-        if save_plot or self.save_all:
-            save_path = Path(save_path)
-            save_path.mkdir(parents=True, exist_ok=True)
-            full_save_path = save_path / save_fname
-
-            # ensure filename has a valid extension
-            save_fname = str(save_fname)
-            if not any(save_fname.lower().endswith(ext) for ext in [".png", ".jpg", ".jpeg", ".svg", ".pdf"]):
-                save_fname += ".png"
-
-            # use provided figure, or fall back to the current one
-            fig_to_save = fig or plt.gcf()
-            fig_to_save.savefig(full_save_path, dpi=dpi, bbox_inches="tight", metadata=metadata)
-
-            print(f"Saved {description} to\n{full_save_path}")
 
     def plotFeatureImportance(
             self,
@@ -845,46 +759,6 @@ class Visualise():
                 save_path = Path(save_path)
                 save_path.mkdir(parents=True, exist_ok=True)
                 plt.savefig(save_path / f"{p_desc}_distribution.png")
-
-    def plotMemberRadar(
-        self,
-        perf_df,
-        group_map: dict[str, list[str]],
-        group_name: str,
-        value_col: str | None = None,
-        title: str | None = None,
-        figsize: tuple = (11, 11),
-        title_fontsize: int = 16,
-        label_fontsize: int = 11,
-        tick_fontsize: int = 9,
-        save_plot: bool = False,
-        save_path: Union[str, Path] = None,
-        save_fname: str | None = None,
-        dpi: int = 400,
-        wrap_labels: bool = True,
-        wrap_width: int = 14,
-        rotate_labels: bool = True,
-    ):
-        """Backward-compatible wrapper for the renamed member bar chart."""
-
-        return self.plotMemberBar(
-            perf_df=perf_df,
-            group_map=group_map,
-            group_name=group_name,
-            value_col=value_col,
-            title=title,
-            figsize=figsize,
-            title_fontsize=title_fontsize,
-            label_fontsize=label_fontsize,
-            tick_fontsize=tick_fontsize,
-            save_plot=save_plot,
-            save_path=save_path,
-            save_fname=save_fname,
-            dpi=dpi,
-            wrap_labels=wrap_labels,
-            wrap_width=wrap_width,
-            rotate_labels=rotate_labels,
-        )
 
     def plotGroupBar(
             self, 
@@ -1917,7 +1791,7 @@ class Visualise():
                         Output folder for plots/data. Default is current directory.
         save_fname : str, optional
                         Output filename for the biplot image. Default is "PCA_biplot".
-        dpi : int, optional
+        dpi : int, option# regional
                         Figure DPI used when saving. Default is 400.
         save_extra_data : bool, optional
                         Whether to export PCA scores and loadings to CSV. Default is False.
@@ -1948,7 +1822,7 @@ class Visualise():
         if n_components is None:
             n_components = max(pc_x, pc_y)
         if n_components < max(pc_x, pc_y):
-            raise ValueError("n_components must be >= max(pc_x, pc_y).")
+            raise ValueError("n_components must be >= max(pc_x, pc_y).")# region
 
         if random_seed is None:
             random_seed = rand.randint(0, 2**31)
@@ -2567,10 +2441,7 @@ class Visualise():
         plt.tight_layout()
         plt.savefig(out_dir / f"{name_a}_vs_{name_b}_correlation_heatmap.png")
         plt.close()
-# endregion
-    
-# region Code in Progress
-    
+        
     def shapAnalysis(
             self,
             model: str | Path,
@@ -2653,7 +2524,9 @@ class Visualise():
         output_dir.mkdir(parents=True, exist_ok=True)
         full_path = output_dir / full_shap_name
 
-        if save_full and check_full and full_path.exists():
+        print(f"Check full: {check_full}\nSave full:{save_full}\nFull path exists: {full_path.exists()}")
+
+        if check_full and full_path.exists():
             try:
                 bundle = joblib.load(full_path)
                 shap_by_desc = bundle["shap_by_desc"]
@@ -2683,10 +2556,7 @@ class Visualise():
 
         for model_path in model_ls:
             desc_name = Path(model_path).name
-            if desc_name.endswith(".pkl.gz"):
-                desc_name = desc_name[:-7]
-            elif desc_name.endswith(".pkl"):
-                desc_name = desc_name[:-4]
+            desc_name = desc_name.replace(".pkl.gz", "").replace(".pkl", "").removesuffix("_model")
 
             try:
                 model = joblib.load(model_path)
@@ -2836,7 +2706,7 @@ class Visualise():
                 pos = np.arange(1, len(top_feats) + 1)
 
                 plt.figure(figsize=(12, 6))
-                plt.violinplot(data_signed, positions=pos, showmeans=False, showmedians=True, showextrema=False)
+                plt.violinplot(data_signed, positions=pos, showmeans=True, showmedians=False, showextrema=False)
                 plt.xticks(pos, top_feats, rotation=45, ha="right")
                 plt.title(f"Grouped SHAP Distribution (Signed): {group_name}")
                 plt.xlabel("Feature")
@@ -2850,7 +2720,7 @@ class Visualise():
                 data_abs = [box_df_abs[col].dropna().values for col in box_df_abs.columns]
 
                 plt.figure(figsize=(12, 6))
-                plt.violinplot(data_abs, positions=pos, showmeans=False, showmedians=True, showextrema=False)
+                plt.violinplot(data_abs, positions=pos, showmeans=True, showmedians=False, showextrema=False)
                 plt.xticks(pos, top_feats, rotation=45, ha="right")
                 plt.title(f"Grouped SHAP Distribution (Absolute): {group_name}")
                 plt.xlabel("Feature")
@@ -2970,14 +2840,29 @@ class Visualise():
         results_root = paths["prediction_output_dirs"][results_dir]
         group_map = getGroups(pred_set)
 
-        train_labels = [k.split("_tr_")[1] for k in exp_keys]
+        # Accept either:
+        # 1) list/tuple of full experiment keys: ["pred_rdkit_tr_chemberta", ...]
+        # 2) dict mapping label -> full key: {"chemberta": "pred_rdkit_tr_chemberta", ...}
+        if isinstance(exp_keys, dict):
+            exp_items = [(str(label), str(key)) for label, key in exp_keys.items()]
+        else:
+            exp_items = []
+            for key in exp_keys:
+                key = str(key)
+                if "_tr_" in key:
+                    label = key.split("_tr_", 1)[1]
+                else:
+                    label = key
+                exp_items.append((label, key))
 
         # Load each experiment's Pearson_r
         exp_perf = {}
-        for k, tr_lab in zip(exp_keys, train_labels):
+        train_labels = []
+        for tr_lab, k in exp_items:
             p = results_root[k] / f"{k}.csv"
             df = pd.read_csv(p, index_col=0)[["Pearson_r"]].rename(columns={"Pearson_r": tr_lab})
             exp_perf[tr_lab] = df
+            train_labels.append(tr_lab)
 
         # Compute per-group mean Pearson_r for each experiment
         group_rows = {}
@@ -2998,11 +2883,12 @@ class Visualise():
         bar_w = 0.85 / n
 
         colour_map = dict(self.colour_map)
-        colour_map["average_across_all"] = "#4D4D4D"
+        colour_map["average_across_all"] = "#FFFFFF"
 
         fig, ax = plt.subplots(figsize=(16, 7))
         for i, c in enumerate(plot_cols):
             offset = (i - (n - 1) / 2) * bar_w
+            is_avg = c == "average_across_all"
             ax.bar(
                 x + offset,
                 group_bar_df[c].to_numpy(dtype=float),
@@ -3012,6 +2898,7 @@ class Visualise():
                 edgecolor="black",
                 linewidth=0.6,
                 alpha=0.9,
+                hatch="///" if is_avg else None,
             )
 
         ax.set_xticks(x)
@@ -3020,8 +2907,14 @@ class Visualise():
         ax.set_title(f"{pred_set.upper()} Group Performance by Embedding Trainer (+ Average)")
         ax.set_ylim(0, 1.05)
         ax.grid(axis="y", linestyle="--", alpha=0.3)
-        ax.legend(ncol=3, frameon=False)
-        plt.tight_layout()
+        ax.legend(
+            ncol=1,
+            frameon=False,
+            loc="center left",
+            bbox_to_anchor=(1.01, 0.5),
+            borderaxespad=0.0,
+        )
+        plt.tight_layout(rect=[0, 0, 0.88, 1])
 
         if save_path is None:
             save_path = paths["imp_dirs"]["results_dir"] / f"{results_dir}"
@@ -3029,13 +2922,308 @@ class Visualise():
         save_path = Path(save_path)
         save_path.mkdir(parents=True, exist_ok=True)
 
-        fig.savefig(save_path / f"{save_fname}.png", dpi=dpi)
+        fig.savefig(save_path / f"{save_fname}.png", dpi=dpi, bbox_inches="tight")
         plt.close(fig)
 
+        # ----- Boxplots: descriptor-level performance distributions -----
+        # Build descriptor-level table: one column per trainer + average across all.
+        desc_perf_df = pd.concat([exp_perf[label] for label in train_labels], axis=1)
+        desc_perf_df["average_across_all"] = desc_perf_df.mean(axis=1, skipna=True)
+
+        box_rows = []
+        box_metrics = train_labels + ["average_across_all"]
+        for group_name, members in group_map.items():
+            present = [m for m in members if m in desc_perf_df.index]
+            if not present:
+                continue
+            group_slice = desc_perf_df.loc[present, box_metrics]
+            for metric in box_metrics:
+                vals = group_slice[metric].dropna()
+                for val in vals:
+                    box_rows.append(
+                        {
+                            "group": group_name,
+                            "metric": metric,
+                            "pearson_r": float(val),
+                        }
+                    )
+
+        if box_rows:
+            box_df = pd.DataFrame(box_rows)
+
+            box_palette = dict(self.colour_map)
+            box_palette["average_across_all"] = "#000000"
+
+            # Combined plot: all groups
+            fig_all, ax_all = plt.subplots(figsize=(18, 8))
+            sns.boxplot(
+                data=box_df,
+                x="group",
+                y="pearson_r",
+                hue="metric",
+                hue_order=box_metrics,
+                whis=(0, 100),
+                showfliers=False,
+                palette=box_palette,
+                ax=ax_all,
+            )
+            ax_all.set_xticklabels(ax_all.get_xticklabels(), rotation=45, ha="right")
+            ax_all.set_ylim(0, 1.05)
+            ax_all.set_xlabel(f"{pred_set.upper()} descriptor group")
+            ax_all.set_ylabel("Pearson_r")
+            ax_all.set_title(f"{pred_set.upper()} Descriptor-Level Performance by Group")
+            ax_all.grid(axis="y", linestyle="--", alpha=0.3)
+            ax_all.legend(
+                title="Metric",
+                loc="center left",
+                bbox_to_anchor=(1.01, 0.5),
+                frameon=False,
+                ncol=1,
+            )
+            fig_all.tight_layout(rect=[0, 0, 0.88, 1])
+            fig_all.savefig(
+                save_path / f"{save_fname}_boxplot_all_groups.png",
+                dpi=dpi,
+                bbox_inches="tight",
+            )
+            plt.close(fig_all)
+
+            # Individual plot per group
+            for group_name in sorted(box_df["group"].unique()):
+                group_df = box_df[box_df["group"] == group_name]
+                if group_df.empty:
+                    continue
+
+                fig_g, ax_g = plt.subplots(figsize=(12, 6))
+                sns.boxplot(
+                    data=group_df,
+                    x="metric",
+                    y="pearson_r",
+                    order=box_metrics,
+                    whis=(0, 100),
+                    showfliers=False,
+                    palette=box_palette,
+                    ax=ax_g,
+                )
+                ax_g.set_xticklabels(ax_g.get_xticklabels(), rotation=45, ha="right")
+                ax_g.set_ylim(0, 1.05)
+                ax_g.set_xlabel("Metric")
+                ax_g.set_ylabel("Pearson_r")
+                ax_g.set_title(f"{pred_set.upper()} Group: {group_name}")
+                ax_g.grid(axis="y", linestyle="--", alpha=0.3)
+                fig_g.tight_layout()
+
+                safe_group_name = "".join(
+                    ch if ch.isalnum() or ch in ("-", "_") else "_" for ch in group_name
+                )
+                fig_g.savefig(
+                    save_path / f"{save_fname}_boxplot_{safe_group_name}.png",
+                    dpi=dpi,
+                    bbox_inches="tight",
+                )
+                plt.close(fig_g)
+
         return group_bar_df
+    
+    def plotRFVsShapImportance(
+        self,
+        shap_bundle_path: str | Path,
+        rf_importance_csv: str | Path,
+        train_feat: str,
+        save_path: str | Path,
+        save_fname: str = "rf_vs_shap_importance",
+        figsize: tuple = (7, 7),
+        point_size: int = 8,
+        alpha: float = 0.25,
+        dpi: int = 300,
+    ) -> pd.DataFrame:
+        """
+        Compare RF feature importance vs average absolute SHAP in one scatter plot.
+
+        Expected inputs
+        ---------------
+        shap_bundle_path:
+            Joblib bundle produced by shapAnalysisAll with key "shap_by_desc".
+        rf_importance_csv:
+            CSV where rows are input features and columns are descriptor importances
+            (e.g., "Importance_MolWt_rdkit", ...).
+
+        Returns
+        -------
+        pd.DataFrame
+            Long dataframe with columns:
+            ["rf", "shap", "rf_s", "shap_s"] after alignment and cleaning.
+        """
+        shap_bundle_path = Path(shap_bundle_path)
+        rf_importance_csv = Path(rf_importance_csv)
+        save_path = Path(save_path)
+        save_path.mkdir(parents=True, exist_ok=True)
+
+        shap_by_desc, feat_explain, _, _, _ = self._load_shap_bundle(shap_bundle_path)
+        if shap_by_desc is None or feat_explain is None:
+            raise FileNotFoundError(f"Could not load SHAP bundle from: {shap_bundle_path}")
+
+        # Build feature-by-descriptor SHAP importance matrix
+        feature_names = feat_explain.columns.astype(str).tolist()
+        shap_imp_df = pd.DataFrame(
+            {desc: np.abs(vals).mean(axis=0) for desc, vals in shap_by_desc.items()},
+            index=feature_names,
+        )
+
+        # Load RF importance matrix
+        fi_df = pd.read_csv(rf_importance_csv, index_col=0)
+
+        # Standardize descriptor column names so matrices align
+        shap_imp_df = shap_imp_df.rename(columns=lambda c: str(c).replace("_model", ""))
+        fi_df = fi_df.rename(columns=lambda c: str(c).replace("Importance_", ""))
+
+        # Align rows/cols strictly
+        common_idx = fi_df.index.intersection(shap_imp_df.index).sort_values()
+        common_cols = fi_df.columns.intersection(shap_imp_df.columns).sort_values()
+
+        rf = fi_df.reindex(index=common_idx, columns=common_cols)
+        sh = shap_imp_df.reindex(index=common_idx, columns=common_cols)
+
+        if rf.shape != sh.shape:
+            raise ValueError(f"Mismatch after alignment: rf={rf.shape}, sh={sh.shape}")
+        if rf.empty:
+            raise ValueError("No overlapping rows/columns between RF and SHAP matrices.")
+
+        long_df = pd.DataFrame(
+            {
+                "rf": rf.to_numpy().ravel(),
+                "shap": sh.to_numpy().ravel(),
+            }
+        )
+        long_df = long_df.replace([np.inf, -np.inf], np.nan).dropna()
+        if long_df.empty:
+            raise ValueError("All aligned RF/SHAP pairs are NaN/Inf after cleaning.")
+
+        rf_min, rf_max = long_df["rf"].min(), long_df["rf"].max()
+        sh_min, sh_max = long_df["shap"].min(), long_df["shap"].max()
+
+        if np.isclose(rf_max, rf_min):
+            long_df["rf_s"] = 0.0
+        else:
+            long_df["rf_s"] = (long_df["rf"] - rf_min) / (rf_max - rf_min)
+
+        if np.isclose(sh_max, sh_min):
+            long_df["shap_s"] = 0.0
+        else:
+            long_df["shap_s"] = (long_df["shap"] - sh_min) / (sh_max - sh_min)
+
+        fig, ax = plt.subplots(figsize=figsize)
+        ax.scatter(
+            long_df["rf_s"],
+            long_df["shap_s"],
+            s=point_size,
+            alpha=alpha,
+            color=self.colour_map.get(train_feat, "#000000"),
+        )
+        ax.plot([0, 1], [0, 1], "k--", lw=1)
+        ax.set_xlabel("RF importance (scaled)")
+        ax.set_ylabel("Mean |SHAP| (scaled)")
+        ax.set_title("RF vs SHAP importance agreement")
+        ax.grid(alpha=0.8)
+        fig.tight_layout()
+        fig.savefig(save_path / f"{save_fname}.png", dpi=dpi, bbox_inches="tight")
+        plt.close(fig)
+
+        return long_df
+# endregion
+
+# region Hidden Worker Functions
+    def _getColour(self, name:str) -> tuple:
+        """
+        Retrieves the RGBA colour associated with a given label.
+
+        Parameters
+        ----------
+        name : str
+                            Label to look up in the internal colour map.
+
+        Returns
+        -------
+        tuple
+                            An RGBA tuple representing the colour (R, G, B, A).
+        """
 
 
-# end region
+        lower_name = name.lower()
+
+        # Prefer exact key matches first.
+        if lower_name in self.colour_map:
+            return self.colour_map[lower_name]
+
+        # Fallback: boundary-aware key match (not raw substring), checking
+        # longer keys first to avoid collisions such as "chemberta" matching
+        # "chembertasey", and to avoid accidental hits like "morgan" in
+        # "FpDensityMorgan1".
+        for key in sorted(self.colour_map.keys(), key=len, reverse=True):
+            pattern = rf"(?<![a-z0-9]){re.escape(key.lower())}(?![a-z0-9])"
+            if re.search(pattern, lower_name):
+                return self.colour_map[key]
+        return self.default_colour
+
+    def _savePlot(
+            self,
+            save_plot: bool, 
+            save_path: Union[str, Path], 
+            save_fname: str, 
+            dpi: int,
+            description: str="Saved plot",
+            fig: plt.Figure | None=None,
+            metadata:dict={}
+            ):
+        """
+        Saves a matplotlib figure.
+
+        This helper function standardises plot saving across the project. It can save 
+        either a provided matplotlib figure or the current active plot (`plt.gcf()`), 
+        automatically handling directory creation and defaulting to a `.png` extension 
+        if none is specified.
+
+        Parameters
+        ----------
+        save_plot : bool
+                            Whether to save the plot.
+        save_path : str, Path
+                            Directory to save the plot to.
+        save_fname : str
+                            Filename to save the plot under. If no extension is provided,
+                            ".png" will be appended automatically.
+        dpi : int
+                            Dots per inch (image resolution) for the saved figure.
+        description : str (optional)
+                            Message printed to confirm where the plot was saved.
+                            Default = "Saved plot".
+        fig : plt.Figure (optional)
+                            Figure object to save. If None, saves the current active 
+                            figure (`plt.gcf()`).
+                            Default = None.
+
+        Returns
+        -------
+        None
+                            Saves the plot to disk and prints the save location.
+        """
+
+
+        if save_plot or self.save_all:
+            save_path = Path(save_path)
+            save_path.mkdir(parents=True, exist_ok=True)
+            full_save_path = save_path / save_fname
+
+            # ensure filename has a valid extension
+            save_fname = str(save_fname)
+            if not any(save_fname.lower().endswith(ext) for ext in [".png", ".jpg", ".jpeg", ".svg", ".pdf"]):
+                save_fname += ".png"
+
+            # use provided figure, or fall back to the current one
+            fig_to_save = fig or plt.gcf()
+            fig_to_save.savefig(full_save_path, dpi=dpi, bbox_inches="tight", metadata=metadata)
+
+            print(f"Saved {description} to\n{full_save_path}")
 
     def _load_shap_bundle(
         self,
@@ -3081,3 +3269,341 @@ class Visualise():
                 feature_shap_series = desc_shap_df[feature].copy()
 
         return shap_by_desc, feat_explain, desc_shap_df, feature_shap_series, shap_values
+
+    def _build_predictions_on_important_tr_features(
+        self,
+        importance_dict: dict,
+        pred_tr_perf_df: pd.DataFrame,
+        metric_col: str = "Pearson_r",
+        top_feature_key: str = "top_features",
+    ) -> dict:
+        """
+        For each predicted descriptor, look up trainer-performance values on the
+        top-N trainer features identified as important.
+
+        importance_dict format:
+            importance_dict[pred_desc] = [top_features, score]
+            or
+            importance_dict[pred_desc] = {"top_features": [...], ...}
+        """
+        results = {}
+        for pred_desc, payload in importance_dict.items():
+            tr_features = (
+                payload.get(top_feature_key, [])
+                if isinstance(payload, dict)
+                else payload[0]
+            )
+            vals = [
+                pred_tr_perf_df.loc[f, metric_col]
+                for f in tr_features
+                if f in pred_tr_perf_df.index
+            ]
+            results[pred_desc] = {
+                "tr_features": tr_features,
+                "preds_on_imp_tr_features": vals,
+                "avg_preds_on_imp_tr_features": float(np.mean(vals)) if vals else np.nan,
+            }
+        return results
+
+    def _build_final_comparison_dataframe(
+        self,
+        pred_on_target_df: pd.DataFrame,
+        preds_on_imp_tr_results: dict,
+        desc_to_group: dict | None = None,
+        metric_col: str = "Pearson_r",
+        pred_label: str = "pred_on_target",
+    ) -> pd.DataFrame:
+        """
+        Assemble the two-axis comparison DataFrame:
+            y = direct prediction performance on target descriptors
+            x = average trainer performance on the important trainer features
+        """
+        df = pd.DataFrame(index=pred_on_target_df.index)
+        df[pred_label] = pred_on_target_df[metric_col]
+        df["avg_preds_on_imp_tr_features"] = df.index.map(
+            lambda k: preds_on_imp_tr_results.get(k, {}).get("avg_preds_on_imp_tr_features", np.nan)
+        )
+        df["group"] = (
+            df.index.map(lambda d: desc_to_group.get(d, "Unknown"))
+            if desc_to_group is not None
+            else "Unknown"
+        )
+        return df[[pred_label, "avg_preds_on_imp_tr_features", "group"]].dropna()
+
+
+    def plotDescPredictionVsFeatPrediction(
+        self,
+        # --- data inputs (used to build dataframes internally) ---
+        importance_map: dict,
+        pred_tr_perf_df: pd.DataFrame,
+        pred_on_target_df: pd.DataFrame,
+        desc_to_group: dict | None = None,
+        metric_col: str = "Pearson_r",
+        pred_label: str = "pred_on_target",
+        importance_col: str = "importance",
+        left_title: str = "",
+        right_title: str = "",
+        save_path: str | Path = "plot.png",
+        mode: str = "avg",
+        r_vmin: float = 0.0,
+        r_vmax: float = 1.0,
+        r_high: float = 2.0,
+        bubble: bool = False,
+        imp_type: str="SHAP"
+    ) -> pd.DataFrame:
+        """
+        Build the comparison dataframes and produce a two-panel scatter plot.
+
+        Panel left  — points coloured by descriptor group, optionally sized by importance.
+        Panel right — points coloured by SHAP/RF importance value.
+
+        Parameters
+        ----------
+        importance_map : dict
+            Output of get_topn_importance:
+            {descriptor: [top_feature_names, score]}
+        pred_tr_perf_df : pd.DataFrame
+            Performance of the embedding on trainer features (e.g. MACCS → ChemBERTa).
+            Index = trainer feature names, must contain `metric_col`.
+        pred_on_target_df : pd.DataFrame
+            Direct prediction performance on target descriptors (e.g. ChemBERTa → RDKit).
+            Index = target descriptor names, must contain `metric_col`.
+        desc_to_group : dict | None
+            Maps descriptor names to group labels for colouring the left panel.
+        metric_col : str
+            Column in both performance DataFrames to use as the metric.
+        pred_label : str
+            Column name for the direct-prediction metric in the output DataFrame.
+        importance_col : str
+            Column name written into the output DataFrame for importance values.
+        left_title / right_title : str
+            Titles for each panel.
+        save_path : str | Path
+            Where to save the figure.
+        mode : str
+            'avg' or 'cum' — controls colorbar label and out-of-range legend entries.
+        r_vmin / r_vmax : float
+            Colormap range for the right panel.
+        r_high : float
+            Threshold above r_vmax at which points are coloured with colour_high.
+        bubble : bool
+            If True, scale point size by importance; otherwise use a fixed size.
+
+        Returns
+        -------
+        pd.DataFrame
+            The augmented plot DataFrame (useful for downstream diagnostics).
+        """
+
+        preds_on_imp_tr = self._build_predictions_on_important_tr_features(
+            importance_dict=importance_map,
+            pred_tr_perf_df=pred_tr_perf_df,
+            metric_col=metric_col,
+        )
+        plot_df = self._build_final_comparison_dataframe(
+            pred_on_target_df=pred_on_target_df,
+            preds_on_imp_tr_results=preds_on_imp_tr,
+            desc_to_group=desc_to_group,
+            metric_col=metric_col,
+            pred_label=pred_label,
+        )
+
+        # Attach importance scores and bubble sizes
+        plot_df[importance_col] = plot_df.index.map(
+            {desc: vals[1] for desc, vals in importance_map.items()}
+        )
+        plot_df = plot_df.dropna(subset=[importance_col]).copy()
+        plot_df["bubble_size"] = (
+            self._scale_bubble_sizes(plot_df[importance_col].astype(float), s_min=30, s_max=500)
+            if bubble
+            else 55.0
+        )
+
+        groups = sorted(plot_df["group"].unique())
+        tab20 = plt.get_cmap("tab20", len(groups))
+        group_colors = {g: tab20(i) for i, g in enumerate(groups)}
+        group_handles = self._make_group_handles(groups, group_colors)
+
+        x_col = "avg_preds_on_imp_tr_features"
+        y_col = pred_label
+
+        fig, (ax_left, ax_right) = plt.subplots(1, 2, figsize=(15, 7), sharex=True, sharey=True)
+
+        self._add_left_panel(
+            ax=ax_left,
+            df=plot_df,
+            x_col=x_col,
+            y_col=y_col,
+            groups=groups,
+            group_colors=group_colors,
+            group_handles=group_handles,
+            title=left_title,
+        )
+        self._add_right_panel(
+            ax=ax_right,
+            fig=fig,
+            df=plot_df,
+            x_col=x_col,
+            y_col=y_col,
+            importance_col=importance_col,
+            title=right_title,
+            mode=mode,
+            r_vmin=r_vmin,
+            r_vmax=r_vmax,
+            r_high=r_high,
+            imp_type=imp_type
+        )
+
+        fig.tight_layout()
+        fig.savefig(save_path, dpi=300, bbox_inches="tight")
+        plt.close(fig)
+        print(f"Saved: {save_path}")
+        return plot_df
+
+    @staticmethod
+    def _make_group_handles(groups: list, group_colors: dict) -> list:
+        return [
+            Line2D(
+                [0], [0], marker="o", linestyle="",
+                markerfacecolor=group_colors[g], markeredgecolor="black",
+                markersize=7, label=g,
+            )
+            for g in groups
+        ]
+
+    @staticmethod
+    def _scale_bubble_sizes(series: pd.Series, s_min: int, s_max: int) -> pd.Series:
+        raw_min, raw_max = series.min(), series.max()
+        if np.isclose(raw_min, raw_max):
+            return pd.Series(float((s_min + s_max) / 2.0), index=series.index)
+        return s_min + (series - raw_min) / (raw_max - raw_min) * (s_max - s_min)
+
+    @staticmethod
+    def _add_left_panel(
+        ax,
+        df: pd.DataFrame,
+        x_col: str,
+        y_col: str,
+        groups: list,
+        group_colors: dict,
+        group_handles: list,
+        title: str,
+    ) -> None:
+        for g in groups:
+            sub = df[df["group"] == g]
+            ax.scatter(
+                sub[x_col], sub[y_col],
+                s=sub["bubble_size"],
+                alpha=0.85,
+                color=group_colors[g],
+                edgecolor="black",
+                linewidth=0.3,
+            )
+        ax.plot([0, 1], [0, 1], "k--", lw=1)
+        ax.set_xlim(0, 1)
+        ax.set_ylim(0, 1)
+        ax.set_xlabel("Avg trainer performance on top-N important trainer features")
+        ax.set_ylabel("Direct prediction performance on target (Pearson r)")
+        ax.set_title(title)
+        ax.legend(
+            handles=group_handles,
+            title="Descriptor group",
+            bbox_to_anchor=(1.02, 1.0),
+            loc="upper left",
+            frameon=False,
+            fontsize=8,
+            title_fontsize=9,
+        )
+
+    @staticmethod
+    def _add_right_panel(
+        ax,
+        fig,
+        df: pd.DataFrame,
+        x_col: str,
+        y_col: str,
+        importance_col: str,
+        title: str,
+        mode: str,
+        r_vmin: float,
+        r_vmax: float,
+        r_high: float,
+        colour_mid: str = "#ff8c00",
+        colour_high: str = "#d62728",
+        colour_low: str = "#000000",
+        imp_type:str="SHAP"
+    ) -> None:
+        masks = {
+            "low":     df[importance_col] <= r_vmin,
+            "inrange": df[importance_col].between(r_vmin, r_vmax),
+            "mid":     df[importance_col].between(r_vmax, r_high, inclusive="neither"),
+            "high":    df[importance_col] > r_high,
+        }
+
+        sc = ax.scatter(
+            df.loc[masks["inrange"], x_col],
+            df.loc[masks["inrange"], y_col],
+            s=55,
+            c=df.loc[masks["inrange"], importance_col],
+            cmap="viridis",
+            vmin=r_vmin,
+            vmax=r_vmax,
+            alpha=0.85,
+            edgecolor="black",
+            linewidth=0.25,
+        )
+
+        out_of_range = {"mid": colour_mid, "high": colour_high}
+        if mode == "cum":
+            out_of_range["low"] = colour_low
+
+        for mask_key, color in out_of_range.items():
+            ax.scatter(
+                df.loc[masks[mask_key], x_col],
+                df.loc[masks[mask_key], y_col],
+                s=55, c=color, alpha=0.85, edgecolor="black", linewidth=0.25,
+            )
+
+        cbar_label = (
+            f"Avg top-N {imp_type} importance" if mode == "avg"
+            else f"Cum top-N {imp_type} importance"
+        )
+        out_handles = [
+            Line2D([0], [0], marker="o", linestyle="", markerfacecolor=colour_low,
+                   markeredgecolor="black", markersize=7, label=f"< {r_vmin}"),
+            Line2D([0], [0], marker="o", linestyle="", markerfacecolor=colour_mid,
+                   markeredgecolor="black", markersize=7, label=f"> {r_vmax}"),
+            Line2D([0], [0], marker="o", linestyle="", markerfacecolor=colour_high,
+                   markeredgecolor="black", markersize=7, label=f">> {r_high}"),
+        ]
+
+        ax.plot([0, 1], [0, 1], "k--", lw=1)
+        ax.set_xlim(0, 1)
+        ax.set_ylim(0, 1)
+        ax.set_xlabel("Avg trainer performance on top-N important trainer features")
+        ax.set_title(title)
+
+        cbar = fig.colorbar(sc, ax=ax, fraction=0.046, pad=0.04)
+        cbar.set_label(cbar_label)
+        ax.legend(
+            handles=out_handles,
+            title="Out-of-range" if mode == "cum" else "Higher importance",
+            bbox_to_anchor=(1.32, 1.0),
+            loc="upper left",
+            frameon=False,
+            fontsize=8,
+            title_fontsize=9,
+        )
+    
+    def plotImportanceViolin(self, series: pd.Series, col_name: str, save_path: str | Path) -> None:
+        """Violin plot of a single importance column."""
+        fig, ax = plt.subplots(figsize=(7, 5))
+        ax.violinplot(series.dropna().to_numpy(), showmeans=True, showmedians=True, showextrema=False)
+        ax.set_xticks([1])
+        ax.set_xticklabels([col_name])
+        ax.set_ylabel("Importance value")
+        ax.set_title(f"Distribution of {col_name}")
+        fig.tight_layout()
+        fig.savefig(save_path, dpi=300)
+        plt.close(fig)
+        print(f"Saved: {save_path}")

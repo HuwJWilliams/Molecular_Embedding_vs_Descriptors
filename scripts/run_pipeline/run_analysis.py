@@ -158,6 +158,8 @@ for exp in exp_list:
             exclude=excl_cols
         )
 
+        group_performance_df.to_csv(exp_dir / "group_perf.csv")
+
     # --- Plotting the overall cross-prediction performance
         gr_title=f"{pred.capitalize()} Prediction ({tr.capitalize()} trained): Pearson R"
         timestamp = datetime.now().strftime("%d/%m/%Y %H:%M")

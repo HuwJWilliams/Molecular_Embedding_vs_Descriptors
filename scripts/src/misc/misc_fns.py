@@ -262,3 +262,62 @@ def check_path_exists(path, expect=None, non_empty=False, name="path"):
         raise ValueError(f"{name} is empty: {p}")
 
     return p
+
+def getMostImportantFeatures(
+        importance_source,
+        top_n: int=25,
+        mode: str="shap"
+) -> tuple[dict, dict]:
+    """
+    Summarise the top-N most important features for each descriptor.
+
+    Parameters
+    ----------
+    importance_source : dict | pd.DataFrame
+        For mode='shap': dict with keys 'shap_by_desc' and 'feature_names'.
+        For mode='rf':   DataFrame with columns named 'Importance_<descriptor>'.
+    top_n : int
+        Number of top features to retain.
+    mode : str
+        'shap' or 'rf'.
+
+    Returns
+    -------
+    avg_importance_dict : dict
+        {descriptor: [top_feature_names, mean_top_n_importance]}
+    cum_importance_dict : dict
+        {descriptor: [top_feature_names, sum_top_n_importance]}
+    """
+    avg_importance_dict: dict = {}
+    cum_importance_dict: dict = {}
+
+    if mode == "shap":
+        shap_by_desc = importance_source["shap_by_desc"]
+        feature_names = importance_source["feature_names"]
+
+        for desc, shap_values in shap_by_desc.items():
+            top = (
+                pd.Series(np.abs(shap_values).mean(axis=0), index=feature_names)
+                .nlargest(top_n)
+            )
+            clean_desc = desc.rsplit("_", 1)[0]
+            avg_importance_dict[clean_desc] = [top.index.tolist(), float(top.mean())]
+            cum_importance_dict[clean_desc] = [top.index.tolist(), float(top.sum())]
+
+    elif mode == "rf":
+        fi_df = importance_source.copy()
+        if "Feature" in fi_df.columns:
+            fi_df = fi_df.set_index("Feature")
+
+        for col in fi_df.columns:
+            if not str(col).startswith("Importance_"):
+                continue
+            desc = str(col).replace("Importance_", "")
+            top = pd.to_numeric(fi_df[col], errors="coerce").dropna().nlargest(top_n)
+            avg_importance_dict[desc] = [top.index.tolist(), float(top.mean())]
+            cum_importance_dict[desc] = [top.index.tolist(), float(top.sum())]
+
+    else:
+        raise ValueError(f"mode must be 'shap' or 'rf', got '{mode}'")
+
+    return avg_importance_dict, cum_importance_dict

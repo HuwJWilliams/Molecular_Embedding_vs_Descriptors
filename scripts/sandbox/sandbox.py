@@ -1,107 +1,141 @@
-# region Imports and Pathing
+# =============================================================================
+# ChemBERTa Importance Analysis
+# Goal: Identify which ChemBERTa embeddings are unused/redundant via SHAP/RF
+# =============================================================================
+
+# region Imports
 from pathlib import Path
-import pandas as pd
-import sys
-import numpy as np
-# import shap
-import matplotlib.pyplot as plt
+
 # import joblib
-from glob import glob
+# import matplotlib.pyplot as plt
+# import numpy as np
+# import pandas as pd
+# from matplotlib.lines import Line2D
 
+import sys
 sys.path.insert(0, "/users/yhb18174/TL_project/scripts/src/pathing/")
-from get_paths import getPaths
-
-sys.path.insert(0, "/users/yhb18174/TL_project/scripts/src/datasets")
-# from group_descriptors import getGroups
-# from analyse_datasets import plotDescriptorAnalysis
-
+sys.path.insert(0, "/users/yhb18174/TL_project/scripts/src/datasets/")
 sys.path.insert(0, "/users/yhb18174/TL_project/scripts/src/visualisation/")
-from vis import Visualise
+sys.path.insert(0, "/users/yhb18174/TL_project/scripts/src/misc/")
 
 
-paths=getPaths()
-v = Visualise()
+# from get_paths import getPaths
+# from group_descriptors import getGroups
+# from vis import Visualise
+# from misc_fns import getMostImportantFeatures
+
+# v=Visualise(save_all=False)
+# SANDBOX = Path("/users/yhb18174/TL_project/scripts/sandbox")
+# endregion
 
 
-#endregion
-"""
-Experiment description:
-to try and find what embeddings are totally unused from chemberta
-"""
 
-paths = getPaths()
+# # region Main
+# def main():
+#     paths=getPaths()
+#     exp_paths = paths["prediction_output_dirs"]["lipinski_cross_feature_predictions"]
 
-CFD = paths["prediction_output_dirs"]["lipinski_cross_feature_predictions"]
-prtc = CFD["pred_rdkit_tr_chemberta"]  # rdkit predicted from chemberta
+#     # --- Load data ---
+#     pred_rdkit_tr_maccs_df = pd.read_csv(exp_paths["pred_rdkit_tr_maccs"] / "pred_rdkit_tr_maccs.csv", index_col=0)
+#     pred_rdkit_tr_chemberta_df = pd.read_csv(exp_paths["pred_rdkit_tr_chemberta"]  / "pred_rdkit_tr_chemberta.csv" , index_col=0)
+#     pred_maccs_tr_chemberta_df = pd.read_csv(exp_paths["pred_maccs_tr_chemberta"] / "pred_maccs_tr_chemberta.csv", index_col=0)
 
-results_dir = Path(prtc) / "training_data"
-tr_feat_path = results_dir / "training_features.csv.gz"
+#     shap_bundle = joblib.load(exp_paths["pred_rdkit_tr_maccs"] / "shap" / "full_shap_analysis.joblib.gz")
+#     rf_fi_df = pd.read_csv(exp_paths["pred_rdkit_tr_maccs"] / "all_feature_importance.csv", index_col=0)
 
-# SHAP settings
-max_bg = 200
-max_exp = 500
+#     # --- Descriptor group mapping ---
+#     group_map = getGroups("rdkit")
+#     desc_to_group = {desc: group for group, members in group_map.items() for desc in members}
 
-# run SHAP for every rdkit descriptor model and aggregate per embedding feature
-model_paths = sorted(glob(str(results_dir / "*.pkl")))
-if not model_paths:
-    raise FileNotFoundError(f"No models found in {results_dir}")
+#     # --- SHAP importance ---
+#     shap_importance_source = {
+#         "shap_by_desc": shap_bundle["shap_by_desc"],
+#         "feature_names": shap_bundle["feat_explain"].columns.tolist(),
+#     }
 
-all_rows = []
+#     shap_avg_imp, shap_cum_imp = getMostImportantFeatures(shap_importance_source, mode="shap")
+#     rf_avg_imp, rf_cum_imp =getMostImportantFeatures(rf_fi_df, mode="rf")
 
-out_csv = Path(prtc) / "shap_feature_scores_for_fi_vs_shap.csv"
-if not out_csv.exists():
-    for model_path in model_paths:
-        pred_feature = Path(model_path).stem  # e.g. MolWt_rdkit
+#     shap_avg_df = v.plotDescPredictionVsFeatPrediction(
+#         importance_map=shap_avg_imp,
+#         pred_tr_perf_df=pred_maccs_tr_chemberta_df,
+#         pred_on_target_df=pred_rdkit_tr_chemberta_df,
+#         desc_to_group=desc_to_group,
+#         importance_col="avg_imp_top25_maccs",
+#         left_title="SHAP avg importance: Colored by RDKit group",
+#         right_title="SHAP avg importance: Colored by importance",
+#         save_path=SANDBOX / "chemberta_vs_shap_imp_maccs_by_group_avg.png",
+#         mode="avg",
+#         r_vmax=1,
+#         r_vmin=0,
+#         r_high=5,
+#         imp_type="SHAP"
+#     )
 
-        shap_v, feat_explain, _ = v.shapAnalysis(
-            model=model_path,
-            features=tr_feat_path,
-            pred_feature=pred_feature,
-            output_dir=results_dir,  # not used here
-            max_bg=max_bg,
-            max_explain=max_exp,
-            plot=False,
-            max_display=20,
-        )
+#     # --- RF importance ---
+#     shap_avg_df = v.plotDescPredictionVsFeatPrediction(
+#         importance_map=rf_avg_imp,
+#         pred_tr_perf_df=pred_maccs_tr_chemberta_df,
+#         pred_on_target_df=pred_rdkit_tr_chemberta_df,
+#         desc_to_group=desc_to_group,
+#         importance_col="avg_imp_top25_maccs",
+#         left_title="RF avg importance: Colored by RDKit group",
+#         right_title="RF avg importance: Colored by importance",
+#         save_path=SANDBOX / "chemberta_vs_rf_imp_maccs_by_group_avg.png",
+#         mode="avg",
+#         r_vmax=1,
+#         r_vmin=0,
+#         r_high=5,
+#         imp_type="RF"
+#     )
+ 
 
-        sv_obj = shap_v[0] if isinstance(shap_v, list) else shap_v
-        sv = sv_obj.values if hasattr(sv_obj, "values") else np.asarray(sv_obj)
-        if sv.ndim == 1:
-            sv = sv.reshape(-1, 1)
+#     # align on shared descriptor index
+#     plot_df = pred_rdkit_tr_maccs_df[["Pearson_r"]].rename(columns={"Pearson_r": "maccs_on_rdkit"}).join(
+#         pred_rdkit_tr_chemberta_df[["Pearson_r"]].rename(columns={"Pearson_r": "chemberta_on_rdkit"}),
+#         how="inner"
+#     ).dropna()
 
-        mean_abs = np.abs(sv).mean(axis=0)
-        for feat_name, val in zip(feat_explain.columns, mean_abs):
-            all_rows.append(
-                {
-                    "pred_feature": pred_feature,
-                    "embedding_feature": feat_name,
-                    "mean_abs_shap": float(val),
-                }
-            )
+#     plt.figure(figsize=(7, 7))
+#     plt.scatter(
+#         plot_df["maccs_on_rdkit"],      # x
+#         plot_df["chemberta_on_rdkit"],  # y
+#         s=25,
+#         alpha=0.7,
+#         edgecolor="none",
+#     )
 
-    shap_df = pd.DataFrame(all_rows)
+#     plt.plot([0, 1], [0, 1], "k--", lw=1)
+#     plt.xlim(0, 1)
+#     plt.ylim(0, 1)
+#     plt.xlabel("MACCS -> RDKit Pearson_r")
+#     plt.ylabel("ChemBERTa -> RDKit Pearson_r")
+#     plt.title("Descriptor-level performance: MACCS vs ChemBERTa")
+#     plt.tight_layout()
+#     plt.savefig("/users/yhb18174/TL_project/scripts/sandbox/maccs_vs_chemberta_rdkit_scatter.png", dpi=300)
+#     plt.close()
 
-    # For FI vs SHAP: one SHAP score per embedding across all descriptor targets
-    shap_agg = (
-        shap_df.groupby("embedding_feature", as_index=False)["mean_abs_shap"]
-        .mean()
-        .rename(columns={"mean_abs_shap": "shap_score"})
-    )
+# if __name__ == "__main__":
+#     main()
+# endregion
 
-    # save for merge with FI table later
-    shap_agg.to_csv(out_csv, index=False)
-    print(f"Saved: {out_csv}")
+from pathlib import Path
+import joblib
 
-else:
-    shap = pd.read_csv(out_csv, index_col=0)
-    fi = pd.read_csv(out_csv.parent / "all_feature_importance.csv", index_col=0)
-    fi["avg_fi"] = fi.mean(axis=1)
+p = Path("/users/yhb18174/TL_project/results/lipinski_embeddings_and_descriptor_predictions/pred_rdkit_tr_molformer-c3-1b/shap/full_shap_analysis.joblib.gz")
 
-    plt.figure(figsize=(7, 6))
-    plt.scatter(shap["shap_score"], fi["avg_fi"], alpha=0.7, s=20)
-    plt.xlabel("Average SHAP Score")
-    plt.ylabel("Average Feature Importance")
-    plt.title("SHAP vs Feature Importance")
-    plt.tight_layout()
-    plt.show()
-    plt.savefig(out_csv.parent / "shap_vs_fi.png", dpi=400)
+bundle = joblib.load(p)
+shap_by_desc = bundle["shap_by_desc"]
+
+bundle["shap_by_desc"] = {
+    k.removesuffix("_model"): v
+    for k, v in shap_by_desc.items()
+}
+
+# optional backup
+p_backup = p.with_suffix(p.suffix + ".bak")
+joblib.dump(bundle, p_backup, compress=3)
+
+# overwrite original
+joblib.dump(bundle, p, compress=3)
+print(f"Updated keys and saved: {p}")
