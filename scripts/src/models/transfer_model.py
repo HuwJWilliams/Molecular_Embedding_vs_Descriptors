@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 import random
 import sys
-from sklearn.model_selection import KFold, GridSearchCV
+from sklearn.model_selection import KFold, GridSearchCV, StratifiedKFold
 from sklearn.linear_model import LinearRegression
 from sklearn.feature_selection import f_regression
 from sklearn.metrics import mean_squared_error, r2_score
@@ -27,7 +27,7 @@ PALMERCHEM_SOFTWARE_ANALYSIS = Path.home() / "PalmerChem_Software" / "src" / "an
 LOG_DIR = SRC_DIR / "models" / "logs"
 
 sys.path.insert(0, str(PALMERCHEM_SOFTWARE_MODELS))
-from RFRegressor import RFRegressor
+from RF_models import RFRegressor, RFClassifier, RFMultiClassifier
 
 sys.path.insert(0, str(PALMERCHEM_SOFTWARE_ANALYSIS))
 from performance_calculation import calculatePerformance
@@ -122,7 +122,7 @@ class TL():
         self,
         features_df: pd.DataFrame,
         targets_df: pd.DataFrame,
-        rf_regressor_class,
+        rf_regressor_class=None,
         hyper_params: dict =  {
                 "n_estimators": [200, 400, 500],
                 "max_features": ["sqrt"],
@@ -143,7 +143,8 @@ class TL():
         log_level=logging.DEBUG,
         trim_by_percentile: bool=True,
         percentile: float=0.99,
-        save_feat_imp:bool=False
+        save_feat_imp:bool=False,
+        min_training_samples: int = 2500,
     ) -> pd.DataFrame:
         """
         Train Random Forest models for multiple target columns using logging.
@@ -151,6 +152,7 @@ class TL():
 
         # Set up empty dataframe to save performances
         total_performance_df = pd.DataFrame()
+        regressor_cls = rf_regressor_class if rf_regressor_class is not None else RFRegressor
 
         completed_targets =  set()
 
@@ -200,9 +202,6 @@ class TL():
                 continue
 
             self.logger.info(f"Processing target: {target_column} ({i+1}/{len(targets_df.columns)})")
-
-            current_target = targets_df[target_column]
-
             current_target = targets_df[target_column]
 
             target_df = current_target.to_frame(name=target_column)
@@ -231,46 +230,419 @@ class TL():
 
             # Drop rows where target is missing
             combined_data = combined_data.loc[y.notna()].copy()
-
+            target_series = combined_data[target_column]
+            n_unique = int(target_series.nunique(dropna=True))
+            non_na_target = target_series.dropna()
 
             self.logger.info(f"  After removing non-finite values: {len(combined_data)} samples")
-            if y.nunique() < 2:
-                self.logger.warning(f"  Skipping {target_column}: <2 unique values")
+            self.logger.info(f"  Target unique values: {n_unique}")
+
+            if n_unique < 2:
+                self.logger.warning(f"  Skipping {target_column}: fewer than 2 unique target values")
                 continue
 
-            if len(combined_data) < 10:
-                self.logger.warning(f"  Skipping {target_column}: too few samples ({len(combined_data)})")
-                continue
+            # Class-like targets:
+            # - object/category/bool labels
+            # - numeric but all values are integer-like
+            is_class_like = False
+            if (
+                pd.api.types.is_object_dtype(non_na_target)
+                or pd.api.types.is_categorical_dtype(non_na_target)
+                or pd.api.types.is_bool_dtype(non_na_target)
+            ):
+                is_class_like = True
+            elif pd.api.types.is_numeric_dtype(non_na_target):
+                arr = non_na_target.to_numpy(dtype=float)
+                is_class_like = bool(np.all(np.isclose(arr, np.round(arr), atol=1e-9)))
 
+            # Ensure sklearn classifiers see integer class labels for numeric class-like targets.
+            if is_class_like and pd.api.types.is_numeric_dtype(non_na_target):
+                combined_data[target_column] = (
+                    pd.to_numeric(combined_data[target_column], errors="coerce")
+                    .round()
+                    .astype("Int64")
+                )
+                combined_data = combined_data.loc[combined_data[target_column].notna()].copy()
+                combined_data[target_column] = combined_data[target_column].astype(int)
+
+            # If binary use classifier
+            if is_class_like and n_unique == 2:
+                print("Number of unique values = 2. Using RFClassifier")
+                try:
+                    rf_model = RFClassifier(
+                        cv_function=StratifiedKFold,
+                        hp_search_function=GridSearchCV,
+                        cv_kwargs={"n_splits": cv_splits, "shuffle": True, "random_state": random_seed},
+                        hp_search_kwargs={"cv": cv_splits, "scoring": "roc_auc"},                
+                        log_level=log_level,
+                        random_seed=random_seed
+                    )
+
+                    final_model, best_params, performance_dict, feat_importance_df = rf_model.trainRFClassifier(
+                        n_resamples=n_resamples,
+                        data=combined_data,
+                        target_column=target_column,
+                        hyperparameters=hyper_params,
+                        test_size=test_size,
+                        save_interval_models=False,
+                        save_path=save_path,
+                        save_final_model=save_models,
+                        plot_feat_importance=False,
+                        batch_size=batch_size,
+                        n_jobs=1,
+                        final_rf_seed=random_seed,
+                        final_model_name=f"{target_column}_model"
+                        )
+                    performance_dict["task_type"] = "binary_classification"
+                    
+                except Exception as e:
+                    self.logger.error(f"  Error training model for {target_column}: {str(e)}")
+                    continue
+
+            # If discrete use multiclass
+            elif is_class_like and n_unique <= 6:
+                print("Number of unique values 2 < n >=6 Using RFMultiClassifier")
+
+                try:
+                    rf_model = RFMultiClassifier(
+                        cv_function=StratifiedKFold,
+                        hp_search_function=GridSearchCV,
+                        cv_kwargs={"n_splits": cv_splits, "shuffle": True, "random_state": random_seed},
+                        hp_search_kwargs={"cv": cv_splits, "scoring": "f1_macro"},                
+                        log_level=log_level,
+                        random_seed=random_seed
+                    )
+
+                    final_model, best_params, performance_dict, feat_importance_df = rf_model.trainRFMultiClassifier(
+                        n_resamples=n_resamples,
+                        data=combined_data,
+                        target_column=target_column,
+                        hyperparameters=hyper_params,
+                        test_size=test_size,
+                        save_interval_models=False,
+                        save_path=save_path,
+                        save_final_model=save_models,
+                        plot_feat_importance=False,
+                        batch_size=batch_size,
+                        n_jobs=1,
+                        final_rf_seed=random_seed,
+                        final_model_name=f"{target_column}_model"
+                        )
+                    performance_dict["task_type"] = "multiclass_classification"
+                    
+                except Exception as e:
+                    self.logger.error(f"  Error training model for {target_column}: {str(e)}")
+                    continue
+
+            else:
+                print("Number of unique values > 6 Using RFRegressor")
+
+                try:
+                    rf_model = regressor_cls(
+                        cv_function=KFold,
+                        hp_search_function=GridSearchCV,
+                        cv_kwargs={"n_splits": cv_splits, "shuffle": True, "random_state": random_seed},
+                        hp_search_kwargs={"cv": cv_splits, "scoring": "neg_mean_squared_error"},
+                        log_level=log_level,
+                        random_seed=random_seed
+                    )
+
+                    final_model, best_params, performance_dict, feat_importance_df = rf_model.trainRFRegressor(
+                        n_resamples=n_resamples,
+                        data=combined_data,
+                        target_column=target_column,
+                        hyperparameters=hyper_params,
+                        test_size=test_size,
+                        save_interval_models=False,
+                        save_path=save_path,
+                        save_final_model=save_models,
+                        plot_feat_importance=False,
+                        batch_size=batch_size,
+                        n_jobs=1,
+                        final_rf_seed=random_seed,
+                        final_model_name=f"{target_column}_model"
+                        )
+                    performance_dict["task_type"] = "regression"
+
+                except Exception as e:
+                    self.logger.error(f"  Error training model for {target_column}: {str(e)}")
+                    continue
+
+            # Maintain one cumulative feature-importance CSV:
+            # Feature, Importance_<target1>, Importance_<target2>, ...
+            if save_feat_imp and feat_importance_df is not None and not feat_importance_df.empty:
+                safe_target_column = str(target_column).replace("/", "_").replace("\\", "_")
+                fi_df = feat_importance_df.copy()
+                if "Feature" not in fi_df.columns:
+                    fi_df = fi_df.reset_index().rename(columns={"index": "Feature"})
+
+                if "Importance" in fi_df.columns:
+                    imp_col = f"Importance_{safe_target_column}"
+                    fi_df = fi_df[["Feature", "Importance"]].rename(columns={"Importance": imp_col})
+                    fi_df = fi_df.drop_duplicates(subset=["Feature"], keep="first")
+
+                    if combined_feat_importance_csv.exists():
+                        combined_df = pd.read_csv(combined_feat_importance_csv)
+                        if "Feature" not in combined_df.columns:
+                            combined_df = combined_df.reset_index().rename(columns={"index": "Feature"})
+                        combined_df = combined_df.drop_duplicates(subset=["Feature"], keep="first")
+                        combined_df = combined_df.merge(fi_df, on="Feature", how="outer")
+                    else:
+                        combined_df = fi_df
+
+                    combined_df.to_csv(combined_feat_importance_csv, index=False)
+                else:
+                    self.logger.warning(
+                        f"  Feature importance for {target_column} has no 'Importance' column; "
+                        "skipping cumulative feature-importance update."
+                    )
+            elif save_feat_imp:
+                self.logger.warning(f"  No feature importance dataframe returned for {target_column}")
+
+            # Convert dict → DataFrame
+            perf_df = pd.DataFrame([performance_dict], index=[target_column])
+
+            # Replace existing row for this target (if any), keep mixed-schema columns
+            total_performance_df = total_performance_df.drop(index=[target_column], errors="ignore")
+            total_performance_df = pd.concat([total_performance_df, perf_df], axis=0, sort=False)
+
+            # Write full table so mixed regression/classification columns are preserved consistently
+            total_performance_df.to_csv(output_csv)
+
+            self.logger.info(
+                f"  Completed {target_column} ({performance_dict.get('task_type', 'unknown')}) → saved to {output_csv}"
+            )
+
+        self.logger.info(f"Completed training for {len(total_performance_df)} targets")
+        self.logger.info(f"Results saved to: {output_csv}")
+
+        return total_performance_df
+
+#region Hide code
+    def trainWithinFeatureSetRFModels(
+        self,
+        data_df: pd.DataFrame,
+        rf_regressor_class,
+        output_csv: str = "within_set_performance.csv",
+        hyper_params: dict =  {
+            "n_estimators": [200, 400, 500],
+            "max_features": ["sqrt"],
+            "max_depth": [25, 50, 75, 100],
+            "min_samples_split": [2, 5],
+            "min_samples_leaf": [2, 4, 8],
+        },
+        save_path: str = "./",
+        skip_existing: bool = True,
+        save_models: bool = True,
+        save_feat_imp: bool = False,
+        min_training_samples: int = 2500,
+        n_resamples: int = 10,
+        test_size: float = 0.3,
+        cv_splits: int = 5,
+        random_seed: int = 1,
+        trim_by_percentile: bool = True,
+        percentile: float = 0.99,
+        exclude_same_group: bool = False,
+        group_map: dict | None = None,
+    ):
+        total_performance_df = pd.DataFrame()
+        completed_targets = set()
+
+        save_path = Path(save_path)
+        save_path.mkdir(parents=True, exist_ok=True)
+        output_csv = save_path / output_csv
+        combined_feat_importance_csv = save_path / "all_feature_importance.csv"
+
+        if output_csv.exists():
             try:
-                rf_model = rf_regressor_class(
-                    cv_function=KFold,
-                    hp_search_function=GridSearchCV,
-                    cv_kwargs={"n_splits": cv_splits, "shuffle": True, "random_state": random_seed},
-                    hp_search_kwargs={"cv": cv_splits, "scoring": "neg_mean_squared_error"},
-                    log_level=log_level,
-                    random_seed=random_seed
+                prev = pd.read_csv(output_csv, index_col=0)
+                completed_targets = {str(i).strip() for i in prev.index}
+                total_performance_df = prev.copy()
+            except Exception:
+                pass
+
+        data_df = data_df.copy().apply(pd.to_numeric, errors="coerce")
+
+        # Optional group map
+        desc_to_group = {}
+        if exclude_same_group:
+            if group_map is None:
+                raise ValueError(
+                    "exclude_same_group=True requires a valid group_map dictionary."
+                )
+            desc_to_group = {d: g for g, members in group_map.items() for d in members}
+
+        for i, target_column in enumerate(data_df.columns):
+            target_column = str(target_column).strip()
+
+            if skip_existing and target_column in completed_targets:
+                self.logger.info(f"Skipping {target_column} ({i+1}/{len(data_df.columns)})... already processed")
+                continue
+
+            y = data_df[target_column]
+
+            # Start from all other descriptors
+            feature_cols = [c for c in data_df.columns if c != target_column]
+
+            # Remove same-group descriptors if requested
+            if exclude_same_group:
+                tgt_group = desc_to_group.get(target_column)
+                if tgt_group is not None:
+                    feature_cols = [
+                        c for c in feature_cols
+                        if desc_to_group.get(c) != tgt_group
+                    ]
+
+            if len(feature_cols) == 0:
+                self.logger.warning(f"Skipping {target_column}: no predictors left after group exclusion")
+                continue
+
+            X = data_df[feature_cols]
+            target_df = y.to_frame(name=target_column)
+
+            if trim_by_percentile:
+                trimmed_target_df, _removed_rows_df = trimRowsByPercentile(
+                    input_df=target_df,
+                    columns=[target_column],
+                    percentile=percentile,
+                    tail="upper",
+                    return_removed_rows=True,
                 )
 
-                final_model, best_params, performance_dict, feat_importance_df = rf_model.trainRFRegressor(
-                    n_resamples=n_resamples,
-                    data=combined_data,
-                    target_column=target_column,
-                    hyperparameters=hyper_params,
-                    test_size=test_size,
-                    save_interval_models=False,
-                    save_path=save_path,
-                    save_final_model=save_models,
-                    plot_feat_importance=False,
-                    batch_size=batch_size,
-                    n_jobs=1,
-                    final_rf_seed=random_seed,
-                    final_model_name=f"{target_column}_model"
+                common_idx = X.index.intersection(trimmed_target_df.index)
+                combined_data = pd.concat(
+                    [X.loc[common_idx], trimmed_target_df.loc[common_idx, target_column]],
+                    axis=1,
+                )
+            else:
+                combined_data = pd.concat([X, y], axis=1, join="inner")
+
+            # Pull out the target as a Series
+            y = combined_data[target_column]
+            # Drop rows where target is missing
+            combined_data = combined_data.loc[combined_data[target_column].notna()].copy()
+            target_series = combined_data[target_column]
+            n_unique = int(target_series.nunique(dropna=True))
+            non_na_target = target_series.dropna()
+            self.logger.info(f"  After removing non-finite values: {len(combined_data)} samples")
+
+            if n_unique < 2:
+                self.logger.warning(f"Skipping {target_column}: <2 unique values")
+                continue
+
+            if len(combined_data) < min_training_samples:
+                self.logger.warning(
+                    f"Skipping {target_column}: too few samples ({len(combined_data)} < {min_training_samples})"
+                )
+                continue
+
+            # Class-like targets:
+            # - object/category/bool labels
+            # - numeric but all values are integer-like
+            is_class_like = False
+            if (
+                pd.api.types.is_object_dtype(non_na_target)
+                or pd.api.types.is_categorical_dtype(non_na_target)
+                or pd.api.types.is_bool_dtype(non_na_target)
+            ):
+                is_class_like = True
+            elif pd.api.types.is_numeric_dtype(non_na_target):
+                arr = non_na_target.to_numpy(dtype=float)
+                is_class_like = bool(np.all(np.isclose(arr, np.round(arr), atol=1e-9)))
+
+            # Ensure sklearn classifiers see integer class labels for numeric class-like targets.
+            if is_class_like and pd.api.types.is_numeric_dtype(non_na_target):
+                combined_data[target_column] = (
+                    pd.to_numeric(combined_data[target_column], errors="coerce")
+                    .round()
+                    .astype("Int64")
+                )
+                combined_data = combined_data.loc[combined_data[target_column].notna()].copy()
+                combined_data[target_column] = combined_data[target_column].astype(int)
+
+            try:
+                if is_class_like and n_unique == 2:
+                    rf_model = RFClassifier(
+                        cv_function=StratifiedKFold,
+                        hp_search_function=GridSearchCV,
+                        cv_kwargs={"n_splits": cv_splits, "shuffle": True, "random_state": random_seed},
+                        hp_search_kwargs={"cv": cv_splits, "scoring": "roc_auc"},
+                        random_seed=random_seed,
                     )
+
+                    final_model, best_params, performance_dict, feat_importance_df = rf_model.trainRFClassifier(
+                        n_resamples=n_resamples,
+                        data=combined_data,
+                        target_column=target_column,
+                        test_size=test_size,
+                        save_interval_models=False,
+                        hyperparameters=hyper_params,
+                        save_path=save_path,
+                        save_final_model=save_models,
+                        plot_feat_importance=False,
+                        n_jobs=1,
+                        final_rf_seed=random_seed,
+                        final_model_name=f"{target_column}_model",
+                    )
+                    performance_dict["task_type"] = "binary_classification"
+
+                elif is_class_like and n_unique <= 6:
+                    rf_model = RFMultiClassifier(
+                        cv_function=StratifiedKFold,
+                        hp_search_function=GridSearchCV,
+                        cv_kwargs={"n_splits": cv_splits, "shuffle": True, "random_state": random_seed},
+                        hp_search_kwargs={"cv": cv_splits, "scoring": "f1_macro"},
+                        random_seed=random_seed,
+                    )
+
+                    final_model, best_params, performance_dict, feat_importance_df = rf_model.trainRFMultiClassifier(
+                        n_resamples=n_resamples,
+                        data=combined_data,
+                        target_column=target_column,
+                        test_size=test_size,
+                        save_interval_models=False,
+                        hyperparameters=hyper_params,
+                        save_path=save_path,
+                        save_final_model=save_models,
+                        plot_feat_importance=False,
+                        n_jobs=1,
+                        final_rf_seed=random_seed,
+                        final_model_name=f"{target_column}_model",
+                    )
+                    performance_dict["task_type"] = "multiclass_classification"
+
+                else:
+                    rf_model = rf_regressor_class(
+                        cv_function=KFold,
+                        hp_search_function=GridSearchCV,
+                        cv_kwargs={"n_splits": cv_splits, "shuffle": True, "random_state": random_seed},
+                        hp_search_kwargs={"cv": cv_splits, "scoring": "neg_mean_squared_error"},
+                        random_seed=random_seed,
+                    )
+
+                    final_model, best_params, performance_dict, feat_importance_df = rf_model.trainRFRegressor(
+                        n_resamples=n_resamples,
+                        data=combined_data,
+                        target_column=target_column,
+                        test_size=test_size,
+                        save_interval_models=False,
+                        hyperparameters=hyper_params,
+                        save_path=save_path,
+                        save_final_model=save_models,
+                        plot_feat_importance=False,
+                        n_jobs=1,
+                        final_rf_seed=random_seed,
+                        final_model_name=f"{target_column}_model",
+                    )
+                    performance_dict["task_type"] = "regression"
+
+                perf_df = pd.DataFrame([performance_dict], index=[target_column])
+                total_performance_df = total_performance_df.drop(index=[target_column], errors="ignore")
+                total_performance_df = pd.concat([total_performance_df, perf_df], axis=0, sort=False)
 
                 # Maintain one cumulative feature-importance CSV:
                 # Feature, Importance_<target1>, Importance_<target2>, ...
-                if save_feat_imp and not feat_importance_df.empty:
+                if save_feat_imp and feat_importance_df is not None and not feat_importance_df.empty:
                     safe_target_column = str(target_column).replace("/", "_").replace("\\", "_")
                     fi_df = feat_importance_df.copy()
                     if "Feature" not in fi_df.columns:
@@ -296,37 +668,21 @@ class TL():
                             f"  Feature importance for {target_column} has no 'Importance' column; "
                             "skipping cumulative feature-importance update."
                         )
-                else:
+                elif save_feat_imp:
                     self.logger.warning(f"  No feature importance dataframe returned for {target_column}")
 
-                # Convert dict → DataFrame
-                perf_df = pd.DataFrame([performance_dict], index=[target_column])
-
-                # Update in-memory results
-                total_performance_df = pd.concat([total_performance_df, perf_df])
-
-                # Append to CSV under save_path
-                write_header = not output_csv.exists()
-
-                perf_df.to_csv(
-                    output_csv,
-                    mode="a",
-                    header=write_header
-                )
-
+                total_performance_df.to_csv(output_csv)
                 self.logger.info(
-                    f"  Completed {target_column} - R²: {performance_dict.get('test_r2_mean', 'N/A')}, "
-                    f"RMSE: {performance_dict.get('test_rmse_mean', 'N/A')} → saved to {output_csv}"
+                    f"Completed {target_column} ({performance_dict.get('task_type', 'unknown')})"
                 )
 
             except Exception as e:
-                self.logger.error(f"  Error training model for {target_column}: {str(e)}")
+                self.logger.error(f"Error training model for {target_column}: {e}")
                 continue
 
-        self.logger.info(f"Completed training for {len(total_performance_df)} targets")
-        self.logger.info(f"Results saved to: {output_csv}")
-
         return total_performance_df
+            
+
 
     def trainSingleTargetRFModel(
         self,
@@ -978,3 +1334,5 @@ class TL():
             self, df: pd.DataFrame, dtype = torch.float32
     ):
         return torch.tensor(df.to_numpy(), dtype=dtype)
+
+#endregion

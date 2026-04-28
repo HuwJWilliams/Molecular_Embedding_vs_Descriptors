@@ -9,18 +9,19 @@ from pathlib import Path
 # import joblib
 # import matplotlib.pyplot as plt
 # import numpy as np
-# import pandas as pd
+import pandas as pd
 # from matplotlib.lines import Line2D
 
 import sys
 sys.path.insert(0, "/users/yhb18174/TL_project/scripts/src/pathing/")
+from get_paths import getPaths
 sys.path.insert(0, "/users/yhb18174/TL_project/scripts/src/datasets/")
 sys.path.insert(0, "/users/yhb18174/TL_project/scripts/src/visualisation/")
 sys.path.insert(0, "/users/yhb18174/TL_project/scripts/src/misc/")
 
 
 # from get_paths import getPaths
-# from group_descriptors import getGroups
+from group_descriptors import getGroups
 # from vis import Visualise
 # from misc_fns import getMostImportantFeatures
 
@@ -29,8 +30,7 @@ sys.path.insert(0, "/users/yhb18174/TL_project/scripts/src/misc/")
 # endregion
 
 
-
-# # region Main
+ # region Main
 # def main():
 #     paths=getPaths()
 #     exp_paths = paths["prediction_output_dirs"]["lipinski_cross_feature_predictions"]
@@ -119,23 +119,118 @@ sys.path.insert(0, "/users/yhb18174/TL_project/scripts/src/misc/")
 #     main()
 # endregion
 
-from pathlib import Path
-import joblib
+# feats = [
+#     "maccs", "rdkit", "morgan", "mordred", "molformer", "molformer-c3-1b", "chemberta", "chembertasey", "selformer"
+# ]
 
-p = Path("/users/yhb18174/TL_project/results/lipinski_embeddings_and_descriptor_predictions/pred_rdkit_tr_molformer-c3-1b/shap/full_shap_analysis.joblib.gz")
+# paths = getPaths()
+# ft_path_dic = paths["full_features"]["fit_lipinski"]
 
-bundle = joblib.load(p)
-shap_by_desc = bundle["shap_by_desc"]
+# for pred_feat in feats:
+#     ft_path = ft_path_dic[pred_feat]
+#     ft_df = pd.read_csv(ft_path, index_col=0)
+#     non_continuous_feats = [col for col in ft_df.columns if ft_df[col].nunique(dropna=True) <= 6]
 
-bundle["shap_by_desc"] = {
-    k.removesuffix("_model"): v
-    for k, v in shap_by_desc.items()
-}
+#     for tr_feat in feats:
+#         try:
+#             exp = f"pred_{pred_feat}_tr_{tr_feat}"
+#             result_path = paths["prediction_output_dirs"]["lipinski_cross_feature_predictions"][exp]
+#             perf_csv = result_path / f"{exp}.csv"
+#             perf_df = pd.read_csv(perf_csv, index_col=0)
 
-# optional backup
-p_backup = p.with_suffix(p.suffix + ".bak")
-joblib.dump(bundle, p_backup, compress=3)
+#             # Features with <= 6 unique values (discrete-ish)
+#             perf_df = perf_df.loc[~perf_df.index.isin(non_continuous_feats)]
+#             perf_df.to_csv(perf_csv, index_label="Features")
+#         except Exception:
+#             continue
 
-# overwrite original
-joblib.dump(bundle, p, compress=3)
-print(f"Updated keys and saved: {p}")
+
+from rdkit import Chem
+from rdkit.Chem import Draw
+
+from rdkit import Chem
+from rdkit.Chem import Draw
+
+def save_smiles_grid(smiles_list, legend_list, out_path="molecule_grid.png", mols_per_row=4, sub_img_size=(320, 260)):
+    if len(smiles_list) != len(legend_list):
+        raise ValueError("smiles_list and legend_list must be the same length.")
+
+    mols, legends = [], []
+    for smi, leg in zip(smiles_list, legend_list):
+        mol = Chem.MolFromSmiles(smi)
+        if mol is None:
+            print(f"Skipping invalid SMILES: {smi}")
+            continue
+        mols.append(mol)
+        legends.append(str(leg))
+
+    if not mols:
+        raise ValueError("No valid SMILES to draw.")
+
+    img = Draw.MolsToGridImage(
+        mols,
+        legends=legends,
+        molsPerRow=mols_per_row,
+        subImgSize=sub_img_size,
+        useSVG=False
+    )
+    img.save(out_path)
+
+
+
+
+
+# Full flattened lists (2 molecules per TOP result, in order)
+
+sim_dict={'feat_sim': 
+ {'rdkit_rbf': {'id_pair': ('bp_4967', 'bp_9379'), 'smi_pair': ('CCCCC(C)CC', 'CCCCC[C@@H](C)CCC')}, 
+  'rdkit_jacc': {'id_pair': ('bp_4967', 'bp_9379'), 'smi_pair': ('CCCCC(C)CC', 'CCCCC[C@@H](C)CCC')}, 
+  'mordred_rbf': {'id_pair': ('bp_4967', 'bp_9379'), 'smi_pair': ('CCCCC(C)CC', 'CCCCC[C@@H](C)CCC')}, 
+  'mordred_jacc': {'id_pair': ('bp_4967', 'bp_9379'), 'smi_pair': ('CCCCC(C)CC', 'CCCCC[C@@H](C)CCC')}, 
+  'maccs_rbf': {'id_pair': ('bp_4967', 'bp_9379'), 'smi_pair': ('CCCCC(C)CC', 'CCCCC[C@@H](C)CCC')}, 
+  'maccs_jacc': {'id_pair': ('bp_4967', 'bp_9379'), 'smi_pair': ('CCCCC(C)CC', 'CCCCC[C@@H](C)CCC')}, 
+  'morgan_rbf': {'id_pair': ('bp_7030', 'bp_807'), 'smi_pair': ('CCCC(=O)OCC(C)C', 'CCOCC(C)C')}, 
+  'morgan_jacc': {'id_pair': ('pic50_1135', 'pic50_1506'), 'smi_pair': ('Cc1ccc(F)cc1-c1ccc2cc(NC(=O)CCN3CCCC3)c3nnc(C)n3c2c1', 'CNC(=O)Cc1ccc(-c2ccc3cc(NC(=O)CCN4CCCC4)c4nnc(C)n4c3c2)cc1')}, ''
+  'chemberta_rbf': {'id_pair': ('bp_165', 'bp_7030'), 'smi_pair': ('CCCC(=O)C(C)C', 'CCCC(=O)OCC(C)C')}, 
+  'chemberta_jacc': {'id_pair': ('bp_165', 'bp_7030'), 'smi_pair': ('CCCC(=O)C(C)C', 'CCCC(=O)OCC(C)C')},
+    'chembertasey_rbf': {'id_pair': ('bp_807', 'bp_3604'), 'smi_pair': ('CCOCC(C)C', 'CSCC(C)C')}, 
+    'chembertasey_jacc': {'id_pair': ('bp_807', 'bp_3604'), 'smi_pair': ('CCOCC(C)C', 'CSCC(C)C')}, 
+    'molformer_rbf': {'id_pair': ('pic50_1135', 'pic50_1506'), 'smi_pair': ('Cc1ccc(F)cc1-c1ccc2cc(NC(=O)CCN3CCCC3)c3nnc(C)n3c2c1', 'CNC(=O)Cc1ccc(-c2ccc3cc(NC(=O)CCN4CCCC4)c4nnc(C)n4c3c2)cc1')}, 
+    'molformer_jacc': {'id_pair': ('pic50_1135', 'pic50_1506'), 'smi_pair': ('Cc1ccc(F)cc1-c1ccc2cc(NC(=O)CCN3CCCC3)c3nnc(C)n3c2c1', 'CNC(=O)Cc1ccc(-c2ccc3cc(NC(=O)CCN4CCCC4)c4nnc(C)n4c3c2)cc1')}, 
+    'molformer-c3-1b_rbf': {'id_pair': ('bp_6062', 'bp_3951'), 'smi_pair': ('CC(O)c1c(F)c(F)c(F)c(F)c1F', 'Fc1c(F)c(F)c(CCl)c(F)c1F')}, 
+    'molformer-c3-1b_jacc': {'id_pair': ('bp_6062', 'bp_3951'), 'smi_pair': ('CC(O)c1c(F)c(F)c(F)c(F)c1F', 'Fc1c(F)c(F)c(CCl)c(F)c1F')}, 
+    'selformer_rbf': {'id_pair': ('logd_3528', 'logd_1594'), 'smi_pair': ('CN[C@H]1CCN(C(=O)c2ccc(Nc3nccc(-c4cnc(C)n4C(C)C)n3)cc2)C1', 'CNC(=O)c1ccc(Nc2nccc(-c3cnc(C)n3C(C)C)n2)cc1')}, 
+    'selformer_jacc': {'id_pair': ('logd_3528', 'logd_1594'), 'smi_pair': ('CN[C@H]1CCN(C(=O)c2ccc(Nc3nccc(-c4cnc(C)n4C(C)C)n3)cc2)C1', 'CNC(=O)c1ccc(Nc2nccc(-c3cnc(C)n3C(C)C)n2)cc1')}}
+    }
+
+# Example:
+# Build smiles + legend lists directly from sim_dict
+smiles_list = []
+legend_list = []
+
+for key, val in sim_dict.get("feat_sim", {}).items():
+    # skip malformed/empty keys
+    if not key or not isinstance(val, dict):
+        continue
+    if "id_pair" not in val or "smi_pair" not in val:
+        continue
+
+    id1, id2 = val["id_pair"]
+    smi1, smi2 = val["smi_pair"]
+
+    # key like "rdkit_rbf" -> "RDKIT RBF"
+    label = key.replace("_", " ").upper()
+
+    smiles_list.extend([smi1, smi2])
+    legend_list.extend([
+        f"{id1}\n{label}",
+        f"{id2}\n{label}",
+    ])
+
+# Draw
+save_smiles_grid(
+    smiles_list,
+    legend_list,
+    out_path="grid.png",
+    mols_per_row=2
+)

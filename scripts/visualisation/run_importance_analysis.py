@@ -75,7 +75,7 @@ parser.add_argument(
 
 parser.add_argument(
     "--save-path",
-    default=PATHS["imp_dirs"]["results_dir"] / "top_25_importance_feature_prediciton"
+    default=PATHS["imp_dirs"]["results_dir"] / "top_25_importance_feature_predictions"
 )
 
 parser.add_argument(
@@ -107,6 +107,7 @@ test = args.test
 imp_type = args.imp_type.upper()
 mode = args.mode
 save_path = Path(args.save_path)
+save_path.mkdir(parents=True, exist_ok=True)
 
 targ_exp =f"pred_{targ}_tr_{test}"
 imp_exp = f"pred_{targ}_tr_{imp}"
@@ -129,8 +130,8 @@ shap_importance_source = {
     "feature_names": shap_bundle["feat_explain"].columns.tolist(),
 }
 
-shap_avg_imp, shap_cum_imp = getMostImportantFeatures(shap_importance_source, mode="shap")
-rf_avg_imp, rf_cum_imp =getMostImportantFeatures(rf_fi_df, mode="rf")
+shap_avg_imp, shap_cum_imp, imp_feat_shap_count = getMostImportantFeatures(shap_importance_source, mode="shap")
+rf_avg_imp, rf_cum_imp, imp_feat_rf_count = getMostImportantFeatures(rf_fi_df, mode="rf")
 
 importance_lookup = {
     ("avg", "SHAP"): shap_avg_imp,
@@ -141,44 +142,146 @@ importance_lookup = {
 importance_map = importance_lookup[(mode, imp_type)]
 
 
-shap_avg_df = v.plotDescPredictionVsFeatPrediction(
-    importance_map=importance_map,
-    pred_tr_perf_df=pred_imp_tr_test,
-    pred_on_target_df=pred_targ_tr_imp,
-    desc_to_group=desc_to_group,
-    importance_col=f"avg_imp_top25_{imp}",
-    left_title=f"{args.imp_type} {mode} importance: Colored by {args.descriptor_group} group",
-    right_title=f"{imp_type} {mode} importance: Colored by importance",
-    save_path=save_path / f"{test}_vs_{imp_type}_importance_{imp}_{mode}.png",
-    mode=mode,
-    r_vmin=args.min_max_high[0],
-    r_vmax=args.min_max_high[1],
-    r_high=args.min_max_high[2],
-    imp_type=args.imp_type,
-    bubble=args.bubble
-)
+# shap_avg_df = v.plotDescPredictionVsFeatPrediction(
+#     importance_map=importance_map,
+#     pred_tr_perf_df=pred_imp_tr_test,
+#     pred_on_target_df=pred_targ_tr_imp,
+#     desc_to_group=desc_to_group,
+#     importance_col=f"avg_imp_top25_{imp}",
+#     left_title=f"{args.imp_type} {mode} importance: Colored by {args.descriptor_group} group",
+#     right_title=f"{imp_type} {mode} importance: Colored by importance",
+#     save_path=save_path / f"{test}_vs_{imp_type}_importance_{imp}_{mode}.png",
+#     mode=mode,
+#     r_vmin=args.min_max_high[0],
+#     r_vmax=args.min_max_high[1],
+#     r_high=args.min_max_high[2],
+#     imp_type=args.imp_type,
+#     bubble=args.bubble
+# )
 
 # Plotting Imp preds vs Test preds
-plot_df = pred_targ_tr_imp[["Pearson_r"]].rename(columns={"Pearson_r": f"{imp}_on_{targ}"}).join(
-    pred_targ_tr_test[["Pearson_r"]].rename(columns={"Pearson_r": f"{test}_on_{targ}"}),
-    how="inner"
-).dropna()
+# plot_df = pred_targ_tr_imp[["Pearson_r"]].rename(columns={"Pearson_r": f"{imp}_on_{targ}"}).join(
+#     pred_targ_tr_test[["Pearson_r"]].rename(columns={"Pearson_r": f"{test}_on_{targ}"}),
+#     how="inner"
+# ).dropna()
 
-plt.figure(figsize=(7, 7))
-plt.scatter(
-    plot_df[f"{imp}_on_{targ}"],    # x
-    plot_df[f"{test}_on_{targ}"],   # y
-    s=25,
-    alpha=0.7,
-    edgecolor="none",
+# plt.figure(figsize=(7, 7))
+# plt.scatter(
+#     plot_df[f"{imp}_on_{targ}"],    # x
+#     plot_df[f"{test}_on_{targ}"],   # y
+#     s=25,
+#     alpha=0.7,
+#     edgecolor="none",
+# )
+
+# plt.plot([0, 1], [0, 1], "k--", lw=1)
+# plt.xlim(0, 1)
+# plt.ylim(0, 1)
+# plt.xlabel(f"{imp} -> {targ} Pearson_r")
+# plt.ylabel(f"{test} -> {targ} Pearson_r")
+# plt.title(f"Descriptor-level performance: {imp} vs {test}")
+# plt.tight_layout()
+# plt.savefig(save_path / f"{test}_vs_{imp}_pred_{targ}_scatter.png", dpi=300)
+# plt.close()
+
+
+def _plotTopFeatureCount(
+        count_map: dict,
+        method_label: str,
+        out_path: Path,
+        top_n: int = 25
+) -> list[str]:
+    if not count_map:
+        print(f"No features found for {method_label} histogram; skipping.")
+        return []
+
+    feature_counts = {
+        str(feature): int(count)
+        for feature, count in count_map.items()
+        if int(count) > 0
+    }
+    if not feature_counts:
+        print(f"No non-zero feature counts for {method_label}; skipping histogram.")
+        return []
+
+    sorted_items = sorted(feature_counts.items(), key=lambda kv: kv[1], reverse=True)
+    features = [k for k, _ in sorted_items]
+    counts = [v for _, v in sorted_items]
+
+    total_features = len(counts)
+    thresholds = [20, 40, 60, 80, 100]
+    print(f"\n{method_label} top-{top_n} feature frequency summary (n={total_features} features):")
+    for thr in thresholds:
+        n_above = sum(c > thr for c in counts)
+        pct = (100.0 * n_above / total_features) if total_features else 0.0
+        print(f"  > {thr}: {n_above}/{total_features} ({pct:.2f}%)")
+
+    plt.figure(figsize=(max(10, len(features) * 0.22), 6))
+    plt.bar(features, counts, edgecolor="black")
+    plt.xticks(rotation=90)
+    plt.xlabel("Feature name")
+    plt.ylabel(f"Count in top-{top_n}")
+    plt.title(f"{method_label}: Feature frequency in top-{top_n} importance")
+    plt.tight_layout()
+    plt.savefig(out_path, dpi=300)
+    plt.close()
+
+    return features
+
+def _plotTopFeaturePredictions(
+        pred_df: pd.DataFrame,
+        features: list[str],
+        method_label: str,
+        out_path: Path,
+        top_n: int = 25,
+
+) -> None:
+    if not features:
+        print(f"No features passed for {method_label} prediction bar plot; skipping.")
+        return
+
+    trimmed_pred_df = pred_df.reindex(features).dropna(subset=["Pearson_r"])
+    if trimmed_pred_df.empty:
+        print(f"No matching Pearson_r rows for {method_label}; skipping prediction bar plot.")
+        return
+    plot_features = trimmed_pred_df.index.astype(str).tolist()
+
+    plt.figure(figsize=(max(10, len(plot_features) * 0.22), 6))
+    plt.bar(plot_features, trimmed_pred_df["Pearson_r"], edgecolor="black")
+    plt.xticks(rotation=90)
+    plt.xlabel("Feature name")
+    plt.ylabel(f"Pearson R for Important Features in top-{top_n}")
+    plt.title(f"{method_label}: Prediction for Important Features in top-{top_n}")
+    plt.tight_layout()
+    plt.savefig(out_path, dpi=300)
+    plt.close()    
+    return
+
+
+shap_features = _plotTopFeatureCount(
+    count_map=imp_feat_shap_count,
+    method_label="SHAP",
+    out_path=save_path / f"{imp_exp}_shap_top25_feature_frequency_bar.png",
+    top_n=25,
+)
+rf_features = _plotTopFeatureCount(
+    count_map=imp_feat_rf_count,
+    method_label="RF",
+    out_path=save_path / f"{imp_exp}_rf_top25_feature_frequency_bar.png",
+    top_n=25,
 )
 
-plt.plot([0, 1], [0, 1], "k--", lw=1)
-plt.xlim(0, 1)
-plt.ylim(0, 1)
-plt.xlabel(f"{imp} -> {targ} Pearson_r")
-plt.ylabel(f"{test} -> {targ} Pearson_r")
-plt.title(f"Descriptor-level performance: {imp} vs {test}")
-plt.tight_layout()
-plt.savefig(save_path / f"{test}_vs_{imp}_pred_{targ}_scatter.png", dpi=300)
-plt.close()
+_plotTopFeaturePredictions(
+    pred_df=pred_imp_tr_test,
+    features=shap_features,
+    method_label="SHAP",
+    out_path=save_path / f"{test_exp}_train_shap_top25_feature_prediction_bar.png",
+    top_n=25,
+)
+_plotTopFeaturePredictions(
+    pred_df=pred_imp_tr_test,
+    features=rf_features,
+    method_label="RF",
+    out_path=save_path / f"{test_exp}_rf_top25_feature_prediction_bar.png",
+    top_n=25,
+)

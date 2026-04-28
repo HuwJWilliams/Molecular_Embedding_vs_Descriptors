@@ -1,6 +1,5 @@
 """
-Script to train Random Forest Regressors on one set of features to predict another 
-(e.g., train on ChemBERTa embeddings to predict RDKit descriptors)
+Script to train Random Forest Regressors on all features apart from one, and predict the remaining
 """
 
 # region Imports and Pathing
@@ -27,6 +26,10 @@ PALMERCHEM_SOFTWARE = Path.home() / "PalmerChem_Software" / "src" / "models"
 sys.path.insert(0, str(PALMERCHEM_SOFTWARE))
 from RFRegressor import RFRegressor
 
+sys.path.insert(0, str(SRC_DIR / "datasets"))
+from group_descriptors import getGroups
+
+
 # !!! NEED TO COPY PALMERCHEM RFR IN THIS REPO !!! ""
 
 paths = getPaths()
@@ -46,22 +49,14 @@ def _load_feature_datasets(name: str, mols:str="all", use_nan_dfs:bool=False) ->
 
 # region Argument Parsing
 parser = argparse.ArgumentParser(
-    description="Generating cross-feature predictions"
+    description="Generating witin-feature predictions"
     )
 
 parser.add_argument(
-    "--train",
+    "--feat",
     required=True,
     choices=SUPPORTED_FEATURE_SETS,
     help="Features to train RF models on. Choices are:\n" \
-        f"{SUPPORTED_FEATURE_SETS}",
-)
-
-parser.add_argument(
-    "--test",
-    required=True,
-    choices=SUPPORTED_FEATURE_SETS,
-    help="Features to test RF models on. Choices are:\n" \
         f"{SUPPORTED_FEATURE_SETS}",
 )
 
@@ -114,6 +109,12 @@ parser.add_argument(
     type=int,
     default=1,
     help="Number of resamples in the outer loop"
+)
+
+parser.add_argument(
+    "--excl-group-desc",
+    action="store_true",
+    help="Flag to exclude group descriptors in training features"
 )
 
 parser.add_argument(
@@ -170,44 +171,40 @@ parser.add_argument(
 )
 
 args = parser.parse_args()
-test = args.test
-train = args.train
+feat = args.feat
 save_dir = args.save_dir
 
-identifier = f"pred_{test}_tr_{train}"
+identifier = f"pred_{feat}_tr_{feat}"
 # endregion
 
 # region Data Handling
 mols="fit_lipinski" if args.lipinski_mols else "all"
 
-train_df = _load_feature_datasets(name=train, mols=mols)
-target_df = _load_feature_datasets(name=test, mols=mols, use_nan_dfs=args.use_nan_dfs)
-
-common_idx = train_df.index.intersection(target_df.index)
-print(f"Length of common IDs: {len(common_idx)}")
-
-train_df, target_df = train_df.loc[common_idx], target_df.loc[common_idx]
+data_df = _load_feature_datasets(name=feat, mols=mols, use_nan_dfs=args.use_nan_dfs)
 
 if args.shuffle_data:
-    shuffled_idx = train_df.sample(
+    shuffled_idx = data_df.sample(
         frac=1, replace=False, random_state=42
         ).index
-    train_df = train_df.loc[shuffled_idx]
-    target_df = target_df.loc[shuffled_idx]
+    data_df = data_df.loc[shuffled_idx]
 # endregion
 
 # region Model Training
-print(f"[Multi-Target RF] train={train}, test={test}, id={identifier}")
-print(f"Train shape: {train_df.shape}, Test shape: {target_df.shape}")
+output_csv = f"{identifier}.csv" if not args.excl_group_desc else f"{identifier}_excl_group_desc.csv"
+group_map = None
+if args.excl_group_desc:
+    if feat.lower() not in {"rdkit", "mordred", "maccs"}:
+        raise ValueError(
+            "--excl-group-desc only supports feat='rdkit', feat='mordred', or feat='maccs'"
+            f"(got '{feat}')"
+        )
+    group_map = getGroups(feat)
 
 model = TL(log_to_file=False, log_identifier=identifier)
-model.trainMultiTargetRFModels(
-    features_df=train_df,
-    targets_df=target_df,
-    output_csv=f"{identifier}.csv",
-    existing_performance_csv= (
-        paths["prediction_output_dirs"][save_dir][identifier] / f"{identifier}.csv"
-        ),
+model.trainWithinFeatureSetRFModels(
+    data_df=data_df,
+    rf_regressor_class=RFRegressor,
+    output_csv=output_csv,
     hyper_params={
     "n_estimators": args.n_estimators,
     "max_features": args.max_features,
@@ -222,5 +219,7 @@ model.trainMultiTargetRFModels(
     save_models=args.save_models,
     random_seed=42,
     save_feat_imp=args.save_feat_imp,
-    min_training_samples=args.minimum_targs
+    min_training_samples=args.minimum_targs,
+    group_map=group_map,
+    exclude_same_group=args.excl_group_desc
 )

@@ -22,6 +22,11 @@ import shap
 import textwrap
 import joblib
 import re
+from sklearn.preprocessing import StandardScaler, RobustScaler
+from sklearn.metrics import pairwise_distances
+from rdkit import Chem
+from rdkit.Chem import Draw
+from sklearn.decomposition import KernelPCA
 
 FILE_DIR = Path(__file__).resolve()
 PROJ_DIR = FILE_DIR.parents[3]
@@ -35,7 +40,7 @@ sys.path.insert(0, str(SRC_DIR / "datasets"))
 from group_descriptors import getGroups
 
 sys.path.insert(0, str(SRC_DIR / "misc"))
-from misc_fns import loadData
+from misc_fns import loadData, molid2Smiles
 # endregion
 
 # %% --- Visualisation Class
@@ -409,7 +414,9 @@ class Visualise():
         wrap_labels: bool = True,
         wrap_width: int = 14,
         rotate_labels: bool = True,
-        metadata:dict={}
+        metadata:dict={},
+        c1= None,
+        c2= None
     ):
         
         """
@@ -491,7 +498,8 @@ class Visualise():
 
         # Colours
         palette = sns.color_palette("tab10")
-        blue, red = palette[0], palette[3]
+        c1=c1 or palette[0]
+        c2=c2 or palette[3]
 
         fig = plt.figure(figsize=figsize)
 
@@ -500,17 +508,17 @@ class Visualise():
         # -------------------------
         ax1 = fig.add_subplot(111, polar=True)
 
-        ax1.plot(angles, values, linewidth=2, color=blue, label="0–1 scale", alpha=0.65)
-        ax1.fill(angles, values, alpha=0.18, color=blue)
+        ax1.plot(angles, values, linewidth=2, color=c1, label="0–1 scale", alpha=0.65)
+        ax1.fill(angles, values, alpha=0.18, color=c1)
 
         ax1.set_ylim(0, 1.0)
-        ticks_blue = np.arange(0, 1.01, 0.1)
-        ax1.set_yticks(ticks_blue)
+        ticks_c1 = np.arange(0, 1.01, 0.1)
+        ax1.set_yticks(ticks_c1)
         ax1.set_yticklabels(
-            [f"{t:.1f}" if t > 0 else "" for t in ticks_blue],
+            [f"{t:.1f}" if t > 0 else "" for t in ticks_c1],
             fontsize=tick_fontsize,
             fontweight="bold",
-            color=blue,
+            color=c1,
         )
 
         ax1.set_xticks(angles[:-1])
@@ -529,7 +537,7 @@ class Visualise():
                     lbl.set_ha("left")
                 lbl.set_va("center")
 
-        # Put blue radial labels at top
+        # Put c1 radial labels at top
         ax1.set_rlabel_position(90)
 
         # Slightly pad the plot from the figure edge
@@ -543,23 +551,23 @@ class Visualise():
             angles,
             values,
             linewidth=2,
-            color=red,
+            color=c2,
             linestyle="--",
             label="0.5–1 scale",
             alpha=0.6,
         )
-        ax2.fill(angles, values, alpha=0.10, color=red)
+        ax2.fill(angles, values, alpha=0.10, color=c2)
 
         ax2.set_ylim(0.5, 1.0)
-        ticks_red = np.arange(0.5, 1.01, 0.1)
-        ax2.set_yticks(ticks_red)
+        ticks_c2 = np.arange(0.5, 1.01, 0.1)
+        ax2.set_yticks(ticks_c2)
 
         # FIX: use tick_fontsize (not title_fontsize) + slightly lighter weight
         ax2.set_yticklabels(
-            [f"{t:.2f}" for t in ticks_red],
+            [f"{t:.2f}" for t in ticks_c2],
             fontsize=tick_fontsize,
             fontweight="semibold",
-            color=red,
+            color=c2,
         )
 
         ax2.set_xticks([])
@@ -1432,6 +1440,7 @@ class Visualise():
         self,
         data_dict: dict[str, pd.DataFrame, Path],
         n_components: int = 5,
+        plot_sources: list[str] | None = None,
         loadings_filename: str = "pca_loadings",
         pca_df_filename: str = "pca_components",
         contamination: float = 0.00001,
@@ -1599,9 +1608,19 @@ class Visualise():
             mask = lof.fit_predict(pca_df[[f"PC{i+1}" for i in range(n_components)]])
             pca_df = pca_df[mask == 1]
 
+        # Optional: plot only selected source groups while keeping PCA fit on all rows.
+        plot_df = pca_df.copy()
+        if plot_sources is not None:
+            wanted = {str(s) for s in plot_sources}
+            plot_df = plot_df[plot_df["Source"].astype(str).isin(wanted)]
+            if plot_df.empty:
+                raise ValueError(
+                    f"No rows left to plot after applying plot_sources={sorted(wanted)}"
+                )
+
         # --- Colors: prefer project colour_map, fallback to seaborn palette
         palette = sns.color_palette("dark")
-        source_labels = pca_df["Source"].unique()
+        source_labels = plot_df["Source"].unique()
         source_colors = {}
         for i, src in enumerate(source_labels):
             mapped_colour = self._getColour(str(src))
@@ -1619,7 +1638,7 @@ class Visualise():
                     sns.kdeplot(
                         x=f"PC{i+1}",
                         hue="Source",
-                        data=pca_df,
+                        data=plot_df,
                         common_norm=False,
                         fill=True,
                         ax=axs[i, i],
@@ -1633,7 +1652,7 @@ class Visualise():
                             x=f"PC{j+1}",
                             y=f"PC{i+1}",
                             hue="Source",
-                            data=pca_df,
+                            data=plot_df,
                             ax=axs[i, j],
                             palette=source_colors,
                             legend=False,
@@ -1641,8 +1660,8 @@ class Visualise():
                             s=10
                         )
                     if plot_area:
-                        for src in pca_df["Source"].unique():
-                            pts = pca_df[pca_df["Source"] == src][[f"PC{j+1}", f"PC{i+1}"]].values
+                        for src in plot_df["Source"].unique():
+                            pts = plot_df[plot_df["Source"] == src][[f"PC{j+1}", f"PC{i+1}"]].values
                             if len(pts) > 3:
                                 hull = ConvexHull(pts)
                                 hull_pts = np.append(hull.vertices, hull.vertices[0])
@@ -1660,7 +1679,7 @@ class Visualise():
         # Legend
         handles = [
             plt.Line2D([], [], color=source_colors[src], marker="o", linestyle="None", markersize=8, label=src)
-            for src in pca_df["Source"].unique()
+            for src in plot_df["Source"].unique()
         ]
         fig.legend(handles=handles, loc="upper center", ncol=max(1, len(handles)), fontsize=legend_fontsize, frameon=False)
         fig.suptitle(plot_title, fontsize=axis_fontsize + 4, y=1.02)
@@ -1703,6 +1722,7 @@ class Visualise():
         pc_x: int = 1,
         pc_y: int = 2,
         n_components: int | None = None,
+        plot_sources: list[str] | None = None,
         contamination: float = 0.00001,
         remove_outliers: bool = True,
         random_seed: int = None,
@@ -1900,17 +1920,27 @@ class Visualise():
             mask = lof.fit_predict(pca_df[[f"PC{i+1}" for i in range(n_components)]])
             pca_df = pca_df[mask == 1]
 
+        # Optional: plot only selected source groups while keeping PCA fit on all rows.
+        plot_df = pca_df.copy()
+        if plot_sources is not None:
+            wanted = {str(s) for s in plot_sources}
+            plot_df = plot_df[plot_df["Source"].astype(str).isin(wanted)]
+            if plot_df.empty:
+                raise ValueError(
+                    f"No rows left to plot after applying plot_sources={sorted(wanted)}"
+                )
+
         if save_extra_data:
             pca_df.to_csv(save_path / f"{pca_df_filename}.csv.gz", index_label="ID", compression="gzip")
 
         pcx_name = f"PC{pc_x}"
         pcy_name = f"PC{pc_y}"
-        if pcx_name not in pca_df.columns or pcy_name not in pca_df.columns:
+        if pcx_name not in plot_df.columns or pcy_name not in plot_df.columns:
             raise ValueError("Selected PC axis is out of range for computed PCA output.")
 
         # Colors: prefer project colour_map, fallback to seaborn palette
         palette = sns.color_palette("dark")
-        source_labels = pca_df["Source"].unique()
+        source_labels = plot_df["Source"].unique()
         source_colors = {}
         for i, src in enumerate(source_labels):
             mapped_colour = self._getColour(str(src))
@@ -1924,7 +1954,7 @@ class Visualise():
             x=pcx_name,
             y=pcy_name,
             hue="Source",
-            data=pca_df,
+            data=plot_df,
             ax=ax,
             palette=source_colors,
             alpha=point_alpha,
@@ -1934,7 +1964,7 @@ class Visualise():
 
         if plot_area:
             for src in source_labels:
-                pts = pca_df[pca_df["Source"] == src][[pcx_name, pcy_name]].values
+                pts = plot_df[plot_df["Source"] == src][[pcx_name, pcy_name]].values
                 if len(pts) > 3:
                     hull = ConvexHull(pts)
                     hull_pts = np.append(hull.vertices, hull.vertices[0])
@@ -1993,7 +2023,7 @@ class Visualise():
         point_extent = float(
             np.nanmax(
                 np.abs(
-                    pca_df[[pcx_name, pcy_name]].to_numpy(dtype=float)
+                    plot_df[[pcx_name, pcy_name]].to_numpy(dtype=float)
                 )
             )
         )
@@ -2472,7 +2502,13 @@ class Visualise():
         
         else:
             model = joblib.load(model)
+            trained_cols = model.feature_names_in_
             feats = pd.read_csv(features, index_col=0)
+            feats = self._align_features_to_model(
+                feats=feats,
+                trained_cols=trained_cols,
+                context=f"shapAnalysis::{pred_feature}"
+            )
 
             print(f"Loaded model type: {type(model)}")
             print(f"X shape: {feats.shape}")
@@ -2488,6 +2524,10 @@ class Visualise():
 
             bg = feats.sample(min(max_bg, len(feats)), random_state=42)
             feat_explain = feats.sample(min(max_explain, len(feats)), random_state=4)
+            bg = self._clean_shap_frame(bg, context=f"shapAnalysis::bg::{pred_feature}")
+            feat_explain = self._clean_shap_frame(
+                feat_explain, context=f"shapAnalysis::explain::{pred_feature}"
+            )
 
             loaded_explainer = explainer(model, bg)
 
@@ -2505,6 +2545,96 @@ class Visualise():
             print(f"Saved: {output_dir / f'{pred_feature}_shap_beeswarm_top{max_display}.png'}")
 
         return shap_values, feat_explain, loaded_explainer
+
+    def _align_features_to_model(
+            self,
+            feats: pd.DataFrame,
+            trained_cols: np.ndarray | list,
+            context: str = ""
+    ) -> pd.DataFrame:
+        """Align feature dataframe columns to model-trained columns."""
+        trained_cols = [str(c) for c in trained_cols]
+
+        # Fast path: exact column match
+        if set(trained_cols).issubset(set(feats.columns)):
+            return feats.loc[:, trained_cols]
+
+        known_suffixes = (
+            "rdkit", "mordred", "chemberta", "molformer",
+            "morgan", "maccs", "selformer", "chembertasey", "molformer-c3-1b"
+        )
+
+        def strip_suffix(col_name: str) -> str:
+            for suffix in known_suffixes:
+                tag = f"_{suffix}"
+                if col_name.endswith(tag):
+                    return col_name[:-len(tag)]
+            return col_name
+
+        feat_norm_map = {}
+        ambiguous_feat_norm = set()
+        for feat_col in feats.columns.astype(str):
+            key = strip_suffix(feat_col)
+            if key in feat_norm_map:
+                ambiguous_feat_norm.add(key)
+            else:
+                feat_norm_map[key] = feat_col
+
+        mapped_cols = []
+        missing_trained = []
+        ambiguous_trained = []
+        for trained_col in trained_cols:
+            key = strip_suffix(trained_col)
+            if key in ambiguous_feat_norm:
+                ambiguous_trained.append(trained_col)
+                continue
+            mapped = feat_norm_map.get(key)
+            if mapped is None:
+                missing_trained.append(trained_col)
+            else:
+                mapped_cols.append(mapped)
+
+        if not missing_trained and not ambiguous_trained:
+            aligned = feats.loc[:, mapped_cols].copy()
+            aligned.columns = trained_cols
+            return aligned
+
+        missing_preview = missing_trained[:8]
+        ambiguous_preview = ambiguous_trained[:8]
+        msg = (
+            f"Could not align model features to dataframe columns{f' ({context})' if context else ''}. "
+            f"Missing={len(missing_trained)} example={missing_preview}. "
+            f"Ambiguous={len(ambiguous_trained)} example={ambiguous_preview}. "
+            f"Dataframe columns={len(feats.columns)}, model columns={len(trained_cols)}."
+        )
+        raise KeyError(msg)
+
+    def _clean_shap_frame(
+            self,
+            feats: pd.DataFrame,
+            context: str = ""
+    ) -> pd.DataFrame:
+        """Return SHAP-safe numeric features (float64, finite, non-empty)."""
+        if feats.empty:
+            raise ValueError(f"Empty feature frame passed to SHAP{f' ({context})' if context else ''}.")
+
+        cleaned = feats.apply(pd.to_numeric, errors="coerce").astype(np.float64)
+        finite_mask = np.isfinite(cleaned.to_numpy(copy=False)).all(axis=1)
+        dropped = int((~finite_mask).sum())
+        if dropped > 0:
+            print(
+                f"[SHAP] Dropping {dropped} rows with NaN/Inf values"
+                f"{f' ({context})' if context else ''}."
+            )
+            cleaned = cleaned.loc[finite_mask]
+
+        if cleaned.empty:
+            raise ValueError(
+                f"No finite rows available for SHAP after cleaning"
+                f"{f' ({context})' if context else ''}."
+            )
+
+        return cleaned
 
     def shapAnalysisAll(
             self,
@@ -2547,6 +2677,7 @@ class Visualise():
         features = pd.read_csv(features, index_col=0)
         if features.empty:
             raise ValueError("Feature dataframe is empty.")
+        features = self._clean_shap_frame(features, context="shapAnalysisAll::features")
 
         bg = features.sample(min(max_bg, len(features)), random_state=random_state_bg)
         feat_explain = features.sample(min(max_explain, len(features)), random_state=random_state_explain)
@@ -2560,16 +2691,34 @@ class Visualise():
 
             try:
                 model = joblib.load(model_path)
-                explainer = shap.TreeExplainer(model, bg)
-                shap_values = explainer(feat_explain)
+                feat_cols = model.feature_names_in_
+                trimmed_bg = self._align_features_to_model(
+                    feats=bg,
+                    trained_cols=feat_cols,
+                    context=f"shapAnalysisAll::bg::{desc_name}"
+                )
+                trimmed_ft_exp = self._align_features_to_model(
+                    feats=feat_explain,
+                    trained_cols=feat_cols,
+                    context=f"shapAnalysisAll::explain::{desc_name}"
+                )
+                trimmed_bg = self._clean_shap_frame(
+                    trimmed_bg, context=f"shapAnalysisAll::bg::{desc_name}"
+                )
+                trimmed_ft_exp = self._clean_shap_frame(
+                    trimmed_ft_exp, context=f"shapAnalysisAll::explain::{desc_name}"
+                )
+
+                explainer = shap.TreeExplainer(model, trimmed_bg)
+                shap_values = explainer(trimmed_ft_exp)
 
                 vals = shap_values.values if hasattr(shap_values, "values") else np.asarray(shap_values)
                 if vals.ndim == 1:
                     vals = vals.reshape(-1, 1)
 
-                if vals.shape[0] != feat_explain.shape[0]:
+                if vals.shape[0] != trimmed_ft_exp.shape[0]:
                     raise ValueError(
-                        f"Row mismatch for {desc_name}: SHAP rows={vals.shape[0]} vs features rows={feat_explain.shape[0]}"
+                        f"Row mismatch for {desc_name}: SHAP rows={vals.shape[0]} vs features rows={trimmed_ft_exp.shape[0]}"
                     )
 
                 shap_by_desc[desc_name] = vals
@@ -2832,13 +2981,13 @@ class Visualise():
         exp_keys,
         results_dir: str = "lipinski_cross_feature_predictions",
         pred_set: str = "rdkit",
+        group_feats: bool = True,
         save_path: str | Path | None = None,
         save_fname: str = "avg_embedding_grouped_bar_pearson_r",
         dpi: int = 300,
     ):
         paths = getPaths()
         results_root = paths["prediction_output_dirs"][results_dir]
-        group_map = getGroups(pred_set)
 
         # Accept either:
         # 1) list/tuple of full experiment keys: ["pred_rdkit_tr_chemberta", ...]
@@ -2864,9 +3013,23 @@ class Visualise():
             exp_perf[tr_lab] = df
             train_labels.append(tr_lab)
 
-        # Compute per-group mean Pearson_r for each experiment
+        # Build descriptor-level table: one column per trainer + average across all.
+        desc_perf_df = pd.concat([exp_perf[label] for label in train_labels], axis=1)
+        desc_perf_df["average_across_all"] = desc_perf_df.mean(axis=1, skipna=True)
+
+        # Compute entity means (group-level or descriptor-level)
+        if group_feats:
+            entity_map = getGroups(pred_set)
+            entity_label = "Group"
+        else:
+            entity_map = {
+                str(desc): [str(desc)]
+                for desc in desc_perf_df.index.astype(str)
+            }
+            entity_label = "Feature"
+
         group_rows = {}
-        for gname, members in group_map.items():
+        for gname, members in entity_map.items():
             row = {}
             for tr_lab, df in exp_perf.items():
                 present = [m for m in members if m in df.index]
@@ -2904,7 +3067,9 @@ class Visualise():
         ax.set_xticks(x)
         ax.set_xticklabels(group_bar_df.index, rotation=45, ha="right")
         ax.set_ylabel("Pearson_r")
-        ax.set_title(f"{pred_set.upper()} Group Performance by Embedding Trainer (+ Average)")
+        ax.set_title(
+            f"{pred_set.upper()} {entity_label} Performance by Embedding Trainer (+ Average)"
+        )
         ax.set_ylim(0, 1.05)
         ax.grid(axis="y", linestyle="--", alpha=0.3)
         ax.legend(
@@ -2926,13 +3091,9 @@ class Visualise():
         plt.close(fig)
 
         # ----- Boxplots: descriptor-level performance distributions -----
-        # Build descriptor-level table: one column per trainer + average across all.
-        desc_perf_df = pd.concat([exp_perf[label] for label in train_labels], axis=1)
-        desc_perf_df["average_across_all"] = desc_perf_df.mean(axis=1, skipna=True)
-
         box_rows = []
         box_metrics = train_labels + ["average_across_all"]
-        for group_name, members in group_map.items():
+        for group_name, members in entity_map.items():
             present = [m for m in members if m in desc_perf_df.index]
             if not present:
                 continue
@@ -2969,9 +3130,11 @@ class Visualise():
             )
             ax_all.set_xticklabels(ax_all.get_xticklabels(), rotation=45, ha="right")
             ax_all.set_ylim(0, 1.05)
-            ax_all.set_xlabel(f"{pred_set.upper()} descriptor group")
+            ax_all.set_xlabel(f"{pred_set.upper()} descriptor {entity_label.lower()}")
             ax_all.set_ylabel("Pearson_r")
-            ax_all.set_title(f"{pred_set.upper()} Descriptor-Level Performance by Group")
+            ax_all.set_title(
+                f"{pred_set.upper()} Descriptor-Level Performance by {entity_label}"
+            )
             ax_all.grid(axis="y", linestyle="--", alpha=0.3)
             ax_all.legend(
                 title="Metric",
@@ -2988,40 +3151,41 @@ class Visualise():
             )
             plt.close(fig_all)
 
-            # Individual plot per group
-            for group_name in sorted(box_df["group"].unique()):
-                group_df = box_df[box_df["group"] == group_name]
-                if group_df.empty:
-                    continue
+            if group_feats:
+                # Individual plot per group
+                for group_name in sorted(box_df["group"].unique()):
+                    group_df = box_df[box_df["group"] == group_name]
+                    if group_df.empty:
+                        continue
 
-                fig_g, ax_g = plt.subplots(figsize=(12, 6))
-                sns.boxplot(
-                    data=group_df,
-                    x="metric",
-                    y="pearson_r",
-                    order=box_metrics,
-                    whis=(0, 100),
-                    showfliers=False,
-                    palette=box_palette,
-                    ax=ax_g,
-                )
-                ax_g.set_xticklabels(ax_g.get_xticklabels(), rotation=45, ha="right")
-                ax_g.set_ylim(0, 1.05)
-                ax_g.set_xlabel("Metric")
-                ax_g.set_ylabel("Pearson_r")
-                ax_g.set_title(f"{pred_set.upper()} Group: {group_name}")
-                ax_g.grid(axis="y", linestyle="--", alpha=0.3)
-                fig_g.tight_layout()
+                    fig_g, ax_g = plt.subplots(figsize=(12, 6))
+                    sns.boxplot(
+                        data=group_df,
+                        x="metric",
+                        y="pearson_r",
+                        order=box_metrics,
+                        whis=(0, 100),
+                        showfliers=False,
+                        palette=box_palette,
+                        ax=ax_g,
+                    )
+                    ax_g.set_xticklabels(ax_g.get_xticklabels(), rotation=45, ha="right")
+                    ax_g.set_ylim(0, 1.05)
+                    ax_g.set_xlabel("Metric")
+                    ax_g.set_ylabel("Pearson_r")
+                    ax_g.set_title(f"{pred_set.upper()} Group: {group_name}")
+                    ax_g.grid(axis="y", linestyle="--", alpha=0.3)
+                    fig_g.tight_layout()
 
-                safe_group_name = "".join(
-                    ch if ch.isalnum() or ch in ("-", "_") else "_" for ch in group_name
-                )
-                fig_g.savefig(
-                    save_path / f"{save_fname}_boxplot_{safe_group_name}.png",
-                    dpi=dpi,
-                    bbox_inches="tight",
-                )
-                plt.close(fig_g)
+                    safe_group_name = "".join(
+                        ch if ch.isalnum() or ch in ("-", "_") else "_" for ch in group_name
+                    )
+                    fig_g.savefig(
+                        save_path / f"{save_fname}_boxplot_{safe_group_name}.png",
+                        dpi=dpi,
+                        bbox_inches="tight",
+                    )
+                    plt.close(fig_g)
 
         return group_bar_df
     
@@ -3502,7 +3666,7 @@ class Visualise():
         ax.plot([0, 1], [0, 1], "k--", lw=1)
         ax.set_xlim(0, 1)
         ax.set_ylim(0, 1)
-        ax.set_xlabel("Avg trainer performance on top-N important trainer features")
+        ax.set_xlabel("Avg performance on top-N important trainer features")
         ax.set_ylabel("Direct prediction performance on target (Pearson r)")
         ax.set_title(title)
         ax.legend(
@@ -3607,3 +3771,375 @@ class Visualise():
         fig.savefig(save_path, dpi=300)
         plt.close(fig)
         print(f"Saved: {save_path}")
+
+
+    def plotSimilarities(
+            self,
+            feature_sets: list[str],
+            feature_paths: dict[Path],
+            n_mols: int=100,
+            show_top_n_pairs: int=3,
+            molids: list[str]=[],
+            save_dir: Path=PROJ_DIR / "results" / "similarity",
+    ):
+
+        def getRBFSim(df):
+            df_scaled = StandardScaler().fit_transform(df)
+            sq_distance=pairwise_distances(df_scaled, metric="sqeuclidean")
+            gamma = 1/np.median(sq_distance[sq_distance > 0])
+            sim=np.exp(-gamma * sq_distance)
+
+            # store as dataframe
+            rbf_sim_df = pd.DataFrame(
+                sim,
+                index=df.index,
+                columns=df.index
+            )
+            return rbf_sim_df
+        
+        def getJACCSim(df):
+            # scale features
+            df_robust = RobustScaler().fit_transform(df)
+
+            df_scaled = df_robust - df_robust.min(axis=0)
+
+            n = df_scaled.shape[0]
+            sim = np.zeros((n, n))
+
+            for i in range(n):
+                for j in range(n):
+                    numerator = np.sum(np.minimum(df_scaled[i], df_scaled[j]))
+                    denominator = np.sum(np.maximum(df_scaled[i], df_scaled[j]))
+
+                    if denominator == 0:
+                        sim[i, j] = 1.0
+
+                    else: 
+                        sim[i, j] = numerator / denominator
+
+            jacc_sim_df = pd.DataFrame(
+                sim,
+                index=df.index,
+                columns=df.index
+            )
+            return jacc_sim_df
+            
+        def savesSmilesGrid(
+                smiles_list, legend_list, out_path="molecule_grid.png", mols_per_row=4, sub_img_size=(320, 260)
+                ):
+            if len(smiles_list) != len(legend_list):
+                raise ValueError("smiles_list and legend_list must be the same length.")
+
+            mols, legends = [], []
+            for smi, leg in zip(smiles_list, legend_list):
+                mol = Chem.MolFromSmiles(smi)
+                if mol is None:
+                    print(f"Skipping invalid SMILES: {smi}")
+                    continue
+                mols.append(mol)
+                legends.append(str(leg))
+
+            if not mols:
+                raise ValueError("No valid SMILES to draw.")
+
+            img = Draw.MolsToGridImage(
+                mols,
+                legends=legends,
+                molsPerRow=mols_per_row,
+                subImgSize=sub_img_size,
+                useSVG=False
+            )
+            img.save(out_path)
+                
+
+        save_dir.mkdir(parents=True, exist_ok=True)
+
+        if not molids:
+            molids = list(pd.read_csv(feature_paths["maccs"], index_col=0).sample(n_mols).index)
+
+        all_sim_matrices = {
+            "rbf": {},
+            "jacc": {}
+        }
+
+        mol_comp = {
+            "feat_sim": {}
+        }
+
+        for feat in feature_sets:
+            feat_df = pd.read_csv(feature_paths[feat], index_col=0).loc[molids]
+
+            all_sim_matrices["rbf"][feat] = getRBFSim(feat_df)
+            all_sim_matrices["jacc"][feat] = getJACCSim(feat_df)
+            ids = list(feat_df.index)
+
+            for metric_key in ["rbg", "jacc"]:
+                sim = all_sim_matrices[metric_key][feat].to_numpy(dtype=float)
+                if sim.shape[0] > 2:
+                    continue
+                
+                iu = np.triu_induces(sim.shape[0], k=1)
+                pair_vals = sim[iu]
+                if pair_vals.size ==0:
+                    continue
+
+                # indices of top-k similarities (descending)
+                k = min(show_top_n_pairs, pair_vals.size)
+                top_idx = np.argsort(pair_vals)[-k:][::-1]
+
+                top_pairs = []
+                for rank, idx_flat in enumerate(top_idx, start=1):
+                    i = int(iu[0][idx_flat])
+                    j = int(iu[1][idx_flat])
+                    score = float(pair_vals[idx_flat])
+
+                    id1, id2 = ids[i], ids[j]
+                    smi1, smi2 = molid2Smiles(id1), molid2Smiles(id2)
+
+                    print(f"[TOP-{rank} {metric_key.upper()}] {feat}: ({id1}, {id2}) -> {score:.6f}")
+
+                    top_pairs.append({
+                        "rank": rank,
+                        "score": score,
+                        "id_pair": (id1, id2),
+                        "smi_pair": (smi1, smi2),
+                    })
+
+                mol_comp = ["feat_sim"][f"{feat}_{metric_key}"] = top_pairs
+
+        for key, val in mol_comp.get("feat_sim", {}).items():
+            if not key or not isinstance(val, list):
+                continue
+
+            label = key.replace("_", " ").upper()
+            smiles_list = []
+            legend_list = []
+
+            for rec in val:
+                if not isinstance(rec, dict):
+                    continue
+                if "id_pair" not in rec or "smi_pair" not in rec:
+                    continue
+
+                id1, id2 = rec["id_pair"]
+                smi1, smi2 = rec["smi_pair"]
+                rank = rec.get("rank", "?")
+                score = rec.get("score", None)
+
+                smiles_list.extend([smi1, smi2])
+                if score is None:
+                    legend_list.extend([
+                        f"{id1}\n{label}\nTOP-{rank}",
+                        f"{id2}\n{label}\nTOP-{rank}",
+                    ])
+                else:
+                    legend_list.extend([
+                        f"{id1}\n{label}\nTOP-{rank} ({score:.3f})",
+                        f"{id2}\n{label}\nTOP-{rank} ({score:.3f})",
+                    ])
+            
+            if not smiles_list:
+                continue
+
+        out_path = save_dir / f"{key}_top3.png"
+        savesSmilesGrid(
+            smiles_list,
+            legend_list,
+            out_path=out_path, 
+            mols_per_row=2
+        )
+        print(f"Saved: {out_path}")
+        # assume exactly 2 feature sets
+        
+        feat_a, feat_b = feature_sets[0], feature_sets[1]
+
+        # choose metric to plot
+        for metric_key, cbar_label in [("rbf", "RBF Similarity"), ("jacc", "Continuous Jaccard")]:
+            sim_a = all_sim_matrices[metric_key][feat_a].to_numpy()
+            sim_b = all_sim_matrices[metric_key][feat_b].to_numpy()
+
+            n = sim_a.shape[0]
+            combined = np.zeros((n, n), dtype=float)
+
+            upper_mask = np.triu(np.ones((n, n), dtype=bool), k=1)
+            lower_mask = np.tril(np.ones((n, n), dtype=bool), k=-1)
+
+            combined[upper_mask] = sim_a[upper_mask]   # first feature set -> upper
+            combined[lower_mask] = sim_b[lower_mask]   # second feature set -> lower
+            combined[np.diag_indices(n)] = 1.0
+
+            idx = all_sim_matrices[metric_key][feat_a].index
+            combined_df = pd.DataFrame(combined, index=idx, columns=idx)
+
+            plt.figure(figsize=(10, 8))
+            sns.heatmap(
+                combined_df,
+                cmap="viridis",
+                vmin=0,
+                vmax=1,
+                square=True,
+                linewidths=0.2,
+                cbar_kws={"label": cbar_label},
+            )
+            plt.title(f"{metric_key.upper()} | Upper: {feat_a} | Lower: {feat_b}")
+            plt.xlabel("Molecules")
+            plt.ylabel("Molecules")
+            plt.tight_layout()
+            plt.savefig(f"./test_combined_triangles_{metric_key}.png", dpi=300)
+            plt.close()
+
+        metric_key = "rbf"
+
+        # Keep a common molecule order across all feature sets
+        common_ids = None
+        for feat in feature_sets:
+            idx = all_sim_matrices[metric_key][feat].index
+            common_ids = idx if common_ids is None else common_ids.intersection(idx)
+
+        if common_ids is None or len(common_ids) < 3:
+            raise ValueError("Not enough shared molecules across feature sets for KPCA.")
+
+        plot_frames = []
+        for feat in feature_sets:
+            S_df = all_sim_matrices[metric_key][feat].loc[common_ids, common_ids]
+            S = S_df.to_numpy()
+
+            coords = KernelPCA(n_components=2, kernel="precomputed").fit_transform(S)
+            feat_df = pd.DataFrame(coords, columns=["KPCA1", "KPCA2"], index=common_ids)
+            feat_df["Source"] = feat
+            plot_frames.append(feat_df.reset_index(names="MolID"))
+
+        plot_df = pd.concat(plot_frames, ignore_index=True)
+        source_labels = list(plot_df["Source"].dropna().astype(str).unique())
+        fallback_palette = sns.color_palette("tab10", n_colors=max(1, len(source_labels)))
+        source_palette = {}
+        for idx, src in enumerate(source_labels):
+            c = self._getColour(src)
+            if c == self.default_colour:
+                c = fallback_palette[idx % len(fallback_palette)]
+            source_palette[src] = c
+
+        # Fit one KPCA object (same settings) to get eigenvalues for variance-style labels
+        # Note: for KernelPCA this is kernel-space variance, not classical PCA variance.
+        kpca_ref = KernelPCA(n_components=2, kernel="precomputed")
+        kpca_ref.fit(all_sim_matrices[metric_key][feature_sets[0]].loc[common_ids, common_ids].to_numpy())
+        eigvals = np.asarray(kpca_ref.eigenvalues_, dtype=float)
+        var_ratio = eigvals / eigvals.sum() if eigvals.sum() > 0 else np.array([np.nan, np.nan])
+
+        xlab = f"KPCA1 ({var_ratio[0]*100:.1f}% var)"
+        ylab = f"KPCA2 ({var_ratio[1]*100:.1f}% var)"
+
+        fig, axes = plt.subplots(
+            2, 2, figsize=(11, 8.5), gridspec_kw={"wspace": 0.18, "hspace": 0.18}
+        )
+
+        # (0,0): KDE of KPCA1
+        sns.kdeplot(
+            data=plot_df, x="KPCA1", hue="Source", fill=True, common_norm=False,
+            alpha=0.25, ax=axes[0, 0], legend=False, palette=source_palette
+        )
+        axes[0, 0].set_xlabel(xlab)
+        axes[0, 0].set_ylabel("Density")
+
+        # (1,0): scatter KPCA1 vs KPCA2
+        sns.scatterplot(
+            data=plot_df, x="KPCA1", y="KPCA2", hue="Source",
+            s=28, alpha=0.75, edgecolor=None, ax=axes[1, 0], palette=source_palette
+        )
+        axes[1, 0].set_xlabel(xlab)
+        axes[1, 0].set_ylabel(ylab)
+
+        # (1,1): KDE of KPCA2
+        sns.kdeplot(
+            data=plot_df, x="KPCA2", hue="Source", fill=True, common_norm=False,
+            alpha=0.25, ax=axes[1, 1], legend=False, palette=source_palette
+        )
+        axes[1, 1].set_xlabel(ylab)
+        axes[1, 1].set_ylabel("Density")
+
+        axes[0, 1].axis("off")
+
+        # capture legend handles from scatter and remove axis-level legend
+        handles, labels = axes[1, 0].get_legend_handles_labels()
+        leg = axes[1, 0].get_legend()
+        if leg is not None:
+            leg.remove()
+
+        # stats for KDE variables (KPCA1, KPCA2)
+        stats_rows = []
+        stats_numeric = []
+        for src, g in plot_df.groupby("Source"):
+            kpca1 = g["KPCA1"].dropna().to_numpy()
+            kpca2 = g["KPCA2"].dropna().to_numpy()
+
+            q1_1, q3_1 = np.percentile(kpca1, [25, 75]) if len(kpca1) else (np.nan, np.nan)
+            q1_2, q3_2 = np.percentile(kpca2, [25, 75]) if len(kpca2) else (np.nan, np.nan)
+
+            std1 = float(np.std(kpca1, ddof=1)) if len(kpca1) > 1 else np.nan
+            iqr1 = float(q3_1 - q1_1) if len(kpca1) else np.nan
+            std2 = float(np.std(kpca2, ddof=1)) if len(kpca2) > 1 else np.nan
+            iqr2 = float(q3_2 - q1_2) if len(kpca2) else np.nan
+            stats_numeric.append([src, std1, iqr1, std2, iqr2])
+            stats_rows.append([
+                src,
+                f"{std1:.3f}" if np.isfinite(std1) else "nan",
+                f"{iqr1:.3f}" if np.isfinite(iqr1) else "nan",
+                f"{std2:.3f}" if np.isfinite(std2) else "nan",
+                f"{iqr2:.3f}" if np.isfinite(iqr2) else "nan",
+            ])
+
+        # optional: sort rows by source name
+        sort_idx = sorted(range(len(stats_rows)), key=lambda i: str(stats_rows[i][0]))
+        stats_rows = [stats_rows[i] for i in sort_idx]
+        stats_numeric = [stats_numeric[i] for i in sort_idx]
+
+        col_labels = ["Source", "STD1", "IQR1", "STD2", "IQR2"]
+        tbl = axes[0, 1].table(
+            cellText=stats_rows,
+            colLabels=col_labels,
+            colWidths=[0.36, 0.16, 0.16, 0.16, 0.16],
+            cellLoc="center",
+            colLoc="center",
+            loc="lower center",
+            bbox=[0.02, 0.00, 0.96, 0.78],  # [left, bottom, width, height]
+        )
+        tbl.auto_set_font_size(False)
+        tbl.set_fontsize(8)
+        tbl.scale(1.0, 1.15)
+
+        # Highlight best (maximum) value per metric column: STD1, IQR1, STD2, IQR2
+        metric_vals = np.array([row[1:] for row in stats_numeric], dtype=float)
+        if metric_vals.size > 0:
+            best_vals = np.nanmax(metric_vals, axis=0)
+            highlight_colour = "#fff3b0"
+            for r_idx in range(metric_vals.shape[0]):
+                for c_idx in range(metric_vals.shape[1]):
+                    val = metric_vals[r_idx, c_idx]
+                    if np.isfinite(val) and np.isclose(val, best_vals[c_idx], rtol=1e-9, atol=1e-12):
+                        cell = tbl[(r_idx + 1, c_idx + 1)]  # +1 skips header, +1 skips Source col
+                        cell.set_facecolor(highlight_colour)
+                        cell.get_text().set_weight("bold")
+
+        axes[0, 1].text(
+            0.5, 0.82,
+            "KDE Stats\n(STD/IQR for KPCA1 and KPCA2)",
+            ha="center", va="bottom", fontsize=9, transform=axes[0, 1].transAxes
+        )
+
+        fig.suptitle(f"KPCA across all feature sets ({metric_key.upper()})", y=0.985, fontsize=14)
+        if handles:
+            fig.legend(
+                handles,
+                labels,
+                loc="upper center",
+                bbox_to_anchor=(0.5, 0.955),
+                ncol=min(len(labels), 5),
+                frameon=False,
+                title="Source",
+                fontsize=9,
+                title_fontsize=10,
+            )
+
+        plt.tight_layout(rect=[0.02, 0.02, 0.98, 0.86])
+        plt.savefig(f"./kpca_{metric_key}_all_feature_sets_panel.png", dpi=300, bbox_inches="tight")
+        plt.close()

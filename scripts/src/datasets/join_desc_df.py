@@ -111,8 +111,11 @@ def combineAllFeats(
     lipinski_logp: float = 6,
     lipinski_n_hbd: int = 6,
     lipinski_n_hba: int = 11,
+    save_full_with_nans: bool = True,
+    full_with_nans_suffix: str = "_with_nans",
 ):
     built_feature_dfs = {}
+    built_feature_dfs_full = {}
     dropped_columns_by_feature = {}
     
     if properties is None:
@@ -197,25 +200,32 @@ def combineAllFeats(
         print(f"Length of DF: {len(full_feat_df)}")
         print("Rows with any NaN:", full_feat_df.isna().any(axis=1).sum())
 
+        full_feat_df_full = full_feat_df.copy()
+
+        if full_feat_df_full.index.has_duplicates:
+            print(f"Dropping duplicate IDs for {desc_emb} (full + clean)")
+            full_feat_df_full = full_feat_df_full.loc[
+                ~full_feat_df_full.index.duplicated(keep="first")
+            ]
+
+        if max_atoms is not None or max_mw is not None or lipinski_criteria:
+            full_feat_df_full = full_feat_df_full.loc[
+                full_feat_df_full.index.astype(str).isin(keep_ids)
+            ].copy()
+            print(
+                f"Filtered {desc_emb} full dataframe to {len(full_feat_df_full)} rows "
+                "after SMILES-based thresholds"
+            )
+
         print("Dropping columns with NaN present")
-        before_cols = full_feat_df.columns
-        full_feat_df_clean = full_feat_df.dropna(axis=1)
+        before_cols = full_feat_df_full.columns
+        full_feat_df_clean = full_feat_df_full.dropna(axis=1)
         after_cols = full_feat_df_clean.columns
         dropped_cols = before_cols.difference(after_cols)
         print(f"Dropped {len(dropped_cols)}")
 
-        if full_feat_df_clean.index.has_duplicates:
-            print(f"Dropping duplicate IDs for {desc_emb}")
-            full_feat_df_clean = full_feat_df_clean.loc[~full_feat_df_clean.index.duplicated(keep="first")]
-
-        if max_atoms is not None or max_mw is not None or lipinski_criteria:
-            before_filter_ids = set(full_feat_df_clean.index.astype(str))
-            full_feat_df_clean = full_feat_df_clean.loc[
-                full_feat_df_clean.index.astype(str).isin(keep_ids)
-            ].copy()
-            print(f"Filtered {desc_emb} to {len(full_feat_df_clean)} rows after SMILES-based thresholds")
-
         built_feature_dfs[desc_emb] = full_feat_df_clean
+        built_feature_dfs_full[desc_emb] = full_feat_df_full
         dropped_columns_by_feature[desc_emb] = dropped_cols
 
     if align_common_ids and built_feature_dfs:
@@ -224,15 +234,30 @@ def combineAllFeats(
             save=False,
         )
         for desc_emb, aligned_df in zip(built_feature_dfs.keys(), aligned_dfs):
-            before_align_ids = set(built_feature_dfs[desc_emb].index.astype(str))
             built_feature_dfs[desc_emb] = aligned_df
             print(f"Retained {len(common_ids)} common IDs for {desc_emb}")
+
+    if align_common_ids and built_feature_dfs_full:
+        aligned_dfs_full, common_ids_full = getCommonIDs(
+            df_path_ls=list(built_feature_dfs_full.values()),
+            save=False,
+        )
+        for desc_emb, aligned_df in zip(built_feature_dfs_full.keys(), aligned_dfs_full):
+            built_feature_dfs_full[desc_emb] = aligned_df
+            print(f"Retained {len(common_ids_full)} common IDs for {desc_emb} (full)")
 
     if save:
         for desc_emb, full_feat_df_clean in built_feature_dfs.items():
             out_path = feature_paths[feat_path][desc_emb]
             out_path.parent.mkdir(parents=True, exist_ok=True)
             full_feat_df_clean.to_csv(out_path, index_label="ID")
+
+            if save_full_with_nans:
+                full_out_path = out_path.with_name(
+                    f"{out_path.stem}{full_with_nans_suffix}{out_path.suffix}"
+                )
+                built_feature_dfs_full[desc_emb].to_csv(full_out_path, index_label="ID")
+
             with open(out_path.parent / f"nan_cols_{desc_emb}.txt", "w") as f:
                 for col in dropped_columns_by_feature[desc_emb]:
                     f.write(col + "\n")
@@ -335,7 +360,3 @@ def _get_ids_below_mw_threshold(
 
     keep_ids = df.index[mol_wts < max_mw]
     return keep_ids.astype(str).tolist()
-
-# makeUniqueSMILES()
-# combineAllFeats(save=True)
-# getCommonIDs()

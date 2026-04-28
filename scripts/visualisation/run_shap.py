@@ -129,6 +129,12 @@ parser.add_argument(
     if not present, calculate again"
 )
 
+parser.add_argument(
+    "--full-feat-path",
+    default="fit_lipinski",
+    help="Key in paths.json in full_features"
+)
+
 args = parser.parse_args()
 # endregion
 
@@ -138,6 +144,8 @@ train_set = args.train_set.lower()
 pred_feat = f"{args.pred_feat}_{pred_set}"
 bg = args.max_bg
 exp = args.max_exp
+# SHAP must run on the model input space (train_set), not the predicted target space (pred_set).
+full_train_feats_ = PATHS["full_features"][args.full_feat_path][train_set]
 
 results_dir = \
     PATHS["prediction_output_dirs"][args.results_dir][f"pred_{pred_set}_tr_{train_set}"] / "training_data"
@@ -157,7 +165,7 @@ if args.save_full_shap:
     print(f"Saving full SHAP bundle to: {full_shap_path}")
     v.shapAnalysisAll(
         models_dir=results_dir,
-        features=tr_feat_path,
+        features=full_train_feats_,
         output_dir=shap_dir,
         max_bg=bg,
         max_explain=exp,
@@ -168,7 +176,7 @@ if args.save_full_shap:
 
 shap_v, feat_explain, explainer = v.shapAnalysis(
     model=model_path,
-    features=tr_feat_path,
+    features=full_train_feats_,
     pred_feature=pred_feat,
     output_dir=shap_dir,
     max_bg=bg,
@@ -189,7 +197,7 @@ if args.plot_dep:
     )
 
 if args.group_shap:
-    if pred_set in ["rdkit", "mordred"]:
+    if pred_set in ["rdkit", "mordred", "maccs"]:
         v.shapAnalysisForGroups(
             models_dir=results_dir,
             features=tr_feat_path,

@@ -9,6 +9,7 @@ from pathlib import Path
 import argparse
 from datetime import datetime
 import matplotlib.pyplot as plt
+import seaborn as sns   
 
 FILE_DIR = Path(__file__).resolve()
 PROJ_DIR = FILE_DIR.parents[2]
@@ -58,7 +59,7 @@ parser.add_argument(
 parser.add_argument(
     "--run-all",
     action="store_true",
-    help="Flag to run all available cross-prediciton analysis"
+    help="Flag to run all available cross-prediction analysis"
 )
 
 parser.add_argument(
@@ -66,7 +67,7 @@ parser.add_argument(
     nargs="+",
     choices=unique_exp_names,
     help=f"Name of the experiments ran. For full cross-feature predictions:\n{cp}\n" \
-    f"For Lipinski cross-feature predicitons:\n{lcp}\n"\
+    f"For Lipinski cross-feature predictions:\n{lcp}\n"\
     "Note: This only works with the original default pathing"
 )
 
@@ -96,12 +97,264 @@ parser.add_argument(
     help="Flag to plot individual features (mostly useful for feature sets without groups)"
 )
 
+parser.add_argument(
+    "--skip-cols",
+    nargs="+",
+    help="Feature columns to skip"
+)
+
+parser.add_argument(
+    "--radar-task",
+    default="regression"
+)
+
+parser.add_argument(
+    "--run-avg",
+    action="store_true",
+    help="Flag to average across all specified experiments"
+)
+
 # endregion
 
 # region Parsing Arguments
 args = parser.parse_args()
 cp_dir = paths["prediction_output_dirs"][args.result_dir]
 var_threshold = args.var_threshold
+TASK_METRICS = {
+    "regression": {
+        "metric": "Pearson_r",
+        "group_metrics": ["Pearson_r", "r2", "RMSE", "Bias"],
+        "member_suffix": "reg",
+        "radar_metric": "avg_Pearson_r"
+    },
+    "classification": {
+        "metric": "AUC",
+        "group_metrics": ["Accuracy", "Sensitivity", "Specificity", "PPV", "NPV", "AUC", "MCC"],
+        "member_suffix": "cla",
+        "radar_metric": "avg_AUC"
+    },
+    "multiclass": {
+        "metric": "AUC_OVR",
+        "group_metrics": ["Accuracy", "Balanced_Accuracy", "F1_macro", "AUC_OVR", "MCC"],
+        "member_suffix": "mcla",
+        "radar_metric": "avg_AUC_OVR"
+    },
+}
+task_type_map = {
+    "regression": "regression",
+    "classification": "binary_classification",
+    "multiclass": "multiclass_classification",
+}
+
+
+def _available_metrics(df: pd.DataFrame, wanted: list[str]) -> list[str]:
+    return [m for m in wanted if m in df.columns]
+
+# endregion
+
+# region Function Definitions prior to running
+def avg_results(exp_list):
+    dfs = []
+    for exp in exp_list:
+        exp_df = pd.read_csv(cp_dir[exp] / f"{exp}.csv", index_col=0)
+        dfs.append(exp_df)
+    
+    combined = pd.concat(dfs, axis=0, keys=exp_list)
+    avg_df = combined.groupby(level=1).mean(numeric_only=True)
+    return avg_df
+    
+def get_group_perf_per_task(group_map, exp_perf_df):
+    group_perf_by_task = {}
+
+    for task_name, task_cfg in TASK_METRICS.items():
+        metrics_present = _available_metrics(exp_perf_df, task_cfg["group_metrics"])
+        if not metrics_present:
+            print(f"No available metrics for {task_name}. Skipping.")
+            continue
+        gp_df = v.computeGroupPerf(
+            data=exp_perf_df,
+            descriptor_groups=group_map,
+            metrics=metrics_present,
+            exclude=excl_cols
+        )
+        gp_df.to_csv(exp_dir / f"{task_name}_group_perf.csv")
+        group_perf_by_task[task_name] = gp_df
+    return group_perf_by_task
+
+def plot_group_radar_for_val(group_perf_by_task, task):
+    palette = sns.color_palette("tab10")
+    c1, c2 = (palette[0], palette[3]) if task == "regression" else (palette[1], palette[4])
+    val = TASK_METRICS[task]["radar_metric"]
+    radar_df = group_perf_by_task[task][[val]].copy()
+    radar_df[val] = pd.to_numeric(radar_df[val], errors="coerce")
+    radar_df = radar_df.replace([float("inf"), float("-inf")], pd.NA).dropna(
+        subset=[val]
+    )
+    if radar_df.empty:
+        print(f"Skipping regression radar for {exp}: no finite {val} groups.")
+    else:
+        gr_title = f"{pred.capitalize()} Prediction ({tr.capitalize()} trained): {val}"
+        timestamp = datetime.now().strftime("%d/%m/%Y %H:%M")
+        gr_description = (
+            f"Performance when training RF models on {tr} to predict {pred} features.\n"
+            f"Plot shows grouped Pearson_r values.\nCreated: {timestamp}"
+        )
+        gr_fname_suffix = "excl_low_var" if args.exclude_low_var else ""
+
+        v.plotGroupRadar(
+            radar_df,
+            title=gr_title,
+            save_plot=True,
+            save_path=exp_dir,
+            save_fname=f"{exp}_{gr_fname_suffix}_group_radar_{task}",
+            metadata={
+                "Title": gr_title,
+                "Description": gr_description
+            },
+            c1=c1,
+            c2=c2
+        )
+
+def plot_members_of_groups(exp_perf_df, group_name, group_members):
+    print(f"Plotting performance of individual members for the group {group_name}:")
+    present_members = [m for m in group_members if m in exp_perf_df.index]
+    if not present_members:
+        print(
+            f"Skipping group '{group_name}': no members found in performance index."
+        )
+        return
+
+    title = f"{group_name} (Trained: {tr}, Predicted: {pred})"
+    description = f"Performance on {pred.capitalize()} features in the group '{group_name}.\n \
+                This group consists of:\n {group_members}"
+    
+    for task_name, task_cfg in TASK_METRICS.items():
+        print(f"Task name: {task_name}")
+        task_df = exp_perf_df.copy()
+        metric_col = task_cfg["metric"]
+
+        if metric_col not in exp_perf_df.columns:
+            continue
+
+        # Prefer task_type filtering, but gracefully fall back to metric-based rows.
+        if "task_type" in task_df.columns:
+            filtered = task_df.loc[task_df["task_type"] == task_type_map[task_name]].copy()
+            if not filtered.empty and metric_col in filtered.columns and filtered[metric_col].notna().any():
+                task_df = filtered
+            else:
+                task_df = task_df.loc[task_df[metric_col].notna()].copy()
+        else:
+            task_df = task_df.loc[task_df[metric_col].notna()].copy()
+
+        if task_df.empty:
+            continue
+
+        present_members = [m for m in group_members if m in task_df.index]
+        print(f"Present members:\n{present_members}")
+        finite_vals = pd.to_numeric(
+            task_df.loc[present_members, metric_col], errors="coerce"
+        ).replace([float("inf"), float("-inf")], pd.NA).dropna()
+        if finite_vals.empty:
+            print(
+                f"Skipping group '{group_name}' for metric '{metric_col}': "
+                "no finite values."
+            )
+            continue
+        
+        try:
+            print(f"Plotting member bar for ")
+            v.plotMemberBar(
+                perf_df=task_df,
+                group_map=group_map,
+                group_name=group_name,
+                value_col=metric_col,
+                save_plot=True,
+                save_path=exp_dir,
+                save_fname=f"{exp}_{group_name}_{pred}_bar_{task_cfg['member_suffix']}",
+                metadata={
+                    "Title": f"{title} ({metric_col})",
+                    "Description": description
+                }
+            )
+        except ValueError as e:
+            print(
+                f"Skipping group '{group_name}' for metric '{metric_col}' "
+                f"due to plotting error: {e}"
+            )
+
+def plot_no_group_bars(exp_perf_df: pd.DataFrame, l_var_col: list[str]) -> None:
+    """
+    Plot feature-level bars (no groups) for all available task types.
+
+    - Regression: Pearson_r
+    - Classification: AUC
+    - Multiclass: AUC_OVR
+    """
+    gr_fname_suffix = "excl_low_var" if args.exclude_low_var else ""
+
+    for task_name, task_cfg in TASK_METRICS.items():
+        metric = task_cfg["metric"]
+        task_df = exp_perf_df.copy()
+        original_task_df = task_df.copy()
+
+        # Prefer task_type filtering, but gracefully fall back to metric-based rows.
+        if "task_type" in task_df.columns:
+            filtered = task_df.loc[task_df["task_type"] == task_type_map[task_name]].copy()
+            if not filtered.empty and metric in filtered.columns and filtered[metric].notna().any():
+                task_df = filtered
+            elif metric in task_df.columns:
+                task_df = task_df.loc[task_df[metric].notna()].copy()
+
+        # Keep low-variance exclusion for regression only.
+        # Always apply explicitly skipped columns for every task.
+        drop_cols = set(args.skip_cols or [])
+        if args.exclude_low_var and task_name == "regression":
+            drop_cols.update(l_var_col)
+        if drop_cols:
+            task_df = task_df.drop(index=[c for c in drop_cols if c in task_df.index], errors="ignore")
+
+        if metric not in task_df.columns:
+            print(f"Skipping {task_name}: missing metric '{metric}'")
+            continue
+
+        plot_df = task_df.dropna(subset=[metric]).sort_values(by=metric, ascending=False)
+        # If exclusions removed everything, fall back to non-excluded metric rows.
+        if plot_df.empty and metric in original_task_df.columns:
+            fallback_df = original_task_df.dropna(subset=[metric]).sort_values(by=metric, ascending=False)
+            if not fallback_df.empty:
+                print(
+                    f"{task_name}: exclusions removed all rows; "
+                    "falling back to full metric-based plot."
+                )
+                plot_df = fallback_df
+        if plot_df.empty:
+            print(f"Skipping {task_name}: no finite '{metric}' values to plot")
+            continue
+
+        gr_title = f"{pred.capitalize()} Prediction ({tr.capitalize()} trained): {metric}"
+        plt.figure(figsize=(14, 6))
+        plt.bar(plot_df.index.astype(str), plot_df[metric])
+
+        # Show descriptor names only when small enough to remain readable.
+        if len(plot_df) < 50:
+            plt.xticks(
+                ticks=range(len(plot_df)),
+                labels=plot_df.index.astype(str),
+                rotation=75,
+                ha="right",
+                fontsize=8
+            )
+        else:
+            plt.xticks([])
+
+        plt.ylabel(metric)
+        plt.title(gr_title)
+        plt.ylim(0, 1.05)
+        plt.grid(axis="y", linestyle="--", alpha=0.3)
+        plt.tight_layout()
+        plt.savefig(exp_dir / f"{exp}_{gr_fname_suffix}_feature_bar_{task_name}.png", dpi=300)
+        plt.close()
+
 
 # endregion
 
@@ -116,14 +369,23 @@ else:
     raise ValueError("You must set either '--run-all' or specify results with '--run-experiment'"\
                      f"Experiments to choose from:\n{unique_exp_names}")
 
+if args.run_avg:
+    wrds = exp_list[0].split("_")
+    pred = wrds[1]
+    list_to_avg = exp_list
+    exp_list=[f"pred_{pred}_tr_avg"]
+
 for exp in exp_list:
     wrds = exp.split("_")
     pred = wrds[1]
     tr = wrds[3]
-
     exp_dir = cp_dir[exp]
-    exp_perf_df_path = exp_dir / f"{exp}.csv"
-    exp_perf_df = pd.read_csv(Path(exp_perf_df_path), index_col=0)
+
+    if args.run_avg:
+        exp_perf_df = avg_results(list_to_avg)
+    else:
+        exp_perf_df_path = exp_dir / f"{exp}.csv"
+        exp_perf_df = pd.read_csv(Path(exp_perf_df_path), index_col=0)
 
     pred_ft_df = Path(paths["full_features"]["all"][pred])
     
@@ -132,6 +394,8 @@ for exp in exp_list:
         )
     
     excl_cols = l_var_col if args.exclude_low_var else []
+    if args.skip_cols:
+        excl_cols.extend(args.skip_cols)
     
     if args.show_var:
         desc_an_dir = pred_ft_df.parent / "descriptor_analysis"
@@ -148,99 +412,20 @@ for exp in exp_list:
         else:
             print(f"Low variance column plot exists in following path:\n{desc_an_dir / save_name}")
 
+
     if not args.no_groups:
-        group_map = getGroups(pred)
-
-        group_performance_df = v.computeGroupPerf(
-            data=exp_perf_df,
-            descriptor_groups=group_map,
-            metrics=["Pearson_r", "r2", "RMSE", "Bias"],
-            exclude=excl_cols
-        )
-
-        group_performance_df.to_csv(exp_dir / "group_perf.csv")
-
-    # --- Plotting the overall cross-prediction performance
-        gr_title=f"{pred.capitalize()} Prediction ({tr.capitalize()} trained): Pearson R"
-        timestamp = datetime.now().strftime("%d/%m/%Y %H:%M")
-        gr_description=f"Performance when training RFR models on {tr} to predict {pred} features.\n \
-                    Plot shows the Pearson R of predictions grouped by similar features \n \
-                    Created: {timestamp}"
-        gr_fname_suffix = "excl_low_var" if args.exclude_low_var else ""
-
-        v.plotGroupRadar(
-            group_performance_df,
-            title=gr_title,
-            save_plot=True,
-            save_path=exp_dir,
-            save_fname=f"{exp}_{gr_fname_suffix}_group_radar",
-            metadata={
-                "Title": gr_title,
-                "Description": gr_description
-            }
-        )
+        group_map=getGroups(pred)
+        group_perf_by_task=get_group_perf_per_task(group_map=group_map, exp_perf_df=exp_perf_df)
+        plot_group_radar_for_val(group_perf_by_task=group_perf_by_task, task=args.radar_task)
         
+
         for group_name, group_members in group_map.items():
-    # --- Plotting performance of individual members of a group
-            present_members = [m for m in group_members if m in exp_perf_df.index]
-            if not present_members:
-                print(
-                    f"Skipping group '{group_name}': no members found in performance index."
-                )
-                continue
-
-            mb_title=f"Performance for {group_name} (trained {tr.capitalize()}, predicted {pred.capitalize()})"
-            timestamp = datetime.now().strftime("%d/%m/%Y %H:%M")
-            mb_description = f"Performance on {pred.capitalize()} features in the group '{group_name}.\n \
-                This group consists of:\n {group_members}"
-        
-            v.plotMemberBar(
-                perf_df=exp_perf_df,
-                group_map=group_map,
-                group_name=group_name,
-                value_col="Pearson_r",
-                save_plot=True,
-                save_path=exp_dir,
-                save_fname=f"{exp}_{group_name}_{pred}_bar",
-                metadata={
-                    "Title": mb_title,
-                    "Description": mb_description
-                }
+            plot_members_of_groups(
+                group_name=group_name, group_members=group_members, exp_perf_df=exp_perf_df
                 )
 
-    # --- Plotting the feature distribution of poorly predicted features
-            v.plotPoorPredictionFeatureDistribution(
-                    perf_df=exp_perf_df,
-                    full_features=paths["full_features"]["all"][pred],
-                    group_map=group_map,
-                    group_name=group_name,
-                    value_col="Pearson_r",
-                    save_plot=True,
-                    save_path=exp_dir,            
-            )
-    
-    # --- Plotting without groups
-    else:
-        gr_title=f"{pred.capitalize()} Prediction ({tr.capitalize()} trained): Pearson R"
-        timestamp = datetime.now().strftime("%d/%m/%Y %H:%M")
-        gr_description=f"Performance when training RFR models on {tr} to predict {pred} features.\n \
-                    Plot shows the Pearson R of predictions on individual features \n \
-                    Created: {timestamp}"
-        gr_fname_suffix = "excl_low_var" if args.exclude_low_var else ""
-
-        print(exp_perf_df.head(2))
-        print(exp_perf_df.shape)
-        exp_perf_df = exp_perf_df.sort_values(by="Pearson_r", ascending=False)
-        plt.figure(figsize=(14, 6))
-        plt.bar(exp_perf_df.index.astype(str), exp_perf_df["Pearson_r"])
-        plt.xticks([])
-        plt.ylabel("Pearson_r")
-        plt.title(gr_title)
-        plt.ylim(0, 1.05)
-        plt.grid(axis="y", linestyle="--", alpha=0.3)
-        plt.tight_layout()
-        plt.savefig(exp_dir / f"{exp}_{gr_fname_suffix}_feature_bar.png", dpi=300)
-        plt.close()
+    # --- Plotting without groups (always run for all available task metrics)
+    plot_no_group_bars(exp_perf_df=exp_perf_df, l_var_col=l_var_col)
 
 
 # endregion

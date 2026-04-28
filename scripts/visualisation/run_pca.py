@@ -60,6 +60,20 @@ parser.add_argument(
     help=f"Feature sets to perform analysis with. Choices:\n{SUPPORTED_FEATURE_SETS}"
 )
 
+parser.add_argument(
+    "--feats-for-pca",
+    nargs="+",
+    choices=SUPPORTED_FEATURE_SETS,
+    help="Feature sets used to fit PCA space (feature mode). If omitted, uses --feats."
+)
+
+parser.add_argument(
+    "--feat-groups",
+    nargs="+",
+    choices=SUPPORTED_FEATURE_SETS,
+    help="Feature groups/sources to display on PCA plots (feature mode). If omitted, uses --feats-for-pca."
+)
+
 targs = list(DEFAULT_TARGET_COLUMNS.keys())
 parser.add_argument(
     "--targs",
@@ -201,6 +215,8 @@ args = parser.parse_args()
 # --- Defining commonly used variables
 feat_ls = args.feats
 targ_ls = args.targs
+feats_for_pca = args.feats_for_pca if args.feats_for_pca else feat_ls
+feat_groups = args.feat_groups if args.feat_groups else feats_for_pca
 
 mw_bounds = args.filter_mw
 
@@ -360,7 +376,7 @@ elif args.type == "feat":
     final_pca_df = pd.DataFrame()
     loadings_df_out = None
 
-    for feat in feat_ls:
+    for feat in feats_for_pca:
         temp_df = pd.read_csv(PATHS["full_features"]["all"][feat], index_col=0)
         temp_df = temp_df.select_dtypes(include=[np.number]).copy()
         temp_df = trim_df(
@@ -377,6 +393,7 @@ elif args.type == "feat":
         fig, pca_df, loadings_df, abs_loadings_df = v.plotPCA(
             data_dict={"Data": final_pca_df},
             n_components=args.n_comp,
+            plot_sources=feat_groups,
             plot_area=False,
             save_plot=True,
             save_path=args.save_path,
@@ -399,6 +416,7 @@ elif args.type == "feat":
             pc_x=1,
             pc_y=2,
             n_components=args.n_comp,
+            plot_sources=feat_groups,
             top_n_loadings=args.n_loadings,
             save_plot=True,
             save_path=args.save_path,

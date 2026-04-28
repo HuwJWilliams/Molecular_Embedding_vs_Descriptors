@@ -267,7 +267,7 @@ def getMostImportantFeatures(
         importance_source,
         top_n: int=25,
         mode: str="shap"
-) -> tuple[dict, dict]:
+) -> tuple[dict, dict, dict]:
     """
     Summarise the top-N most important features for each descriptor.
 
@@ -287,9 +287,12 @@ def getMostImportantFeatures(
         {descriptor: [top_feature_names, mean_top_n_importance]}
     cum_importance_dict : dict
         {descriptor: [top_feature_names, sum_top_n_importance]}
+    count_dict : dict
+        {feature_name: number_of_descriptors_where_feature_is_in_top_n}
     """
     avg_importance_dict: dict = {}
     cum_importance_dict: dict = {}
+    count_dict: dict = {}
 
     if mode == "shap":
         shap_by_desc = importance_source["shap_by_desc"]
@@ -303,6 +306,8 @@ def getMostImportantFeatures(
             clean_desc = desc.rsplit("_", 1)[0]
             avg_importance_dict[clean_desc] = [top.index.tolist(), float(top.mean())]
             cum_importance_dict[clean_desc] = [top.index.tolist(), float(top.sum())]
+            for feat in top.index.tolist():
+                count_dict[feat] = count_dict.get(feat, 0) + 1
 
     elif mode == "rf":
         fi_df = importance_source.copy()
@@ -316,8 +321,14 @@ def getMostImportantFeatures(
             top = pd.to_numeric(fi_df[col], errors="coerce").dropna().nlargest(top_n)
             avg_importance_dict[desc] = [top.index.tolist(), float(top.mean())]
             cum_importance_dict[desc] = [top.index.tolist(), float(top.sum())]
+            for feat in top.index.tolist():
+                count_dict[feat] = count_dict.get(feat, 0) + 1
 
     else:
         raise ValueError(f"mode must be 'shap' or 'rf', got '{mode}'")
 
-    return avg_importance_dict, cum_importance_dict
+    return avg_importance_dict, cum_importance_dict, count_dict
+
+def molid2Smiles(molid):
+    cleaned_all = pd.read_csv(PROJ_DIR / "datasets" / "all" / "cleaned_all.csv")
+    return cleaned_all.loc[cleaned_all["ID"] == molid, "SMILES"].iloc[0]
