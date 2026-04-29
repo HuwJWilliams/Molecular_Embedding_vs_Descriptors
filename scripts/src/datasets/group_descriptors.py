@@ -212,7 +212,7 @@ def getMACCSGroups(prefix="_maccs"):
             2, 3, 4, 5, 6, 7, 9, 10, 12, 18, 20, 35
         ]],
 
-        "Organic Elements": [p(bit) for bit in [
+        "Organic-Elements": [p(bit) for bit in [
             27, 29, 42, 46, 88, 103, 134, 161, 164
         ]],
 

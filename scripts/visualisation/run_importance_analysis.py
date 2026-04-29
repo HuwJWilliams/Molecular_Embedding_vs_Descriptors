@@ -98,6 +98,17 @@ parser.add_argument(
     help="Flag to set left plot to increase size with feature importance"
 )
 
+parser.add_argument(
+    "--x-metric",
+    default="AUC",
+    help="Performance metric on the X-axis of plots"
+)
+
+parser.add_argument(
+    "--y-metric",
+    default="Pearson_r",
+    help="Performance metric on the Y-axis of plots"
+)
 
 args = parser.parse_args()
 
@@ -142,47 +153,49 @@ importance_lookup = {
 importance_map = importance_lookup[(mode, imp_type)]
 
 
-# shap_avg_df = v.plotDescPredictionVsFeatPrediction(
-#     importance_map=importance_map,
-#     pred_tr_perf_df=pred_imp_tr_test,
-#     pred_on_target_df=pred_targ_tr_imp,
-#     desc_to_group=desc_to_group,
-#     importance_col=f"avg_imp_top25_{imp}",
-#     left_title=f"{args.imp_type} {mode} importance: Colored by {args.descriptor_group} group",
-#     right_title=f"{imp_type} {mode} importance: Colored by importance",
-#     save_path=save_path / f"{test}_vs_{imp_type}_importance_{imp}_{mode}.png",
-#     mode=mode,
-#     r_vmin=args.min_max_high[0],
-#     r_vmax=args.min_max_high[1],
-#     r_high=args.min_max_high[2],
-#     imp_type=args.imp_type,
-#     bubble=args.bubble
-# )
+shap_avg_df = v.plotDescPredictionVsFeatPrediction(
+    importance_map=importance_map,
+    pred_tr_perf_df=pred_imp_tr_test,
+    pred_on_target_df=pred_targ_tr_imp,
+    desc_to_group=desc_to_group,
+    importance_col=f"avg_imp_top25_{imp}",
+    left_title=f"{args.imp_type} {mode} importance: Colored by {args.descriptor_group} group",
+    right_title=f"{imp_type} {mode} importance: Colored by importance",
+    save_path=save_path / f"{test}_vs_{imp_type}_importance_{imp}_{mode}.png",
+    mode=mode,
+    r_vmin=args.min_max_high[0],
+    r_vmax=args.min_max_high[1],
+    r_high=args.min_max_high[2],
+    imp_type=args.imp_type,
+    bubble=args.bubble,
+    x_metric_col=args.x_metric,
+    y_metric_col=args.y_metric
+)
 
 # Plotting Imp preds vs Test preds
-# plot_df = pred_targ_tr_imp[["Pearson_r"]].rename(columns={"Pearson_r": f"{imp}_on_{targ}"}).join(
-#     pred_targ_tr_test[["Pearson_r"]].rename(columns={"Pearson_r": f"{test}_on_{targ}"}),
-#     how="inner"
-# ).dropna()
+plot_df = pred_targ_tr_imp[["Pearson_r"]].rename(columns={"Pearson_r": f"{imp}_on_{targ}"}).join(
+    pred_targ_tr_test[["Pearson_r"]].rename(columns={"Pearson_r": f"{test}_on_{targ}"}),
+    how="inner"
+).dropna()
 
-# plt.figure(figsize=(7, 7))
-# plt.scatter(
-#     plot_df[f"{imp}_on_{targ}"],    # x
-#     plot_df[f"{test}_on_{targ}"],   # y
-#     s=25,
-#     alpha=0.7,
-#     edgecolor="none",
-# )
+plt.figure(figsize=(7, 7))
+plt.scatter(
+    plot_df[f"{imp}_on_{targ}"],    # x
+    plot_df[f"{test}_on_{targ}"],   # y
+    s=25,
+    alpha=0.7,
+    edgecolor="none",
+)
 
-# plt.plot([0, 1], [0, 1], "k--", lw=1)
-# plt.xlim(0, 1)
-# plt.ylim(0, 1)
-# plt.xlabel(f"{imp} -> {targ} Pearson_r")
-# plt.ylabel(f"{test} -> {targ} Pearson_r")
-# plt.title(f"Descriptor-level performance: {imp} vs {test}")
-# plt.tight_layout()
-# plt.savefig(save_path / f"{test}_vs_{imp}_pred_{targ}_scatter.png", dpi=300)
-# plt.close()
+plt.plot([0, 1], [0, 1], "k--", lw=1)
+plt.xlim(0, 1)
+plt.ylim(0, 1)
+plt.xlabel(f"{imp} -> {targ} Pearson_r")
+plt.ylabel(f"{test} -> {targ} Pearson_r")
+plt.title(f"Descriptor-level performance: {imp} vs {test}")
+plt.tight_layout()
+plt.savefig(save_path / f"{test}_vs_{imp}_pred_{targ}_scatter.png", dpi=300)
+plt.close()
 
 
 def _plotTopFeatureCount(

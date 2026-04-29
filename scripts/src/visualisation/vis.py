@@ -3474,7 +3474,7 @@ class Visualise():
         pred_on_target_df: pd.DataFrame,
         preds_on_imp_tr_results: dict,
         desc_to_group: dict | None = None,
-        metric_col: str = "Pearson_r",
+        y_metric_col: str = "Pearson_r",
         pred_label: str = "pred_on_target",
     ) -> pd.DataFrame:
         """
@@ -3483,7 +3483,7 @@ class Visualise():
             x = average trainer performance on the important trainer features
         """
         df = pd.DataFrame(index=pred_on_target_df.index)
-        df[pred_label] = pred_on_target_df[metric_col]
+        df[pred_label] = pred_on_target_df[y_metric_col]
         df["avg_preds_on_imp_tr_features"] = df.index.map(
             lambda k: preds_on_imp_tr_results.get(k, {}).get("avg_preds_on_imp_tr_features", np.nan)
         )
@@ -3497,12 +3497,12 @@ class Visualise():
 
     def plotDescPredictionVsFeatPrediction(
         self,
-        # --- data inputs (used to build dataframes internally) ---
         importance_map: dict,
         pred_tr_perf_df: pd.DataFrame,
         pred_on_target_df: pd.DataFrame,
         desc_to_group: dict | None = None,
-        metric_col: str = "Pearson_r",
+        y_metric_col: str = "Pearson_r",
+        x_metric_col: str = "AUC",
         pred_label: str = "pred_on_target",
         importance_col: str = "importance",
         left_title: str = "",
@@ -3562,13 +3562,13 @@ class Visualise():
         preds_on_imp_tr = self._build_predictions_on_important_tr_features(
             importance_dict=importance_map,
             pred_tr_perf_df=pred_tr_perf_df,
-            metric_col=metric_col,
+            metric_col=x_metric_col,
         )
         plot_df = self._build_final_comparison_dataframe(
             pred_on_target_df=pred_on_target_df,
             preds_on_imp_tr_results=preds_on_imp_tr,
             desc_to_group=desc_to_group,
-            metric_col=metric_col,
+            y_metric_col=y_metric_col,
             pred_label=pred_label,
         )
 
@@ -3602,6 +3602,8 @@ class Visualise():
             group_colors=group_colors,
             group_handles=group_handles,
             title=left_title,
+            x_axis_label=f"Avg trainer performance on top-N important trainer features ({x_metric_col})",
+            y_axis_label=f"Direct prediction performance on target ({y_metric_col})",
         )
         self._add_right_panel(
             ax=ax_right,
@@ -3615,7 +3617,8 @@ class Visualise():
             r_vmin=r_vmin,
             r_vmax=r_vmax,
             r_high=r_high,
-            imp_type=imp_type
+            imp_type=imp_type,
+            x_axis_label=f"Avg trainer performance on top-N important trainer features ({x_metric_col})",
         )
 
         fig.tight_layout()
@@ -3652,6 +3655,8 @@ class Visualise():
         group_colors: dict,
         group_handles: list,
         title: str,
+        x_axis_label: str,
+        y_axis_label: str,
     ) -> None:
         for g in groups:
             sub = df[df["group"] == g]
@@ -3666,8 +3671,8 @@ class Visualise():
         ax.plot([0, 1], [0, 1], "k--", lw=1)
         ax.set_xlim(0, 1)
         ax.set_ylim(0, 1)
-        ax.set_xlabel("Avg performance on top-N important trainer features")
-        ax.set_ylabel("Direct prediction performance on target (Pearson r)")
+        ax.set_xlabel(x_axis_label)
+        ax.set_ylabel(y_axis_label)
         ax.set_title(title)
         ax.legend(
             handles=group_handles,
@@ -3692,6 +3697,7 @@ class Visualise():
         r_vmin: float,
         r_vmax: float,
         r_high: float,
+        x_axis_label: str,
         colour_mid: str = "#ff8c00",
         colour_high: str = "#d62728",
         colour_low: str = "#000000",
@@ -3744,7 +3750,7 @@ class Visualise():
         ax.plot([0, 1], [0, 1], "k--", lw=1)
         ax.set_xlim(0, 1)
         ax.set_ylim(0, 1)
-        ax.set_xlabel("Avg trainer performance on top-N important trainer features")
+        ax.set_xlabel(x_axis_label)
         ax.set_title(title)
 
         cbar = fig.colorbar(sc, ax=ax, fraction=0.046, pad=0.04)
@@ -3779,7 +3785,7 @@ class Visualise():
             feature_paths: dict[Path],
             n_mols: int=100,
             show_top_n_pairs: int=3,
-            molids: list[str]=[],
+            molids: list[str] | None = None,
             save_dir: Path=PROJ_DIR / "results" / "similarity",
     ):
 
@@ -3823,6 +3829,15 @@ class Visualise():
                 columns=df.index
             )
             return jacc_sim_df
+
+        def getTanimotoSim(df):
+            # Tanimoto on binary fingerprints; coerce to boolean presence/absence.
+            arr = pd.DataFrame(df).to_numpy()
+            arr_bool = (arr > 0).astype(bool)
+            dist = pairwise_distances(arr_bool, metric="jaccard")
+            sim = 1.0 - dist
+            tanimoto_df = pd.DataFrame(sim, index=df.index, columns=df.index)
+            return tanimoto_df
             
         def savesSmilesGrid(
                 smiles_list, legend_list, out_path="molecule_grid.png", mols_per_row=4, sub_img_size=(320, 260)
@@ -3852,10 +3867,18 @@ class Visualise():
             img.save(out_path)
                 
 
+        save_dir = Path(save_dir)
         save_dir.mkdir(parents=True, exist_ok=True)
 
+        if molids is None:
+            molids = []
+
+        if not feature_sets:
+            raise ValueError("feature_sets is empty.")
+
         if not molids:
-            molids = list(pd.read_csv(feature_paths["maccs"], index_col=0).sample(n_mols).index)
+            sample_feat = feature_sets[0]
+            molids = list(pd.read_csv(feature_paths[sample_feat], index_col=0).sample(n_mols).index)
 
         all_sim_matrices = {
             "rbf": {},
@@ -3873,14 +3896,14 @@ class Visualise():
             all_sim_matrices["jacc"][feat] = getJACCSim(feat_df)
             ids = list(feat_df.index)
 
-            for metric_key in ["rbg", "jacc"]:
+            for metric_key in ["rbf", "jacc"]:
                 sim = all_sim_matrices[metric_key][feat].to_numpy(dtype=float)
-                if sim.shape[0] > 2:
+                if sim.shape[0] < 2:
                     continue
-                
-                iu = np.triu_induces(sim.shape[0], k=1)
+
+                iu = np.triu_indices(sim.shape[0], k=1)
                 pair_vals = sim[iu]
-                if pair_vals.size ==0:
+                if pair_vals.size == 0:
                     continue
 
                 # indices of top-k similarities (descending)
@@ -3905,7 +3928,7 @@ class Visualise():
                         "smi_pair": (smi1, smi2),
                     })
 
-                mol_comp = ["feat_sim"][f"{feat}_{metric_key}"] = top_pairs
+                mol_comp["feat_sim"][f"{feat}_{metric_key}"] = top_pairs
 
         for key, val in mol_comp.get("feat_sim", {}).items():
             if not key or not isinstance(val, list):
@@ -3940,206 +3963,292 @@ class Visualise():
             
             if not smiles_list:
                 continue
-
-        out_path = save_dir / f"{key}_top3.png"
-        savesSmilesGrid(
-            smiles_list,
-            legend_list,
-            out_path=out_path, 
-            mols_per_row=2
-        )
-        print(f"Saved: {out_path}")
-        # assume exactly 2 feature sets
-        
-        feat_a, feat_b = feature_sets[0], feature_sets[1]
-
-        # choose metric to plot
-        for metric_key, cbar_label in [("rbf", "RBF Similarity"), ("jacc", "Continuous Jaccard")]:
-            sim_a = all_sim_matrices[metric_key][feat_a].to_numpy()
-            sim_b = all_sim_matrices[metric_key][feat_b].to_numpy()
-
-            n = sim_a.shape[0]
-            combined = np.zeros((n, n), dtype=float)
-
-            upper_mask = np.triu(np.ones((n, n), dtype=bool), k=1)
-            lower_mask = np.tril(np.ones((n, n), dtype=bool), k=-1)
-
-            combined[upper_mask] = sim_a[upper_mask]   # first feature set -> upper
-            combined[lower_mask] = sim_b[lower_mask]   # second feature set -> lower
-            combined[np.diag_indices(n)] = 1.0
-
-            idx = all_sim_matrices[metric_key][feat_a].index
-            combined_df = pd.DataFrame(combined, index=idx, columns=idx)
-
-            plt.figure(figsize=(10, 8))
-            sns.heatmap(
-                combined_df,
-                cmap="viridis",
-                vmin=0,
-                vmax=1,
-                square=True,
-                linewidths=0.2,
-                cbar_kws={"label": cbar_label},
+            out_path = save_dir / f"{key}_top{show_top_n_pairs}.png"
+            savesSmilesGrid(
+                smiles_list,
+                legend_list,
+                out_path=out_path,
+                mols_per_row=2
             )
-            plt.title(f"{metric_key.upper()} | Upper: {feat_a} | Lower: {feat_b}")
-            plt.xlabel("Molecules")
-            plt.ylabel("Molecules")
-            plt.tight_layout()
-            plt.savefig(f"./test_combined_triangles_{metric_key}.png", dpi=300)
-            plt.close()
+            print(f"Saved: {out_path}")
 
-        metric_key = "rbf"
+        # Combined upper/lower triangle heatmaps for each feature-set pair
+        if len(feature_sets) >= 2:
+            for i in range(len(feature_sets)):
+                for j in range(i + 1, len(feature_sets)):
+                    feat_a = feature_sets[i]
+                    feat_b = feature_sets[j]
 
-        # Keep a common molecule order across all feature sets
-        common_ids = None
-        for feat in feature_sets:
-            idx = all_sim_matrices[metric_key][feat].index
-            common_ids = idx if common_ids is None else common_ids.intersection(idx)
+                    for metric_key, cbar_label in [("rbf", "RBF Similarity"), ("jacc", "Continuous Jaccard")]:
+                        sim_a_df = all_sim_matrices[metric_key][feat_a]
+                        sim_b_df = all_sim_matrices[metric_key][feat_b]
 
-        if common_ids is None or len(common_ids) < 3:
-            raise ValueError("Not enough shared molecules across feature sets for KPCA.")
+                        common_ids = sim_a_df.index.intersection(sim_b_df.index)
+                        if len(common_ids) < 2:
+                            print(
+                                f"Skipping combined heatmap for {metric_key} {feat_a} vs {feat_b}: "
+                                "not enough shared molecule IDs."
+                            )
+                            continue
 
-        plot_frames = []
-        for feat in feature_sets:
-            S_df = all_sim_matrices[metric_key][feat].loc[common_ids, common_ids]
-            S = S_df.to_numpy()
+                        sim_a = sim_a_df.loc[common_ids, common_ids].to_numpy(dtype=float)
+                        sim_b = sim_b_df.loc[common_ids, common_ids].to_numpy(dtype=float)
 
-            coords = KernelPCA(n_components=2, kernel="precomputed").fit_transform(S)
-            feat_df = pd.DataFrame(coords, columns=["KPCA1", "KPCA2"], index=common_ids)
-            feat_df["Source"] = feat
-            plot_frames.append(feat_df.reset_index(names="MolID"))
+                        n = sim_a.shape[0]
+                        combined = np.zeros((n, n), dtype=float)
+                        upper_mask = np.triu(np.ones((n, n), dtype=bool), k=1)
+                        lower_mask = np.tril(np.ones((n, n), dtype=bool), k=-1)
+                        combined[upper_mask] = sim_a[upper_mask]
+                        combined[lower_mask] = sim_b[lower_mask]
+                        combined[np.diag_indices(n)] = 1.0
 
-        plot_df = pd.concat(plot_frames, ignore_index=True)
-        source_labels = list(plot_df["Source"].dropna().astype(str).unique())
-        fallback_palette = sns.color_palette("tab10", n_colors=max(1, len(source_labels)))
-        source_palette = {}
-        for idx, src in enumerate(source_labels):
-            c = self._getColour(src)
-            if c == self.default_colour:
-                c = fallback_palette[idx % len(fallback_palette)]
-            source_palette[src] = c
+                        combined_df = pd.DataFrame(combined, index=common_ids, columns=common_ids)
 
-        # Fit one KPCA object (same settings) to get eigenvalues for variance-style labels
-        # Note: for KernelPCA this is kernel-space variance, not classical PCA variance.
-        kpca_ref = KernelPCA(n_components=2, kernel="precomputed")
-        kpca_ref.fit(all_sim_matrices[metric_key][feature_sets[0]].loc[common_ids, common_ids].to_numpy())
-        eigvals = np.asarray(kpca_ref.eigenvalues_, dtype=float)
-        var_ratio = eigvals / eigvals.sum() if eigvals.sum() > 0 else np.array([np.nan, np.nan])
+                        # Absolute difference map between feature-set similarities
+                        # (small values = better agreement between similarity spaces).
+                        diff = np.abs(sim_a - sim_b)
+                        diff_lower = np.full((n, n), np.nan, dtype=float)
+                        diff_lower[lower_mask] = diff[lower_mask]
+                        diff_lower_df = pd.DataFrame(diff_lower, index=common_ids, columns=common_ids)
 
-        xlab = f"KPCA1 ({var_ratio[0]*100:.1f}% var)"
-        ylab = f"KPCA2 ({var_ratio[1]*100:.1f}% var)"
+                        fig, axes = plt.subplots(1, 2, figsize=(16, 7))
+                        sns.heatmap(
+                            combined_df,
+                            cmap="viridis",
+                            vmin=0,
+                            vmax=1,
+                            square=True,
+                            linewidths=0.2,
+                            cbar_kws={"label": cbar_label},
+                            ax=axes[0],
+                        )
+                        axes[0].set_title(f"{metric_key.upper()} | Upper: {feat_a} | Lower: {feat_b}")
+                        axes[0].set_xlabel("Molecules")
+                        axes[0].set_ylabel("Molecules")
 
-        fig, axes = plt.subplots(
-            2, 2, figsize=(11, 8.5), gridspec_kw={"wspace": 0.18, "hspace": 0.18}
-        )
+                        sns.heatmap(
+                            diff_lower_df,
+                            cmap="Greys",
+                            vmin=0,
+                            vmax=0.5,
+                            square=True,
+                            linewidths=0.2,
+                            cbar_kws={"label": f"|{feat_a} - {feat_b}| ({metric_key.upper()})"},
+                            ax=axes[1],
+                        )
+                        axes[1].set_title("Lower Triangle: Absolute Difference")
+                        axes[1].set_xlabel("Molecules")
+                        axes[1].set_ylabel("Molecules")
 
-        # (0,0): KDE of KPCA1
-        sns.kdeplot(
-            data=plot_df, x="KPCA1", hue="Source", fill=True, common_norm=False,
-            alpha=0.25, ax=axes[0, 0], legend=False, palette=source_palette
-        )
-        axes[0, 0].set_xlabel(xlab)
-        axes[0, 0].set_ylabel("Density")
+                        fig.tight_layout()
+                        out_file = save_dir / f"combined_triangles_{metric_key}_{feat_a}_vs_{feat_b}.png"
+                        fig.savefig(out_file, dpi=300)
+                        plt.close(fig)
+                        print(f"Saved: {out_file}")
 
-        # (1,0): scatter KPCA1 vs KPCA2
-        sns.scatterplot(
-            data=plot_df, x="KPCA1", y="KPCA2", hue="Source",
-            s=28, alpha=0.75, edgecolor=None, ax=axes[1, 0], palette=source_palette
-        )
-        axes[1, 0].set_xlabel(xlab)
-        axes[1, 0].set_ylabel(ylab)
+        # KPCA panels for both RBF and JACC similarity matrices
+        for metric_key in ["rbf", "jacc"]:
+            common_ids = None
+            for feat in feature_sets:
+                idx = all_sim_matrices[metric_key][feat].index
+                common_ids = idx if common_ids is None else common_ids.intersection(idx)
 
-        # (1,1): KDE of KPCA2
-        sns.kdeplot(
-            data=plot_df, x="KPCA2", hue="Source", fill=True, common_norm=False,
-            alpha=0.25, ax=axes[1, 1], legend=False, palette=source_palette
-        )
-        axes[1, 1].set_xlabel(ylab)
-        axes[1, 1].set_ylabel("Density")
+            if common_ids is None or len(common_ids) < 3:
+                print(f"Skipping KPCA for {metric_key}: not enough shared molecule IDs.")
+                continue
 
-        axes[0, 1].axis("off")
+            try:
+                plot_frames = []
+                for feat in feature_sets:
+                    S_df = all_sim_matrices[metric_key][feat].loc[common_ids, common_ids]
+                    S = S_df.to_numpy()
+                    coords = KernelPCA(n_components=2, kernel="precomputed").fit_transform(S)
+                    feat_kpca_df = pd.DataFrame(coords, columns=["KPCA1", "KPCA2"], index=common_ids)
+                    feat_kpca_df["Source"] = feat
+                    plot_frames.append(feat_kpca_df.reset_index(names="MolID"))
 
-        # capture legend handles from scatter and remove axis-level legend
-        handles, labels = axes[1, 0].get_legend_handles_labels()
-        leg = axes[1, 0].get_legend()
-        if leg is not None:
-            leg.remove()
+                plot_df = pd.concat(plot_frames, ignore_index=True)
+                source_labels = list(plot_df["Source"].dropna().astype(str).unique())
+                fallback_palette = sns.color_palette("tab10", n_colors=max(1, len(source_labels)))
+                source_palette = {}
+                for idx, src in enumerate(source_labels):
+                    c = self._getColour(src)
+                    if c == self.default_colour:
+                        c = fallback_palette[idx % len(fallback_palette)]
+                    source_palette[src] = c
 
-        # stats for KDE variables (KPCA1, KPCA2)
-        stats_rows = []
-        stats_numeric = []
-        for src, g in plot_df.groupby("Source"):
-            kpca1 = g["KPCA1"].dropna().to_numpy()
-            kpca2 = g["KPCA2"].dropna().to_numpy()
+                kpca_ref = KernelPCA(n_components=2, kernel="precomputed")
+                kpca_ref.fit(all_sim_matrices[metric_key][feature_sets[0]].loc[common_ids, common_ids].to_numpy())
+                eigvals = np.asarray(kpca_ref.eigenvalues_, dtype=float)
+                var_ratio = eigvals / eigvals.sum() if eigvals.sum() > 0 else np.array([np.nan, np.nan])
+                xlab = f"KPCA1 ({var_ratio[0]*100:.1f}% var)"
+                ylab = f"KPCA2 ({var_ratio[1]*100:.1f}% var)"
 
-            q1_1, q3_1 = np.percentile(kpca1, [25, 75]) if len(kpca1) else (np.nan, np.nan)
-            q1_2, q3_2 = np.percentile(kpca2, [25, 75]) if len(kpca2) else (np.nan, np.nan)
+                fig, axes = plt.subplots(2, 2, figsize=(11, 8.5), gridspec_kw={"wspace": 0.18, "hspace": 0.18})
+                sns.kdeplot(
+                    data=plot_df, x="KPCA1", hue="Source", fill=True, common_norm=False,
+                    alpha=0.25, ax=axes[0, 0], legend=False, palette=source_palette
+                )
+                axes[0, 0].set_xlabel(xlab)
+                axes[0, 0].set_ylabel("Density")
 
-            std1 = float(np.std(kpca1, ddof=1)) if len(kpca1) > 1 else np.nan
-            iqr1 = float(q3_1 - q1_1) if len(kpca1) else np.nan
-            std2 = float(np.std(kpca2, ddof=1)) if len(kpca2) > 1 else np.nan
-            iqr2 = float(q3_2 - q1_2) if len(kpca2) else np.nan
-            stats_numeric.append([src, std1, iqr1, std2, iqr2])
-            stats_rows.append([
-                src,
-                f"{std1:.3f}" if np.isfinite(std1) else "nan",
-                f"{iqr1:.3f}" if np.isfinite(iqr1) else "nan",
-                f"{std2:.3f}" if np.isfinite(std2) else "nan",
-                f"{iqr2:.3f}" if np.isfinite(iqr2) else "nan",
-            ])
+                sns.scatterplot(
+                    data=plot_df, x="KPCA1", y="KPCA2", hue="Source",
+                    s=28, alpha=0.75, edgecolor=None, ax=axes[1, 0], palette=source_palette
+                )
+                axes[1, 0].set_xlabel(xlab)
+                axes[1, 0].set_ylabel(ylab)
 
-        # optional: sort rows by source name
-        sort_idx = sorted(range(len(stats_rows)), key=lambda i: str(stats_rows[i][0]))
-        stats_rows = [stats_rows[i] for i in sort_idx]
-        stats_numeric = [stats_numeric[i] for i in sort_idx]
+                sns.kdeplot(
+                    data=plot_df, x="KPCA2", hue="Source", fill=True, common_norm=False,
+                    alpha=0.25, ax=axes[1, 1], legend=False, palette=source_palette
+                )
+                axes[1, 1].set_xlabel(ylab)
+                axes[1, 1].set_ylabel("Density")
+                axes[0, 1].axis("off")
 
-        col_labels = ["Source", "STD1", "IQR1", "STD2", "IQR2"]
-        tbl = axes[0, 1].table(
-            cellText=stats_rows,
-            colLabels=col_labels,
-            colWidths=[0.36, 0.16, 0.16, 0.16, 0.16],
-            cellLoc="center",
-            colLoc="center",
-            loc="lower center",
-            bbox=[0.02, 0.00, 0.96, 0.78],  # [left, bottom, width, height]
-        )
-        tbl.auto_set_font_size(False)
-        tbl.set_fontsize(8)
-        tbl.scale(1.0, 1.15)
+                handles, labels = axes[1, 0].get_legend_handles_labels()
+                leg = axes[1, 0].get_legend()
+                if leg is not None:
+                    leg.remove()
 
-        # Highlight best (maximum) value per metric column: STD1, IQR1, STD2, IQR2
-        metric_vals = np.array([row[1:] for row in stats_numeric], dtype=float)
-        if metric_vals.size > 0:
-            best_vals = np.nanmax(metric_vals, axis=0)
-            highlight_colour = "#fff3b0"
-            for r_idx in range(metric_vals.shape[0]):
-                for c_idx in range(metric_vals.shape[1]):
-                    val = metric_vals[r_idx, c_idx]
-                    if np.isfinite(val) and np.isclose(val, best_vals[c_idx], rtol=1e-9, atol=1e-12):
-                        cell = tbl[(r_idx + 1, c_idx + 1)]  # +1 skips header, +1 skips Source col
-                        cell.set_facecolor(highlight_colour)
-                        cell.get_text().set_weight("bold")
+                stats_rows = []
+                stats_numeric = []
+                for src, group_df in plot_df.groupby("Source"):
+                    kpca1 = group_df["KPCA1"].dropna().to_numpy()
+                    kpca2 = group_df["KPCA2"].dropna().to_numpy()
+                    q1_1, q3_1 = np.percentile(kpca1, [25, 75]) if len(kpca1) else (np.nan, np.nan)
+                    q1_2, q3_2 = np.percentile(kpca2, [25, 75]) if len(kpca2) else (np.nan, np.nan)
+                    std1 = float(np.std(kpca1, ddof=1)) if len(kpca1) > 1 else np.nan
+                    iqr1 = float(q3_1 - q1_1) if len(kpca1) else np.nan
+                    std2 = float(np.std(kpca2, ddof=1)) if len(kpca2) > 1 else np.nan
+                    iqr2 = float(q3_2 - q1_2) if len(kpca2) else np.nan
+                    stats_numeric.append([src, std1, iqr1, std2, iqr2])
+                    stats_rows.append([
+                        src,
+                        f"{std1:.3f}" if np.isfinite(std1) else "nan",
+                        f"{iqr1:.3f}" if np.isfinite(iqr1) else "nan",
+                        f"{std2:.3f}" if np.isfinite(std2) else "nan",
+                        f"{iqr2:.3f}" if np.isfinite(iqr2) else "nan",
+                    ])
 
-        axes[0, 1].text(
-            0.5, 0.82,
-            "KDE Stats\n(STD/IQR for KPCA1 and KPCA2)",
-            ha="center", va="bottom", fontsize=9, transform=axes[0, 1].transAxes
-        )
+                sort_idx = sorted(range(len(stats_rows)), key=lambda i: str(stats_rows[i][0]))
+                stats_rows = [stats_rows[i] for i in sort_idx]
+                stats_numeric = [stats_numeric[i] for i in sort_idx]
 
-        fig.suptitle(f"KPCA across all feature sets ({metric_key.upper()})", y=0.985, fontsize=14)
-        if handles:
-            fig.legend(
-                handles,
-                labels,
-                loc="upper center",
-                bbox_to_anchor=(0.5, 0.955),
-                ncol=min(len(labels), 5),
-                frameon=False,
-                title="Source",
-                fontsize=9,
-                title_fontsize=10,
-            )
+                col_labels = ["Source", "STD1", "IQR1", "STD2", "IQR2"]
+                tbl = axes[0, 1].table(
+                    cellText=stats_rows,
+                    colLabels=col_labels,
+                    colWidths=[0.36, 0.16, 0.16, 0.16, 0.16],
+                    cellLoc="center",
+                    colLoc="center",
+                    loc="lower center",
+                    bbox=[0.02, 0.00, 0.96, 0.78],
+                )
+                tbl.auto_set_font_size(False)
+                tbl.set_fontsize(8)
+                tbl.scale(1.0, 1.15)
 
-        plt.tight_layout(rect=[0.02, 0.02, 0.98, 0.86])
-        plt.savefig(f"./kpca_{metric_key}_all_feature_sets_panel.png", dpi=300, bbox_inches="tight")
-        plt.close()
+                metric_vals = np.array([row[1:] for row in stats_numeric], dtype=float)
+                if metric_vals.size > 0:
+                    best_vals = np.nanmax(metric_vals, axis=0)
+                    highlight_colour = "#fff3b0"
+                    for r_idx in range(metric_vals.shape[0]):
+                        for c_idx in range(metric_vals.shape[1]):
+                            val = metric_vals[r_idx, c_idx]
+                            if np.isfinite(val) and np.isclose(val, best_vals[c_idx], rtol=1e-9, atol=1e-12):
+                                cell = tbl[(r_idx + 1, c_idx + 1)]
+                                cell.set_facecolor(highlight_colour)
+                                cell.get_text().set_weight("bold")
+
+                axes[0, 1].text(
+                    0.5, 0.82,
+                    "KDE Stats\n(STD/IQR for KPCA1 and KPCA2)",
+                    ha="center", va="bottom", fontsize=9, transform=axes[0, 1].transAxes
+                )
+
+                fig.suptitle(f"KPCA across all feature sets ({metric_key.upper()})", y=0.985, fontsize=14)
+                if handles:
+                    fig.legend(
+                        handles,
+                        labels,
+                        loc="upper center",
+                        bbox_to_anchor=(0.5, 0.955),
+                        ncol=min(len(labels), 5),
+                        frameon=False,
+                        title="Source",
+                        fontsize=9,
+                        title_fontsize=10,
+                    )
+
+                plt.tight_layout(rect=[0.02, 0.02, 0.98, 0.86])
+                plt.savefig(save_dir / f"kpca_{metric_key}_all_feature_sets_panel.png", dpi=300, bbox_inches="tight")
+                plt.close()
+            except Exception as exc:
+                print(f"Skipping KPCA for {metric_key} due to error: {exc}")
+
+        # Metric-vs-Tanimoto comparison plots
+        tanimoto_feat = None
+        if "maccs" in feature_sets:
+            tanimoto_feat = "maccs"
+        elif "morgan" in feature_sets:
+            tanimoto_feat = "morgan"
+
+        if tanimoto_feat is None:
+            print("Skipping TANIMOTO comparison plots: include 'maccs' or 'morgan' in feature_sets.")
+        else:
+            tanimoto_df = pd.read_csv(feature_paths[tanimoto_feat], index_col=0).loc[molids]
+            tanimoto_sim = getTanimotoSim(tanimoto_df)
+
+            for metric_key in ["jacc", "rbf"]:
+                for feat in feature_sets:
+                    sim_df = all_sim_matrices[metric_key][feat]
+                    common_ids = sim_df.index.intersection(tanimoto_sim.index)
+                    if len(common_ids) < 2:
+                        print(f"Skipping {metric_key.upper()} vs TANIMOTO for {feat}: not enough shared IDs.")
+                        continue
+
+                    sim_arr = sim_df.loc[common_ids, common_ids].to_numpy(dtype=float)
+                    tan_arr = tanimoto_sim.loc[common_ids, common_ids].to_numpy(dtype=float)
+                    iu = np.triu_indices(len(common_ids), k=1)
+                    if len(iu[0]) == 0:
+                        print(f"Skipping {metric_key.upper()} vs TANIMOTO for {feat}: no molecule pairs.")
+                        continue
+
+                    comp_df = pd.DataFrame({
+                        "Tanimoto": tan_arr[iu],
+                        metric_key.upper(): sim_arr[iu],
+                    }).dropna()
+                    if comp_df.empty:
+                        print(f"Skipping {metric_key.upper()} vs TANIMOTO for {feat}: no finite values.")
+                        continue
+
+                    point_colour = self._getColour(str(feat))
+                    if point_colour == self.default_colour:
+                        point_colour = sns.color_palette("tab10", n_colors=1)[0]
+
+                    plt.figure(figsize=(8, 6))
+                    sns.scatterplot(
+                        data=comp_df,
+                        x="Tanimoto",
+                        y=metric_key.upper(),
+                        color=point_colour,
+                        s=18,
+                        alpha=0.35,
+                        edgecolor=None,
+                    )
+                    plt.xlabel(f"Tanimoto Similarity ({tanimoto_feat})")
+                    plt.ylabel(f"{metric_key.upper()} Similarity")
+                    plt.title(f"{metric_key.upper()} vs TANIMOTO ({feat})")
+                    plt.xlim(0, 1)
+                    plt.ylim(0, 1)
+                    plt.plot([0, 1], [0, 1], linestyle="--", linewidth=1.0, color="black", alpha=0.8)
+                    plt.grid(axis="both", linestyle="--", alpha=0.25)
+                    plt.tight_layout()
+                    out_file = save_dir / f"{metric_key}_vs_tanimoto_{feat}_ref-{tanimoto_feat}.png"
+                    plt.savefig(out_file, dpi=300)
+                    plt.close()
+                    print(f"Saved: {out_file}")
+
+        return all_sim_matrices, mol_comp

@@ -525,15 +525,10 @@ class TL():
             n_unique = int(target_series.nunique(dropna=True))
             non_na_target = target_series.dropna()
             self.logger.info(f"  After removing non-finite values: {len(combined_data)} samples")
+            self.logger.info(f"  Target unique values: {n_unique}")
 
             if n_unique < 2:
-                self.logger.warning(f"Skipping {target_column}: <2 unique values")
-                continue
-
-            if len(combined_data) < min_training_samples:
-                self.logger.warning(
-                    f"Skipping {target_column}: too few samples ({len(combined_data)} < {min_training_samples})"
-                )
+                self.logger.warning(f"  Skipping {target_column}: fewer than 2 unique target values")
                 continue
 
             # Class-like targets:

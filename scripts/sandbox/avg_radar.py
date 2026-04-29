@@ -133,6 +133,13 @@ for task_name, metric in TASK_METRICS.items():
         data=merged[[avg_col]],
         descriptor_groups=group_map,
         metrics=[avg_col],
+# v.plotAveragePerformance(
+#     exp_keys=exp_keys,
+#     results_dir="lipinski_cross_feature_predictions",
+#     pred_set=pred,
+#     save_path=save_path.parent,
+#     save_fname="avg_embedding_grouped_bar_pearson_r",
+# )
         exclude=excl_cols
     )
     # Drop NaN/Inf groups before radar plotting
