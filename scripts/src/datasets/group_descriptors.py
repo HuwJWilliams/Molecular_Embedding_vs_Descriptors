@@ -35,7 +35,7 @@ def getRDKitGroups(prefix="_rdkit"):
         "EState": [
             p("MaxEStateIndex"), p("MinEStateIndex"),
             p("MaxAbsEStateIndex"), p("MinAbsEStateIndex"),
-            *[p(f"EState_VSA{i}") for i in range(1, 11)],
+            *[p(f"EState_VSA{i}") for i in range(1, 12)],
             *[p(f"VSA_EState{i}") for i in range(1, 11)],
         ],
 
@@ -106,7 +106,8 @@ def getRDKitGroups(prefix="_rdkit"):
         ],
 
         "Geometrical": [
-            p("Phi")
+            p("Phi"),
+            p("SPS"),
         ],
 
         # --- Rings ---
@@ -121,7 +122,8 @@ def getRDKitGroups(prefix="_rdkit"):
             p("NumSaturatedCarbocycles"),
             p("NumSaturatedHeterocycles"),
             p("NumSaturatedRings"),
-            p("NumBridgeheadAtoms")
+            p("NumBridgeheadAtoms"),
+            p("NumHeterocycles")
         ],
 
         "Aromatic": [

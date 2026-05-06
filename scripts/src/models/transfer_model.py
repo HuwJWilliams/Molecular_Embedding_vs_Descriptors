@@ -15,6 +15,7 @@ import logging
 import joblib
 import json
 import torch
+import os
 
 
 FILE_DIR = Path(__file__).resolve()
@@ -22,11 +23,10 @@ PROJ_DIR = FILE_DIR.parents[3]
 DATASET_DIR = PROJ_DIR / "datasets"
 SCRIPTS_DIR = PROJ_DIR / "scripts"
 SRC_DIR = SCRIPTS_DIR / "src"
-PALMERCHEM_SOFTWARE_MODELS = Path.home() / "PalmerChem_Software" / "src" / "models"
 PALMERCHEM_SOFTWARE_ANALYSIS = Path.home() / "PalmerChem_Software" / "src" / "analysis"
 LOG_DIR = SRC_DIR / "models" / "logs"
 
-sys.path.insert(0, str(PALMERCHEM_SOFTWARE_MODELS))
+sys.path.insert(0, str(SRC_DIR / "models"))
 from RF_models import RFRegressor, RFClassifier, RFMultiClassifier
 
 sys.path.insert(0, str(PALMERCHEM_SOFTWARE_ANALYSIS))
@@ -136,7 +136,7 @@ class TL():
         test_size: float = 0.3,
         cv_splits: int = 5,
         batch_size: int = 1,
-        random_seed: int = 1,
+        random_seed: int | None = None,
         skip_existing: bool = True,
         save_models: bool = True,
         save_path: str = "./",
@@ -230,6 +230,13 @@ class TL():
 
             # Drop rows where target is missing
             combined_data = combined_data.loc[y.notna()].copy()
+            if len(combined_data) < min_training_samples:
+                self.logger.warning(
+                    f"Skipping {target_column}: only {len(combined_data)} samples "
+                    f"after filtering; minimum is {min_training_samples}"
+                )
+                continue
+            
             target_series = combined_data[target_column]
             n_unique = int(target_series.nunique(dropna=True))
             non_na_target = target_series.dropna()
@@ -289,8 +296,8 @@ class TL():
                         save_final_model=save_models,
                         plot_feat_importance=False,
                         batch_size=batch_size,
-                        n_jobs=1,
-                        final_rf_seed=random_seed,
+                        n_jobs=os.cpu_count(),
+                        final_rf_seed=None,
                         final_model_name=f"{target_column}_model"
                         )
                     performance_dict["task_type"] = "binary_classification"
@@ -324,8 +331,8 @@ class TL():
                         save_final_model=save_models,
                         plot_feat_importance=False,
                         batch_size=batch_size,
-                        n_jobs=1,
-                        final_rf_seed=random_seed,
+                        n_jobs=os.cpu_count(),
+                        final_rf_seed=None,
                         final_model_name=f"{target_column}_model"
                         )
                     performance_dict["task_type"] = "multiclass_classification"
@@ -358,8 +365,8 @@ class TL():
                         save_final_model=save_models,
                         plot_feat_importance=False,
                         batch_size=batch_size,
-                        n_jobs=1,
-                        final_rf_seed=random_seed,
+                        n_jobs=os.cpu_count(),
+                        final_rf_seed=None,
                         final_model_name=f"{target_column}_model"
                         )
                     performance_dict["task_type"] = "regression"
@@ -439,7 +446,7 @@ class TL():
         n_resamples: int = 10,
         test_size: float = 0.3,
         cv_splits: int = 5,
-        random_seed: int = 1,
+        random_seed: int | None = None,
         trim_by_percentile: bool = True,
         percentile: float = 0.99,
         exclude_same_group: bool = False,
@@ -575,8 +582,8 @@ class TL():
                         save_path=save_path,
                         save_final_model=save_models,
                         plot_feat_importance=False,
-                        n_jobs=1,
-                        final_rf_seed=random_seed,
+                        n_jobs=os.cpu_count(),
+                        final_rf_seed=None,
                         final_model_name=f"{target_column}_model",
                     )
                     performance_dict["task_type"] = "binary_classification"
@@ -600,8 +607,8 @@ class TL():
                         save_path=save_path,
                         save_final_model=save_models,
                         plot_feat_importance=False,
-                        n_jobs=1,
-                        final_rf_seed=random_seed,
+                        n_jobs=os.cpu_count(),
+                        final_rf_seed=None,
                         final_model_name=f"{target_column}_model",
                     )
                     performance_dict["task_type"] = "multiclass_classification"
@@ -625,8 +632,8 @@ class TL():
                         save_path=save_path,
                         save_final_model=save_models,
                         plot_feat_importance=False,
-                        n_jobs=1,
-                        final_rf_seed=random_seed,
+                        n_jobs=os.cpu_count(),
+                        final_rf_seed=None,
                         final_model_name=f"{target_column}_model",
                     )
                     performance_dict["task_type"] = "regression"
@@ -694,10 +701,11 @@ class TL():
         test_size: float = 0.3,
         cv_splits: int = 5,
         batch_size: int = 1,
-        random_seed: int = 42,
+        random_seed: int | None=None,
         save_models: bool = False,
         save_path: str = "./",
-        log_level=logging.DEBUG
+        log_level=logging.DEBUG,
+        n_jobs:int=os.cpu_count()
     ) :
         
         save_path = Path(save_path)
@@ -720,8 +728,8 @@ class TL():
             save_final_model=save_models,
             plot_feat_importance=False,
             batch_size=batch_size,
-            n_jobs=1,
-            final_rf_seed=random_seed
+            n_jobs=os.cpu_count(),
+            final_rf_seed=None
         )
 
         joblib.dump(final_model, Path(save_path / f"{target_column}_RF_model.pkl.gz"), compress=("gzip", 3))
@@ -1224,9 +1232,6 @@ class TL():
             cv_splits: int = 5,
             log_level=logging.DEBUG,
         ):
-        
-        if random_seed is None:
-            random_seed = self.rng()
         
         self.instantiated_model = RFRegressor(
             cv_function=KFold,

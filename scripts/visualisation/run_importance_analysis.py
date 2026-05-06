@@ -135,6 +135,9 @@ rf_fi_df = pd.read_csv(PRED_PATHS[imp_exp] / "all_feature_importance.csv", index
 
 group_map = getGroups(args.descriptor_group)
 desc_to_group = {desc: group for group, members in group_map.items() for desc in members}
+unknown = [d for d in pred_targ_tr_imp.index if d not in desc_to_group]
+print(f"Unknown descriptors: {len(unknown)}")
+print(unknown[:100])
 
 shap_importance_source = {
     "shap_by_desc": shap_bundle["shap_by_desc"],
@@ -173,8 +176,8 @@ shap_avg_df = v.plotDescPredictionVsFeatPrediction(
 )
 
 # Plotting Imp preds vs Test preds
-plot_df = pred_targ_tr_imp[["Pearson_r"]].rename(columns={"Pearson_r": f"{imp}_on_{targ}"}).join(
-    pred_targ_tr_test[["Pearson_r"]].rename(columns={"Pearson_r": f"{test}_on_{targ}"}),
+plot_df = pred_targ_tr_imp[[args.x_metric]].rename(columns={args.x_metric: f"{imp}_on_{targ}"}).join(
+    pred_targ_tr_test[[args.y_metric]].rename(columns={args.y_metric: f"{test}_on_{targ}"}),
     how="inner"
 ).dropna()
 
@@ -190,8 +193,8 @@ plt.scatter(
 plt.plot([0, 1], [0, 1], "k--", lw=1)
 plt.xlim(0, 1)
 plt.ylim(0, 1)
-plt.xlabel(f"{imp} -> {targ} Pearson_r")
-plt.ylabel(f"{test} -> {targ} Pearson_r")
+plt.xlabel(f"{imp} -> {targ} {args.x_metric}")
+plt.ylabel(f"{test} -> {targ} {args.y_metric}")
 plt.title(f"Descriptor-level performance: {imp} vs {test}")
 plt.tight_layout()
 plt.savefig(save_path / f"{test}_vs_{imp}_pred_{targ}_scatter.png", dpi=300)

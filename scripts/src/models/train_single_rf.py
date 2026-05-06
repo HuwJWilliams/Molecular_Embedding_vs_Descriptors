@@ -6,12 +6,6 @@ import argparse
 import pandas as pd
 from pathlib import Path
 
-# --- PalmerChem imports
-PALMERCHEM_SOFTWARE = Path.home() / "PalmerChem_Software" / "src" / "models"
-sys.path.insert(0, str(PALMERCHEM_SOFTWARE))
-
-from RFRegressor import RFRegressor
-
 # --- Paths
 SCRIPTS_DIR = Path(__file__).resolve().parents[2]
 SRC_DIR = SCRIPTS_DIR / "src"
@@ -37,6 +31,7 @@ p.add_argument("--predict-on", required=True, choices=list(data_paths["targets"]
 p.add_argument("--feature-set", required=True, choices=SUPPORTED_FEATURE_SETS)
 p.add_argument("--target-column", default=None, help="Override the target column name")
 p.add_argument("--identifier", default=None, help="Run identifier suffix (optional)")
+p.add_argument("--lipinski", action="store_true", help="Flag to ensure mols fit 'relaxed' lipinski criteria")
 args = p.parse_args()
 
 task = args.predict_on
@@ -62,9 +57,20 @@ print(f"Target column: {target_col}")
 # --- Load data
 X = loadData(in_features, index_col="ID", wildcard="*")
 
-# Drop SMILES if present in descriptor tables
-if "SMILES" in X.columns:
-    X = X.drop(columns=["SMILES"])
+if args.lipinski:
+    lipinski_ids = set(
+        pd.read_csv(
+            data_paths["full_features"]["fit_lipinski"]["rdkit"],
+            index_col=0,
+        ).index
+    )
+
+    X = X.loc[X.index.intersection(lipinski_ids)]
+
+# Drop metadata and any descriptor-generation error strings before RF fitting.
+X = X.drop(columns=["SMILES", "SELFIES"], errors="ignore")
+X = X.apply(pd.to_numeric, errors="coerce")
+X = X.dropna(axis=1)
 
 y_df = pd.read_csv(in_targets, index_col="ID")
 
@@ -135,7 +141,6 @@ final_model, _, _, _ = model.trainSingleTargetRFModel(
                                 test_size=0.3,
                                 save_models=True,
                                 save_path=out_dir,
-                                random_seed=model.rng(),
                             )
 
 model.predictSingleTargetRF(

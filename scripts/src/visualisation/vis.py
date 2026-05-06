@@ -16,6 +16,8 @@ from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
 from sklearn.neighbors import LocalOutlierFactor
 from scipy.spatial import ConvexHull
+from scipy.cluster.hierarchy import dendrogram, linkage
+from scipy.spatial.distance import squareform
 import random as rand
 from typing import Union
 import shap
@@ -24,9 +26,14 @@ import joblib
 import re
 from sklearn.preprocessing import StandardScaler, RobustScaler
 from sklearn.metrics import pairwise_distances
+from sklearn.metrics import r2_score
+from sklearn.metrics import mean_squared_error
 from rdkit import Chem
 from rdkit.Chem import Draw
+from rdkit.Chem import MACCSkeys
+from rdkit import DataStructs
 from sklearn.decomposition import KernelPCA
+from scipy.stats import pearsonr
 
 FILE_DIR = Path(__file__).resolve()
 PROJ_DIR = FILE_DIR.parents[3]
@@ -1324,10 +1331,9 @@ class Visualise():
 
     def plotModelPerformanceBars(
             self,
-            base_path: Path,
-            model_jsons: dict[str, Path],
-            model_labels: list[str],
-            metrics: list[str] = ["r2", "Pearson_r", "RMSE", "Bias"],
+            model_jsons: dict[str, str | Path | dict],
+            model_labels: list[str] | None = None,
+            metrics: list[str] = ["r2", "Pearson_r", "RMSE", "Bias", "SDEP"],
             figsize: tuple = (6, 4),
             title_fontsize: int = 16,
             label_fontsize: int = 12,
@@ -1351,12 +1357,14 @@ class Visualise():
         base_path : Path
                         Base directory containing all model result folders.
                         Used as a reference path for loading model performance JSONs.
-        model_jsons : dict[str, Path]
+        model_jsons : dict[str, str | Path | dict]
                         Dictionary mapping model names to their respective JSON 
-                        performance files (relative to `base_path` or as absolute paths).
+                        performance files, or directly to metric dictionaries such
+                        as {"r2": 0.5, "Pearson_r": 0.8, "Bias": 0.1}.
         model_labels : list[str]
                         Labels or display names for the models. These determine 
-                        color mapping and order in the plots.
+                        color mapping and order in the plots. If None, keys from
+                        model_jsons are used.
         metrics : list[str], (optional)
                         List of performance metrics to visualize. Each metric 
                         will be plotted as a separate bar chart.
@@ -1394,47 +1402,69 @@ class Visualise():
                         to the specified directory.
         """
 
-        # Find json
-        # --- Load JSONs into DataFrame ---
+        if model_labels is None:
+            model_labels = list(model_jsons.keys())
+
+        # --- Load JSONs / metric dictionaries into DataFrame ---
         records = []
-        for model, file in model_jsons.items():
-            file_path = base_path / file if not file.is_absolute() else file
-            with open(file_path, "r") as f:
-                data = json.load(f)
-                data["Model"] = model
-                records.append(data)
+        for model, values in model_jsons.items():
+            if isinstance(values, dict):
+                data = dict(values)
+            else:
+                with open(values, "r") as f:
+                    data = json.load(f)
+
+            data["Model"] = model
+            records.append(data)
 
         perf_df = pd.DataFrame(records).set_index("Model")
+        perf_df = perf_df.reindex(model_labels)
+
+        missing_metrics = [metric for metric in metrics if metric not in perf_df.columns]
+        if missing_metrics:
+            raise KeyError(
+                f"Metrics not found in model performance data: {missing_metrics}. "
+                f"Available metrics: {list(perf_df.columns)}"
+            )
 
         # --- Setup colors ---
         colours = [self._getColour(l) for l in model_labels]
 
         # --- Plot metrics ---
         for metric in metrics:
-            plt.figure(figsize=figsize)
-            bars = plt.bar(
+            fig, ax = plt.subplots(figsize=figsize)
+            ax.bar(
                 perf_df.index,
                 perf_df[metric],
                 color=colours,
                 edgecolor="black",
             )
-            plt.title(f"{metric} Comparison", fontsize=title_fontsize, weight="bold")
-            plt.ylabel(metric, fontsize=label_fontsize)
-            plt.xlabel("Model", fontsize=label_fontsize)
-            plt.xticks(rotation=45, ha="right", fontsize=tick_fontsize)
-            plt.yticks(fontsize=tick_fontsize)
-            plt.tight_layout()
+            ax.set_title(f"{metric} Comparison", fontsize=title_fontsize, weight="bold")
+            ax.set_ylabel(metric, fontsize=label_fontsize)
+            ax.set_xlabel("Model", fontsize=label_fontsize)
+            ax.tick_params(axis="x", labelrotation=45, labelsize=tick_fontsize)
+            ax.tick_params(axis="y", labelsize=tick_fontsize)
+
+            for label in ax.get_xticklabels():
+                label.set_ha("right")
+
+            fig.tight_layout()
 
             self._savePlot(
                 save_plot=save_plot,
                 save_path=save_path,
                 save_fname=f"{save_fname}_{metric}",
                 dpi=dpi,
-                description=f"model performance bar charts"
+                description=f"model performance bar charts",
+                fig=fig,
             )
 
             if show_plots:
                 plt.show()
+
+            plt.close(fig)
+
+        return perf_df
 
     def plotPCA (
         self,
@@ -1628,6 +1658,13 @@ class Visualise():
                 mapped_colour = palette[i % len(palette)]
             source_colors[src] = mapped_colour
 
+        pc_cols = [f"PC{i+1}" for i in range(n_components)]
+        pc_axis_limits = {}
+        for pc_col in pc_cols:
+            axis_extent = np.nanmax(np.abs(plot_df[pc_col].to_numpy()))
+            axis_extent = axis_extent * 1.05 if np.isfinite(axis_extent) and axis_extent > 0 else 1.0
+            pc_axis_limits[pc_col] = (-axis_extent, axis_extent)
+
         # --- Subplots
         fig, axs = plt.subplots(n_components, n_components, figsize=(10, 10))
 
@@ -1648,17 +1685,25 @@ class Visualise():
                     axs[i, i].set_ylabel("Density", fontsize=label_fontsize)
                 else:
                     if plot_scatter:
-                        sns.scatterplot(
-                            x=f"PC{j+1}",
-                            y=f"PC{i+1}",
-                            hue="Source",
-                            data=plot_df,
-                            ax=axs[i, j],
-                            palette=source_colors,
-                            legend=False,
-                            alpha=0.2,
-                            s=10
-                        )
+                        x_col = f"PC{j+1}"
+                        y_col = f"PC{i+1}"
+                        source_spreads = []
+                        for src in plot_df["Source"].unique():
+                            src_df = plot_df[plot_df["Source"] == src]
+                            x_range = src_df[x_col].max() - src_df[x_col].min()
+                            y_range = src_df[y_col].max() - src_df[y_col].min()
+                            source_spreads.append((src, x_range * y_range))
+
+                        for src, _ in sorted(source_spreads, key=lambda item: item[1], reverse=True):
+                            src_df = plot_df[plot_df["Source"] == src]
+                            axs[i, j].scatter(
+                                src_df[x_col],
+                                src_df[y_col],
+                                color=source_colors[src],
+                                alpha=0.2,
+                                s=10,
+                                edgecolors="none",
+                            )
                     if plot_area:
                         for src in plot_df["Source"].unique():
                             pts = plot_df[plot_df["Source"] == src][[f"PC{j+1}", f"PC{i+1}"]].values
@@ -1669,6 +1714,10 @@ class Visualise():
                                     pts[hull_pts, 0], pts[hull_pts, 1],
                                     alpha=0.2, color=source_colors[src], edgecolor=source_colors[src]
                                 )
+
+                axs[i, j].set_xlim(pc_axis_limits[f"PC{j+1}"])
+                if i != j:
+                    axs[i, j].set_ylim(pc_axis_limits[f"PC{i+1}"])
 
                 # Labels
                 if i == n_components - 1:
@@ -3294,6 +3343,233 @@ class Visualise():
         plt.close(fig)
 
         return long_df
+
+    def plotTrueVsPred(
+        self,
+        true_path: str | Path,
+        pred_path: str | Path,
+        true_col: str | None = None,
+        pred_col: str | None = None,
+        save_plot: bool = False,
+        save_path: str | Path = Path("./"),
+        save_fname: str = "true_vs_pred_joint_kde",
+        figsize: tuple[float, float] = (7, 7),
+        point_size: int = 18,
+        alpha: float = 0.45,
+        feat: str | None = None,
+        save_top_error_mols: bool = True,
+        top_error_n: int = 9,
+        dpi: int = 300,
+    ) -> pd.DataFrame:
+        true_df = pd.read_csv(true_path, index_col=0)
+        pred_df = pd.read_csv(pred_path, index_col=0)
+
+        common_ids = pred_df.index.intersection(true_df.index)
+        true_df = true_df.loc[common_ids]
+        pred_df = pred_df.loc[common_ids]
+
+        true_col = true_col or true_df.columns[0]
+        pred_col = pred_col or pred_df.columns[0]
+
+        plot_df = pd.DataFrame(
+            {
+                "true": pd.to_numeric(true_df[true_col], errors="coerce"),
+                "pred": pd.to_numeric(pred_df[pred_col], errors="coerce"),
+            },
+            index=common_ids,
+        ).replace([np.inf, -np.inf], np.nan).dropna()
+
+        if plot_df.empty:
+            raise ValueError("No finite true/pred pairs found after alignment.")
+
+        plot_df.index.name = "MolID"
+        plot_df["difference"] = plot_df["pred"] - plot_df["true"]
+        plot_df["abs_difference"] = plot_df["difference"].abs()
+
+        if save_top_error_mols and (save_plot or self.save_all):
+            save_path = Path(save_path)
+            save_path.mkdir(parents=True, exist_ok=True)
+
+            top_error_df = plot_df.nlargest(top_error_n, "abs_difference").copy()
+            top_error_df = top_error_df.rename(
+                columns={
+                    "true": "true_val",
+                    "pred": "pred_val",
+                }
+            )
+
+            all_fps = {}
+            for molid in plot_df.index:
+                try:
+                    smi = molid2Smiles(molid)
+                    mol = Chem.MolFromSmiles(smi)
+                    if mol is not None:
+                        all_fps[molid] = MACCSkeys.GenMACCSKeys(mol)
+                except Exception:
+                    continue
+
+            smiles = []
+            mols = []
+            legends = []
+            avg_tanimoto_similarities = []
+            for molid, row in top_error_df.iterrows():
+                try:
+                    smi = molid2Smiles(molid)
+                except Exception:
+                    smi = np.nan
+                smiles.append(smi)
+
+                mol = Chem.MolFromSmiles(smi) if isinstance(smi, str) else None
+                if mol is not None:
+                    mols.append(mol)
+
+                fp = all_fps.get(molid)
+                other_fps = [other_fp for other_id, other_fp in all_fps.items() if other_id != molid]
+                if fp is not None and other_fps:
+                    sims = DataStructs.BulkTanimotoSimilarity(fp, other_fps)
+                    avg_tanimoto = float(np.mean(sims))
+                else:
+                    avg_tanimoto = np.nan
+                avg_tanimoto_similarities.append(avg_tanimoto)
+
+                if mol is not None:
+                    legends.append(
+                        f"{molid}\n\n"
+                        f"T={row['true_val']:.1f} P={row['pred_val']:.1f} D={row['difference']:.1f}\n\n"
+                        f"Avg MACCS Tanimoto={avg_tanimoto:.3f}"
+                    )
+
+            top_error_df["SMILES"] = smiles
+            top_error_df["avg_tanimoto_to_prediction_set"] = avg_tanimoto_similarities
+            top_error_df[[
+                "true_val",
+                "pred_val",
+                "difference",
+                "abs_difference",
+                "avg_tanimoto_to_prediction_set",
+                "SMILES",
+            ]].to_csv(
+                save_path / f"{save_fname}_top_abs_errors.csv",
+                index_label="MolID",
+            )
+
+            if mols:
+                grid_img = Draw.MolsToGridImage(
+                    mols[:top_error_n],
+                    molsPerRow=3,
+                    subImgSize=(360, 280),
+                    legends=legends[:top_error_n],
+                    legendFontSize=24,
+                )
+                grid_img.save(save_path / f"{save_fname}_top_abs_errors_mols.png")
+
+        def _calc_metrics(df: pd.DataFrame) -> tuple[float, float, float]:
+            if len(df) < 2:
+                return np.nan, np.nan, np.nan
+            return (
+                pearsonr(df["true"], df["pred"])[0],
+                r2_score(df["true"], df["pred"]),
+                mean_squared_error(df["true"], df["pred"]) ** 0.5,
+            )
+
+        p75_cutoff = plot_df["true"].quantile(0.75)
+        p75_df = plot_df[plot_df["true"] <= p75_cutoff]
+        true_mean = plot_df["true"].mean()
+        mean_window_df = plot_df[
+            plot_df["true"].between(true_mean * 0.75, true_mean * 1.25)
+        ]
+
+        pearson_r, r2, rmse = _calc_metrics(plot_df)
+        pearson_r_p75, r2_p75, rmse_p75 = _calc_metrics(p75_df)
+        pearson_r_mean_window, r2_mean_window, rmse_mean_window = _calc_metrics(mean_window_df)
+
+        fig = plt.figure(figsize=(figsize[0] * 3, figsize[1]))
+        gs = fig.add_gridspec(
+            2,
+            3,
+            height_ratios=(4, 1),
+            width_ratios=(1, 1, 1),
+            hspace=0.18,
+            wspace=0.22,
+        )
+
+        panel_specs = [
+            (plot_df, "Full range", (pearson_r, r2, rmse), 0),
+            (p75_df, "P75 true BP", (pearson_r_p75, r2_p75, rmse_p75), 1),
+            (
+                mean_window_df,
+                "True BP within 25% of mean",
+                (pearson_r_mean_window, r2_mean_window, rmse_mean_window),
+                2,
+            ),
+        ]
+
+        for panel_df, panel_title, metrics, col_idx in panel_specs:
+            ax_scatter = fig.add_subplot(gs[0, col_idx])
+            ax_table = fig.add_subplot(gs[1, col_idx])
+            ax_table.axis("off")
+
+            if panel_df.empty:
+                ax_scatter.set_title(f"{panel_title}\nNo data")
+                ax_scatter.axis("off")
+                continue
+
+            ax_scatter.scatter(
+                panel_df["true"],
+                panel_df["pred"],
+                s=point_size,
+                alpha=alpha,
+                color=self._getColour(feat) if feat is not None else self.default_colour,
+                edgecolors="none",
+            )
+
+            lim_min = min(panel_df["true"].min(), panel_df["pred"].min())
+            lim_max = max(panel_df["true"].max(), panel_df["pred"].max())
+            pad = (lim_max - lim_min) * 0.05
+            if np.isclose(pad, 0):
+                pad = 1.0
+            limits = (lim_min - pad, lim_max + pad)
+
+            ax_scatter.plot(limits, limits, "k--", lw=1)
+            if len(panel_df) >= 2:
+                slope, intercept = np.polyfit(panel_df["true"], panel_df["pred"], deg=1)
+                fit_x = np.array(limits)
+                ax_scatter.plot(fit_x, slope * fit_x + intercept, color="#d62728", lw=1.5)
+
+            ax_scatter.set_xlim(limits)
+            ax_scatter.set_ylim(limits)
+            ax_scatter.set_aspect("equal", adjustable="box")
+            ax_scatter.set_xlabel(f"True {true_col}")
+            ax_scatter.set_ylabel(f"Predicted {pred_col}")
+            ax_scatter.set_title(f"{panel_title}\nRF Property Prediction (TR: {feat}, PR: {true_col})")
+
+            table = ax_table.table(
+                cellText=[[
+                    f"{metrics[0]:.3f}",
+                    f"{metrics[1]:.3f}",
+                    f"{metrics[2]:.3f}",
+                ]],
+                colLabels=["Pearson r", "R2", "RMSE"],
+                cellLoc="center",
+                loc="center",
+            )
+            table.auto_set_font_size(False)
+            table.set_fontsize(7)
+            table.scale(1, 1.25)
+
+            for spine in ("right", "top"):
+                ax_scatter.spines[spine].set_visible(False)
+
+        self._savePlot(
+            save_plot=save_plot,
+            save_path=save_path,
+            save_fname=save_fname,
+            dpi=dpi,
+            description="true-vs-pred",
+            fig=fig,
+        )
+
+        return plot_df
 # endregion
 
 # region Hidden Worker Functions
@@ -3513,7 +3789,12 @@ class Visualise():
         r_vmax: float = 1.0,
         r_high: float = 2.0,
         bubble: bool = False,
-        imp_type: str="SHAP"
+        imp_type: str="SHAP",
+        l_panel_xlim: tuple[float]=(0.5, 1.0),
+        l_panel_ylim: tuple[float]=(0.0, 1.0),
+        r_panel_xlim: tuple[float]=(0.5, 1.0),
+        r_panel_ylim: tuple[float]=(0.0, 1.0),
+
     ) -> pd.DataFrame:
         """
         Build the comparison dataframes and produce a two-panel scatter plot.
@@ -3601,6 +3882,8 @@ class Visualise():
             groups=groups,
             group_colors=group_colors,
             group_handles=group_handles,
+            xlim=l_panel_xlim,
+            ylim=l_panel_ylim,
             title=left_title,
             x_axis_label=f"Avg trainer performance on top-N important trainer features ({x_metric_col})",
             y_axis_label=f"Direct prediction performance on target ({y_metric_col})",
@@ -3617,6 +3900,8 @@ class Visualise():
             r_vmin=r_vmin,
             r_vmax=r_vmax,
             r_high=r_high,
+            xlim=r_panel_xlim,
+            ylim=r_panel_ylim,                        
             imp_type=imp_type,
             x_axis_label=f"Avg trainer performance on top-N important trainer features ({x_metric_col})",
         )
@@ -3657,6 +3942,8 @@ class Visualise():
         title: str,
         x_axis_label: str,
         y_axis_label: str,
+        xlim: tuple[float],
+        ylim: tuple[float]
     ) -> None:
         for g in groups:
             sub = df[df["group"] == g]
@@ -3669,8 +3956,8 @@ class Visualise():
                 linewidth=0.3,
             )
         ax.plot([0, 1], [0, 1], "k--", lw=1)
-        ax.set_xlim(0, 1)
-        ax.set_ylim(0, 1)
+        ax.set_xlim(xlim[0], xlim[1])
+        ax.set_ylim(ylim[0], ylim[1])
         ax.set_xlabel(x_axis_label)
         ax.set_ylabel(y_axis_label)
         ax.set_title(title)
@@ -3697,11 +3984,14 @@ class Visualise():
         r_vmin: float,
         r_vmax: float,
         r_high: float,
+        xlim: tuple[float],
+        ylim: tuple[float],
         x_axis_label: str,
         colour_mid: str = "#ff8c00",
         colour_high: str = "#d62728",
         colour_low: str = "#000000",
-        imp_type:str="SHAP"
+        imp_type:str="SHAP",
+
     ) -> None:
         masks = {
             "low":     df[importance_col] <= r_vmin,
@@ -3748,8 +4038,8 @@ class Visualise():
         ]
 
         ax.plot([0, 1], [0, 1], "k--", lw=1)
-        ax.set_xlim(0, 1)
-        ax.set_ylim(0, 1)
+        ax.set_xlim(xlim[0], xlim[1])
+        ax.set_ylim(ylim[0], ylim[1])
         ax.set_xlabel(x_axis_label)
         ax.set_title(title)
 
@@ -3838,6 +4128,60 @@ class Visualise():
             sim = 1.0 - dist
             tanimoto_df = pd.DataFrame(sim, index=df.index, columns=df.index)
             return tanimoto_df
+
+        def getDendrogramOrder(sim_df: pd.DataFrame) -> tuple[pd.Index, np.ndarray]:
+            dist = 1.0 - sim_df.to_numpy(dtype=float)
+            dist = np.clip(dist, 0.0, None)
+            np.fill_diagonal(dist, 0.0)
+            condensed = squareform(dist, checks=False)
+            linkage_matrix = linkage(condensed, method="average")
+            dendro = dendrogram(linkage_matrix, no_plot=True)
+            return sim_df.index[dendro["leaves"]], linkage_matrix
+
+        def plotHeatmapWithYDendrogram(
+            heatmap_df: pd.DataFrame,
+            linkage_matrix: np.ndarray,
+            cmap: str,
+            vmin: float,
+            vmax: float,
+            cbar_label: str,
+            title: str,
+            out_file: Path,
+        ):
+            fig = plt.figure(figsize=(16, 14))
+            gs = fig.add_gridspec(1, 2, width_ratios=(1, 8), wspace=0.02)
+            ax_dendro = fig.add_subplot(gs[0, 0])
+            ax_heat = fig.add_subplot(gs[0, 1])
+
+            dendrogram(
+                linkage_matrix,
+                orientation="left",
+                no_labels=True,
+                color_threshold=0,
+                above_threshold_color="black",
+                ax=ax_dendro,
+            )
+            ax_dendro.invert_yaxis()
+            ax_dendro.axis("off")
+
+            sns.heatmap(
+                heatmap_df,
+                cmap=cmap,
+                vmin=vmin,
+                vmax=vmax,
+                square=True,
+                linewidths=0.2,
+                cbar_kws={"label": cbar_label},
+                ax=ax_heat,
+            )
+            ax_heat.set_title(title)
+            ax_heat.set_xlabel("Molecules")
+            ax_heat.set_ylabel("")
+
+            fig.tight_layout()
+            fig.savefig(out_file, dpi=300)
+            plt.close(fig)
+            print(f"Saved: {out_file}")
             
         def savesSmilesGrid(
                 smiles_list, legend_list, out_path="molecule_grid.png", mols_per_row=4, sub_img_size=(320, 260)
@@ -3991,8 +4335,10 @@ class Visualise():
                             )
                             continue
 
-                        sim_a = sim_a_df.loc[common_ids, common_ids].to_numpy(dtype=float)
-                        sim_b = sim_b_df.loc[common_ids, common_ids].to_numpy(dtype=float)
+                        order_ids, linkage_matrix = getDendrogramOrder(sim_a_df.loc[common_ids, common_ids])
+
+                        sim_a = sim_a_df.loc[order_ids, order_ids].to_numpy(dtype=float)
+                        sim_b = sim_b_df.loc[order_ids, order_ids].to_numpy(dtype=float)
 
                         n = sim_a.shape[0]
                         combined = np.zeros((n, n), dtype=float)
@@ -4002,49 +4348,38 @@ class Visualise():
                         combined[lower_mask] = sim_b[lower_mask]
                         combined[np.diag_indices(n)] = 1.0
 
-                        combined_df = pd.DataFrame(combined, index=common_ids, columns=common_ids)
+                        combined_df = pd.DataFrame(combined, index=order_ids, columns=order_ids)
 
                         # Absolute difference map between feature-set similarities
                         # (small values = better agreement between similarity spaces).
                         diff = np.abs(sim_a - sim_b)
                         diff_lower = np.full((n, n), np.nan, dtype=float)
                         diff_lower[lower_mask] = diff[lower_mask]
-                        diff_lower_df = pd.DataFrame(diff_lower, index=common_ids, columns=common_ids)
+                        diff_lower_df = pd.DataFrame(diff_lower, index=order_ids, columns=order_ids)
 
-                        fig, axes = plt.subplots(1, 2, figsize=(16, 7))
-                        sns.heatmap(
-                            combined_df,
+                        out_file = save_dir / f"combined_triangles_{metric_key}_{feat_a}_vs_{feat_b}.png"
+                        plotHeatmapWithYDendrogram(
+                            heatmap_df=combined_df,
+                            linkage_matrix=linkage_matrix,
                             cmap="viridis",
                             vmin=0,
                             vmax=1,
-                            square=True,
-                            linewidths=0.2,
-                            cbar_kws={"label": cbar_label},
-                            ax=axes[0],
+                            cbar_label=cbar_label,
+                            title=f"{metric_key.upper()} | Upper: {feat_a} | Lower: {feat_b}",
+                            out_file=out_file,
                         )
-                        axes[0].set_title(f"{metric_key.upper()} | Upper: {feat_a} | Lower: {feat_b}")
-                        axes[0].set_xlabel("Molecules")
-                        axes[0].set_ylabel("Molecules")
 
-                        sns.heatmap(
-                            diff_lower_df,
+                        out_file = save_dir / f"difference_heatmap_{metric_key}_{feat_a}_vs_{feat_b}.png"
+                        plotHeatmapWithYDendrogram(
+                            heatmap_df=diff_lower_df,
+                            linkage_matrix=linkage_matrix,
                             cmap="Greys",
                             vmin=0,
                             vmax=0.5,
-                            square=True,
-                            linewidths=0.2,
-                            cbar_kws={"label": f"|{feat_a} - {feat_b}| ({metric_key.upper()})"},
-                            ax=axes[1],
+                            cbar_label=f"|{feat_a} - {feat_b}| ({metric_key.upper()})",
+                            title=f"{metric_key.upper()} absolute difference | {feat_a} vs {feat_b}",
+                            out_file=out_file,
                         )
-                        axes[1].set_title("Lower Triangle: Absolute Difference")
-                        axes[1].set_xlabel("Molecules")
-                        axes[1].set_ylabel("Molecules")
-
-                        fig.tight_layout()
-                        out_file = save_dir / f"combined_triangles_{metric_key}_{feat_a}_vs_{feat_b}.png"
-                        fig.savefig(out_file, dpi=300)
-                        plt.close(fig)
-                        print(f"Saved: {out_file}")
 
         # KPCA panels for both RBF and JACC similarity matrices
         for metric_key in ["rbf", "jacc"]:

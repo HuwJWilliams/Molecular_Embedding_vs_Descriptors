@@ -1,7 +1,6 @@
 import inspect
 import json
 import logging as log
-import random as rand
 from pathlib import Path
 from typing import Callable, Union
 
@@ -52,14 +51,9 @@ class _RFBase:
         self.hp_search_function = hp_search_function
         self.hp_search_kwargs = hp_search_kwargs
 
-        self.random_seed = random_seed if random_seed is not None else rand.randint(0, 2**31)
-        rand.seed(self.random_seed)
-        np.random.seed(self.random_seed)
+        self.random_seed = random_seed
 
     def _set_inner_cv(self, cv_kwargs: dict, cv_seed: int = None):
-        if self.random_seed is not None:
-            cv_seed = self.random_seed
-
         kwargs = dict(cv_kwargs)
         init_sig = inspect.signature(self.cv_function)
         if "random_state" in init_sig.parameters:
@@ -78,9 +72,6 @@ class _RFBase:
         estimator,
         search_seed: int = None,
     ):
-        if self.random_seed is not None:
-            search_seed = self.random_seed
-
         kwargs = dict(search_kwargs)
         init_sig = inspect.signature(self.hp_search_function)
         if "random_state" in init_sig.parameters:
@@ -111,6 +102,8 @@ class _RFBase:
             columns_to_drop = list(metadata_columns) + columns_to_drop
 
         features = data.drop(columns=columns_to_drop)
+        features = features.apply(pd.to_numeric, errors="coerce")
+        features = features.dropna(axis=1)
         targets = data[[target_column]]
         return features, targets
 
@@ -121,27 +114,19 @@ class _RFBase:
         search_seeds: list | None,
     ) -> tuple[list, list]:
         if cv_seeds is None:
-            if self.random_seed is not None:
-                cv_seeds = [self.random_seed + i for i in range(n_resamples)]
-            else:
-                cv_seeds = [rand.randint(0, 2**31) for _ in range(n_resamples)]
+            cv_seeds = [self.random_seed for _ in range(n_resamples)]
 
         if search_seeds is None:
-            if self.random_seed is not None:
-                search_seeds = [self.random_seed + 1000 + i for i in range(n_resamples)]
-            else:
-                search_seeds = [rand.randint(0, 2**31) for _ in range(n_resamples)]
+            search_seeds = [self.random_seed for _ in range(n_resamples)]
 
         assert len(cv_seeds) == n_resamples, "cv_seeds must match n_resamples"
         assert len(search_seeds) == n_resamples, "search_seeds must match n_resamples"
         return cv_seeds, search_seeds
 
     def _resolve_final_seed(self, final_rf_seed: int | None) -> int:
-        if self.random_seed is not None:
-            return self.random_seed
         if final_rf_seed is not None:
             return final_rf_seed
-        return rand.randint(0, 2**31)
+        return None
 
     def _cast_best_params(self, best_params: dict) -> dict:
         casted = dict(best_params)
@@ -277,7 +262,7 @@ class RFRegressor(_RFBase):
         search_seed: int = None,
     ):
         resample_n = resample_n + 1
-        rf_seed = self.random_seed if self.random_seed is not None else rand.randint(0, 2**31)
+        rf_seed = self.random_seed
 
         feat_tr, feat_te, tar_tr, tar_te = train_test_split(
             features,
@@ -496,6 +481,12 @@ class RFRegressor(_RFBase):
         else:
             rf_model = self.final_rf
 
+        feature_data = feature_data.apply(pd.to_numeric, errors="coerce")
+        if hasattr(rf_model, "feature_names_in_"):
+            feature_data = feature_data.reindex(columns=rf_model.feature_names_in_)
+        else:
+            feature_data = feature_data.dropna(axis=1)
+
         preds_df = pd.DataFrame(index=feature_data.index)
         preds_df[prediction_col] = rf_model.predict(feature_data)
 
@@ -608,7 +599,7 @@ class RFClassifier(_RFBase):
         search_seed: int = None,
     ):
         resample_n = resample_n + 1
-        rf_seed = self.random_seed if self.random_seed is not None else rand.randint(0, 2**31)
+        rf_seed = self.random_seed
 
         feat_tr, feat_te, tar_tr, tar_te = train_test_split(
             features,

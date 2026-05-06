@@ -3,7 +3,6 @@
 import sys
 import pandas as pd
 from pathlib import Path
-import numpy as np
 
 # --- Paths
 FILE_DIR = Path(__file__).resolve()
@@ -17,10 +16,6 @@ sys.path.insert(0, str(SRC_DIR / "pathing"))
 from get_paths import getPaths
 sys.path.insert(0, str(SCRIPTS_DIR / "config"))
 from pipeline_config import SUPPORTED_FEATURE_SETS
-
-PALMERCHEM_SOFTWARE = Path.home() / "PalmerChem_Software" / "src" / "models"
-sys.path.insert(0, str(PALMERCHEM_SOFTWARE))
-from RFRegressor import RFRegressor
 
 paths = getPaths()
 feature_paths = paths["full_features"]
@@ -41,7 +36,9 @@ DATASET_NAMES = SUPPORTED_FEATURE_SETS
 
 def load_feature_dataset(name: str) -> pd.DataFrame:
     df = pd.read_csv(full_feats[name], index_col="ID")
-    df = df.drop(columns=["SMILES"], errors="ignore")
+    df = df.drop(columns=["SMILES", "SELFIES"], errors="ignore")
+    df = df.apply(pd.to_numeric, errors="coerce")
+    df = df.dropna(axis=1)
     return df
 
 
@@ -52,14 +49,9 @@ target_df = datasets[TEST_NAME]
 
 common_idx = train_df.index.intersection(target_df.index)
 print(len(common_idx))
-sample_size = len(common_idx)
-rng = np.random.default_rng(42)
-random_idx = rng.choice(common_idx, size=sample_size, replace=False)
-random_idx_df = pd.DataFrame({"ID": random_idx})
-# random_idx_df.to_csv(PROJ_DIR / "results" / "embeddings_and_descriptor_predictions" / "trained_ids.csv")
 
-train_sample = train_df.loc[random_idx]
-target_sample = target_df.loc[random_idx]
+train_sample = train_df.loc[common_idx]
+target_sample = target_df.loc[common_idx]
 
 # --- Train model
 print(f"[Multi-Target RF] train={TRAIN_NAME}, test={TEST_NAME}, id={IDENTIFIER}")
@@ -69,7 +61,6 @@ model=TL(log_identifier=IDENTIFIER)
 model.trainMultiTargetRFModels(
     features_df=train_sample,
     targets_df=target_sample,
-    rf_regressor_class=RFRegressor,
     output_csv=f"{IDENTIFIER}.csv",
     existing_performance_csv= (
         paths["prediction_output_dirs"][CROSS_EMBEDDING_DIR][IDENTIFIER] / f"{IDENTIFIER}.csv"
@@ -86,5 +77,4 @@ model.trainMultiTargetRFModels(
     save_path=paths["prediction_output_dirs"][CROSS_EMBEDDING_DIR][IDENTIFIER],
     skip_existing=True,
     save_models=False,
-    random_seed=42
 )

@@ -23,12 +23,6 @@ from get_paths import getPaths
 sys.path.insert(0, str(SCRIPTS_DIR / "config"))
 from pipeline_config import SUPPORTED_FEATURE_SETS
 
-PALMERCHEM_SOFTWARE = Path.home() / "PalmerChem_Software" / "src" / "models"
-sys.path.insert(0, str(PALMERCHEM_SOFTWARE))
-from RFRegressor import RFRegressor
-
-# !!! NEED TO COPY PALMERCHEM RFR IN THIS REPO !!! ""
-
 paths = getPaths()
 # endregion
 
@@ -220,7 +214,6 @@ model.trainMultiTargetRFModels(
     save_path=paths["prediction_output_dirs"][save_dir][identifier],
     skip_existing=args.skip_existing,
     save_models=args.save_models,
-    random_seed=42,
     save_feat_imp=args.save_feat_imp,
     min_training_samples=args.minimum_targs
 )

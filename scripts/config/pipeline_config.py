@@ -10,6 +10,7 @@ DEFAULT_TARGET_COLUMNS = {
     "logd": "LogD",
     "pka": "pKa",
     "ld50": "LD50",
+    "log_ld50": "LOG_LD50",
     "pic50": "pIC50",
 }
 

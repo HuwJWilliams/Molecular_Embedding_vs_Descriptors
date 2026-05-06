@@ -12,13 +12,19 @@ SRC_DIR = FILE_PATH.parents[1] / "src"
 
 sys.path.insert(0, str(SRC_DIR / "pathing"))
 sys.path.insert(0, str(SRC_DIR / "visualisation"))
+sys.path.insert(0, str(SRC_DIR / "misc"))
+sys.path.insert(0, str(SRC_DIR.parent / "sandbox"))
 
+from code_workshop import Similarity
 from get_paths import getPaths
 from vis import Visualise
+
 
 v = Visualise(save_all=False)
 paths=getPaths()
 feat_paths = paths["full_features"]["fit_lipinski"]
+from misc_fns import molid2Smiles
+
 # endregion
 
 # region Adding argument parser
@@ -70,11 +76,16 @@ parser.add_argument(
 args = parser.parse_args()
 #endregion
 
-v.plotSimilarities(
+sim = Similarity()
+
+
+sim = Similarity()
+sim.plotSimilarities(
     feature_sets=args.feature_sets,
     feature_paths=paths["full_features"][args.feature_paths],
     n_mols=args.n_mols,
     show_top_n_pairs=args.show_n,
     molids=args.molids,
     save_dir=Path(args.save_dir),
+    molid2Smiles=molid2Smiles,
 )
