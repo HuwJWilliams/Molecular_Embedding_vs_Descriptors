@@ -11,10 +11,10 @@ import sys
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-from rdkit import Chem
+from rdkit import Chem, DataStructs
+
 from scipy.stats import gaussian_kde, pearsonr
 from sklearn.metrics import root_mean_squared_error, r2_score
-
 
 sys.path.insert(0, "/users/yhb18174/TL_project/scripts/src/pathing/")
 from get_paths import getPaths
@@ -264,9 +264,6 @@ def plot_train_test_pred_distribution(
 
     return fig, ax, sparse_ids
 
-
-
-
 def plot_two_df_ridgeplots(
     df_a: pd.DataFrame,
     df_b: pd.DataFrame,
@@ -407,7 +404,12 @@ def plot_two_df_ridgeplots(
 run_1 = False
 
 if run_1:
-    for prop, col in zip(["pka"], ["pKa"]):
+    for (prop, col) in [
+        ("bp", "Boiling_Point"), 
+        #("pka", "pKa"), 
+        #("log_ld50", "LOG_LD50"),
+        #("pic50", "pIC50")
+    ]:
 
         results = paths["prediction_output_dirs"]["rf"][prop]
         save_path =paths["prediction_output_dirs"]["rf"][prop]["rdkit"].parent
@@ -434,15 +436,15 @@ if run_1:
                 true_col=col,
                 pred_col=col,
                 save_path=save_path,
-                # remove_true_outliers=True,
-                remove_pred_outliers=True,
-                # save_fname=f"true_vs_pred_scatter_{k}_99_true_trim",
+                remove_true_outliers=True,
+                # remove_pred_outliers=True,
+                save_fname=f"true_vs_pred_scatter_{k}_99_true_trim",
                 # save_fname=f"true_vs_pred_scatter_{k}_99_pred_trim",
-                # save_fname=f"true_vs_pred_scatter_{k}_lipinski",
-                save_fname=f"true_vs_pred_scatter_{k}_lipinski_99_pred_trim",
                 # save_fname=f"true_vs_pred_scatter_{k}",
                 save_plot=True,
-                model_name=k
+                model_name=k,
+                upper_pct=95,
+                lower_pct=1
             )
             trimmed_perf[k] = metrics
 
@@ -453,10 +455,8 @@ if run_1:
             show_plots=False,
             save_plot=True,
             save_path=save_path,
-            # save_fname="model_performance_99_true_trim",
+            save_fname="model_performance_99_true_trim",
             # save_fname=f"model_performance_99_pred_trim",
-            save_fname=f"model_performance_lipinski_99_pred_trim",
-            # save_fname="model_performance_lipinski",
             # save_fname="model_performance",
         )
 
@@ -464,22 +464,25 @@ if run_1:
 run_2 = False
 
 if run_2:
-    res_dir = Path("/users/yhb18174/TL_project/results/BP_predictions_rf/rdkit")
+    prop = "bp"
+    col = "Boiling_Point"
+
+    res_dir = Path(f"/users/yhb18174/TL_project/results/{prop.upper()}_predictions_rf/rdkit")
     pred_df =  pd.read_csv(res_dir / "last_20pct_pred.csv.gz", index_col=0)
     train_df = pd.read_csv(res_dir / "training_data" / "training_targets.csv.gz", index_col=0)
-    true_path = paths["targets"]["bp"]
+    true_path = paths["targets"][prop]
     true_df = pd.read_csv(true_path, index_col=0).loc[pred_df.index]
 
     _, _, sparse_ids = plot_train_test_pred_distribution(
         train_data=train_df,
         true_test_data=true_df,
         pred_df=pred_df,
-        train_col="Boiling_Point",
-        true_col="Boiling_Point",
-        pred_col="Boiling_Point",
+        train_col=col,
+        true_col=col,
+        pred_col=col,
         save_plot=False,
         save_path="./",
-        save_fname="bp_train_test_pred_distribution",
+        save_fname=f"{prop}_train_test_pred_distribution",
         show_plot=True,
         label_sparse_bins=True
     )
@@ -518,20 +521,198 @@ if run_2:
 
     img.show()
 
-run_3 = True
+run_3 = False
 
 if run_3:
-    res_dir = Path("/users/yhb18174/TL_project/results/BP_predictions_rf/rdkit")
+    desc = "mordred"
+    res_dir = Path(f"/users/yhb18174/TL_project/results/BP_predictions_rf/{desc}")
     pred_ids =  list(pd.read_csv(res_dir / "last_20pct_pred.csv.gz", index_col=0).index)
     train_df = pd.read_csv(res_dir / "training_data" / "training_features.csv.gz", index_col=0)
-    true_path = true_path = str(paths["full_features"]["fit_lipinski"]["rdkit"])
+    true_path = true_path = str(paths["full_features"]["fit_lipinski"][desc])
     test_df = pd.read_csv(true_path, index_col=0).loc[pred_ids]
 
     figs = plot_two_df_ridgeplots(
     df_a=train_df,
     df_b=test_df,
-    descriptors=["MolWt_rdkit", "NumAromaticRings_rdkit", "SLogP_rdkit", "NumHBondDonors_rdkit", "NumHBondAcceptors_rdkit"],
-    save_plot=False,
+    # descriptors=["MolWt_rdkit", "NumAromaticRings_rdkit", "MolLogP_rdkit", "NumHDonors_rdkit", "NumHAcceptors_rdkit"],
+    descriptors=["BertzCT_mordred", "naRing_mordred", "SLogP_mordred", "nHBDon_mordred", "nHBAcc_mordred", "MW_mordred", "C1SP3_mordred", "C2SP3_mordred"],
+    save_plot=True,
     save_path="/users/yhb18174/TL_project/scripts/sandbox",
     show_plot=True,
 )
+
+
+run_4 = False
+
+if run_4:
+    prop = "bp"
+    col = "Boiling_Point"
+
+    res_dir = Path(f"/users/yhb18174/TL_project/results/{prop.upper()}_predictions_rf/rdkit")
+
+    pred_df = pd.read_csv(res_dir / "last_20pct_pred.csv.gz", index_col=0)
+    train_df = pd.read_csv(res_dir / "training_data" / "training_targets.csv.gz", index_col=0)
+
+    true_path = paths["targets"][prop]
+    all_true_df = pd.read_csv(true_path, index_col=0)
+
+    common_ids = all_true_df.index.intersection(pred_df.index)
+    true_df = all_true_df.loc[common_ids].copy()
+    pred_df = pred_df.loc[common_ids].copy()
+
+    pred_col = col if col in pred_df.columns else "Prediction"
+
+    error_df = pd.DataFrame(index=common_ids)
+    error_df["true"] = true_df[col]
+    error_df["pred"] = pred_df[pred_col]
+    error_df["error"] = error_df["pred"] - error_df["true"]
+    error_df["abs_error"] = error_df["error"].abs()
+    error_df["SMILES"] = true_df["SMILES"]
+
+    train_ids = train_df.index.intersection(all_true_df.index)
+    train_smiles = all_true_df.loc[train_ids, "SMILES"].dropna()
+
+    morgan_gen = Chem.rdFingerprintGenerator.GetMorganGenerator(
+        radius=2,
+        fpSize=2048,
+    )
+
+    def smi_to_fp(smi):
+        mol = Chem.MolFromSmiles(str(smi))
+        if mol is None:
+            return None
+        return morgan_gen.GetFingerprint(mol)
+
+    train_fp_items = []
+    for molid, smi in train_smiles.items():
+        fp = smi_to_fp(smi)
+        if fp is not None:
+            train_fp_items.append((molid, fp))
+
+    nn_sims = []
+    nn_ids = []
+
+    train_ids_only = [molid for molid, fp in train_fp_items]
+    train_fps = [fp for molid, fp in train_fp_items]
+
+    for molid, smi in error_df["SMILES"].items():
+        fp = smi_to_fp(smi)
+
+        if fp is None or not train_fps:
+            nn_sims.append(np.nan)
+            nn_ids.append(np.nan)
+            continue
+
+        sims = DataStructs.BulkTanimotoSimilarity(fp, train_fps)
+        best_i = int(np.argmax(sims))
+
+        nn_sims.append(float(sims[best_i]))
+        nn_ids.append(train_ids_only[best_i])
+
+    error_df["nearest_train_tanimoto"] = nn_sims
+    error_df["nearest_train_id"] = nn_ids
+    error_df = error_df.dropna(subset=["nearest_train_tanimoto", "abs_error"])
+
+    fig, ax = plt.subplots(figsize=(7, 5))
+
+    ax.scatter(
+        error_df["nearest_train_tanimoto"],
+        error_df["abs_error"],
+        alpha=0.7,
+        edgecolor="black",
+        linewidth=0.4,
+    )
+
+    ax.set_xlabel("Nearest-neighbour Tanimoto similarity to training set")
+    ax.set_ylabel(f"Absolute error in {col}")
+    ax.set_title(f"{prop.upper()} error vs nearest training-set similarity")
+
+    min_sim = error_df["nearest_train_tanimoto"].min()
+    max_sim = error_df["nearest_train_tanimoto"].max()
+
+    ax.text(
+        0.05,
+        0.95,
+        f"Min similarity: {min_sim:.3f}\nMax similarity: {max_sim:.3f}",
+        transform=ax.transAxes,
+        ha="left",
+        va="top",
+        fontsize=10,
+        bbox=dict(facecolor="white", edgecolor="black", alpha=0.8),
+    )
+
+    plt.tight_layout()
+    plt.savefig("/users/yhb18174/TL_project/scripts/sandbox/tanimoto_vs_error.png")
+    plt.close(fig)
+
+    perfect_match_df = error_df[
+        np.isclose(error_df["nearest_train_tanimoto"], 1.0)
+    ].copy()
+
+    perfect_match_df["test_id"] = perfect_match_df.index
+    perfect_match_df["train_id"] = perfect_match_df["nearest_train_id"]
+    perfect_match_df["SMILES_1"] = perfect_match_df["SMILES"]
+    perfect_match_df["SMILES_2"] = perfect_match_df["nearest_train_id"].map(
+        all_true_df["SMILES"]
+    )
+
+    perfect_match_df = perfect_match_df[
+        [
+            "test_id",
+            "train_id",
+            "SMILES_1",
+            "SMILES_2",
+            "abs_error",
+        ]
+    ]
+    perfect_match_df.to_csv("/users/yhb18174/TL_project/scripts/sandbox/tanimoto_vs_error.csv")
+    
+
+run_5 = False
+
+if run_5:
+    prop = "bp"
+    col = "Boiling_Point"
+
+    res_dir = Path(f"/users/yhb18174/TL_project/results/{prop.upper()}_predictions_rf/rdkit")
+
+    pred_df = pd.read_csv(res_dir / "last_20pct_pred.csv.gz", index_col=0)
+    train_df = pd.read_csv(res_dir / "training_data" / "training_targets.csv.gz", index_col=0)
+
+    true_path = paths["targets"][prop]
+    all_true_df = pd.read_csv(true_path, index_col=0)
+
+    common_ids = all_true_df.index.intersection(pred_df.index)
+    true_df = all_true_df.loc[common_ids].copy()
+    pred_df = pred_df.loc[common_ids].copy()
+
+    train_ids = train_df.index.intersection(all_true_df.index)
+    train_true_df = all_true_df.loc[train_ids].copy()
+
+    test_smiles = true_df["SMILES"].astype(str)
+    train_smiles = train_true_df["SMILES"].astype(str)
+
+    exact_match_df = (
+        test_smiles.reset_index()
+        .rename(columns={"ID": "test_id", "SMILES": "SMILES"})
+        .merge(
+            train_smiles.reset_index().rename(columns={"ID": "train_id", "SMILES": "SMILES"}),
+            on="SMILES",
+            how="inner",
+        )
+    )
+
+    print(f"Exact SMILES matches: {len(exact_match_df)}")
+    print(exact_match_df.head())
+
+
+
+run_6 = True
+if run_6: 
+    rdkit_df_p = "/users/yhb18174/TL_project/datasets/descriptors/BP_descriptors/bp_rdkit_1.csv" #paths["full_features"]["fit_lipinski"]["rdkit"]
+    #"/users/yhb18174/TL_project/datasets/all/all_mordred_with_nans.csv" #paths["full_features"]["all"]["mordred"]
+
+    
+    rdkit_df = pd.read_csv(rdkit_df_p, index_col="ID")
+    # print(rdkit_df["NumAromaticRings_rdkit"].max())
+    print(len(rdkit_df.columns))

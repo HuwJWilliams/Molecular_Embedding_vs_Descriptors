@@ -1,7 +1,6 @@
 """
 Script to keep dataset standardisation functions and classes
 """
-# region Imports
 import pandas as pd
 from pathlib import Path
 import sys
@@ -12,21 +11,17 @@ from rdkit import Chem
 from rdkit.Chem import Descriptors
 from rdkit.Chem.MolStandardize import rdMolStandardize
 import numpy as np
-# endregion
 
-# region Pathing
+
 FILE_DIR = Path(__file__).resolve()
 PROJ_DIR = FILE_DIR.parents[3]
 SCRIPTS_DIR = PROJ_DIR / "scripts"
 SRC_DIR = SCRIPTS_DIR / "src"
 
 sys.path.insert(0, str(SRC_DIR / "misc"))
-
 from misc_fns import loadData
-# endregion
 
 
-# region Constants
 DEFAULT_ANALYSIS_DESCRIPTORS = {
     "MolWt": Descriptors.MolWt,
     "MolLogP": Descriptors.MolLogP,
@@ -35,9 +30,8 @@ DEFAULT_ANALYSIS_DESCRIPTORS = {
     "NumHDonors": Descriptors.NumHDonors,
     "NumHAcceptors": Descriptors.NumHAcceptors
 }
-# endregion
 
-# region Function Definitions
+
 def averageRanges(
         df: str | Path | pd.DataFrame,
         column: str,
@@ -333,6 +327,8 @@ def analyseMolecules(
         plt.close()
     return analysis_df.drop(columns=["Mol"])
 
+# %%
+
 def cleanAndSaveDataset(
     *,
     in_path: Path,
@@ -431,4 +427,3 @@ def cleanAndSaveDataset(
     df.to_csv(out_path, index=False)
 
     return df
-# endregion

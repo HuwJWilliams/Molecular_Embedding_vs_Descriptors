@@ -12,6 +12,9 @@ DEFAULT_TARGET_COLUMNS = {
     "ld50": "LD50",
     "log_ld50": "LOG_LD50",
     "pic50": "pIC50",
+    "pka_paper1_acidic": "pKa",
+    "pka_paper1_basic": "pKa",
+
 }
 
 SUPPORTED_FEATURE_SETS = (

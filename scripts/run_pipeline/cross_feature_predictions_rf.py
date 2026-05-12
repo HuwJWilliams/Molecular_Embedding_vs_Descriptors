@@ -3,39 +3,52 @@ Script to train Random Forest Regressors on one set of features to predict anoth
 (e.g., train on ChemBERTa embeddings to predict RDKit descriptors)
 """
 
-# region Imports and Pathing
-import sys
+# region Script Functionality
+# region Imports
+import argparse
 import pandas as pd
 from pathlib import Path
-import argparse
+import sys
+# endregion
 
-# --- Paths
-FILE_DIR = Path(__file__).parent
-SCRIPTS_DIR = FILE_DIR.parent
+# region Path Setup
+FILE_DIR = Path(__file__).resolve()
+PROJ_DIR = FILE_DIR.parents[2]
+SCRIPTS_DIR = FILE_DIR.parents[1]
 SRC_DIR = SCRIPTS_DIR / "src"
 
 sys.path.insert(0, str(SRC_DIR / "models"))
-from transfer_model import TL
-
 sys.path.insert(0, str(SRC_DIR / "pathing"))
-from get_paths import getPaths
-
 sys.path.insert(0, str(SCRIPTS_DIR / "config"))
-from pipeline_config import SUPPORTED_FEATURE_SETS
+sys.path.insert(0, str(SRC_DIR / "datasets"))
 
-paths = getPaths()
+from transfer_model import TL
+from get_paths import getPaths
+from pipeline_config import SUPPORTED_FEATURE_SETS
+from feature_cleaning import clean_feature_df
 # endregion
 
-# region Function Definitions
-def _load_feature_datasets(name: str, mols:str="all", use_nan_dfs:bool=False) -> pd.DataFrame:
-    p = paths["full_features"][mols][name]
-    p = Path(str(p).replace(".csv", "_with_nans.csv")) if use_nan_dfs else p
+# region Feature Set Loading Helper Function
+def load_feature_dataset(
+    name: str,
+    full_feats: dict,
+    correlation_threshold: float | None = None,
+) -> pd.DataFrame:
+    df = pd.read_csv(full_feats[name], index_col="ID")
 
-    df = pd.read_csv(p, index_col="ID")
-    df = df.drop(columns=["SMILES"], errors="ignore")
+    df, clean_report = clean_feature_df(
+        df,
+        max_nan_fraction=0.10,
+        drop_constant_cols=True,
+        median_impute=True,
+        correlation_threshold=correlation_threshold,
+    )
+
+    print(f"\nFeature cleaning report for {name}:")
+    print(clean_report)
+    print(f"Final shape: {df.shape}")
+
     return df
-
-
 # endregion
 
 # region Argument Parsing
@@ -52,7 +65,7 @@ parser.add_argument(
 )
 
 parser.add_argument(
-    "--test",
+    "--target",
     required=True,
     choices=SUPPORTED_FEATURE_SETS,
     help="Features to test RF models on. Choices are:\n" \
@@ -149,71 +162,70 @@ parser.add_argument(
 )
 
 parser.add_argument(
-    "--use-nan-dfs",
-    action="store_true",
-    help="Flag to use full target datasets containint NaN values.\
-        Set --minimum-targs to change how many observations required \
-        to train RF models."
-)
-
-parser.add_argument(
     "--minimum-targs",
     type=int,
     default=2500,
     help="Minimum number of samples to train RF models"
 )
-
-args = parser.parse_args()
-test = args.test
-train = args.train
-save_dir = args.save_dir
-
-identifier = f"pred_{test}_tr_{train}"
 # endregion
 
-# region Data Handling
-mols="fit_lipinski" if args.lipinski_mols else "all"
+# region Running Script
+if __name__ == "__main__":
+    args = parser.parse_args()
+    mols="fit_lipinski" if args.lipinski_mols else "all"
+    train = args.train.lower()
+    target = args.target.lower()
+    identifier = f"pred_{target}_tr_{train}"
+    save_dir = args.save_dir
 
-train_df = _load_feature_datasets(name=train, mols=mols)
-target_df = _load_feature_datasets(name=test, mols=mols, use_nan_dfs=args.use_nan_dfs)
+    paths=getPaths()
+    full_feats = paths["full_features"][mols]
 
-common_idx = train_df.index.intersection(target_df.index)
-print(f"Length of common IDs: {len(common_idx)}")
+    train_df = load_feature_dataset(
+        train,
+        full_feats=full_feats,
+        correlation_threshold=None,
+    )
 
-train_df, target_df = train_df.loc[common_idx], target_df.loc[common_idx]
+    target_df = load_feature_dataset(
+        target,
+        full_feats=full_feats,
+        correlation_threshold=None,
+    )
 
-if args.shuffle_data:
-    shuffled_idx = train_df.sample(
-        frac=1, replace=False, random_state=42
-        ).index
-    train_df = train_df.loc[shuffled_idx]
-    target_df = target_df.loc[shuffled_idx]
-# endregion
+    common_idx = train_df.index.intersection(target_df.index)
+    train_df, target_df = train_df.loc[common_idx], target_df.loc[common_idx]
 
-# region Model Training
-print(f"[Multi-Target RF] train={train}, test={test}, id={identifier}")
-print(f"Train shape: {train_df.shape}, Test shape: {target_df.shape}")
+    if args.shuffle_data:
+        shuffled_idx = train_df.sample(
+            frac=1, replace=False, random_state=42
+            ).index
+        train_df = train_df.loc[shuffled_idx]
+        target_df = target_df.loc[shuffled_idx]
 
-model = TL(log_to_file=False, log_identifier=identifier)
-model.trainMultiTargetRFModels(
-    features_df=train_df,
-    targets_df=target_df,
-    output_csv=f"{identifier}.csv",
-    existing_performance_csv= (
-        paths["prediction_output_dirs"][save_dir][identifier] / f"{identifier}.csv"
-        ),
-    hyper_params={
-    "n_estimators": args.n_estimators,
-    "max_features": args.max_features,
-    "max_depth": args.max_depth,
-    "min_samples_split": args.min_samples_split,
-    "min_samples_leaf": args.min_samples_leaf,
-    },
-    n_resamples=args.n_resamples,
-    test_size=args.test_size,
-    save_path=paths["prediction_output_dirs"][save_dir][identifier],
-    skip_existing=args.skip_existing,
-    save_models=args.save_models,
-    save_feat_imp=args.save_feat_imp,
-    min_training_samples=args.minimum_targs
-)
+    print(f"[Multi-Target RF] train={train}, test={target}, id={identifier}")
+    print(f"Train shape: {train_df.shape}, Test shape: {target_df.shape}")
+
+    model = TL(log_to_file=False, log_identifier=identifier)
+    model.trainMultiTargetRFModels(
+        features_df=train_df,
+        targets_df=target_df,
+        output_csv=f"{identifier}.csv",
+        existing_performance_csv= (
+            paths["prediction_output_dirs"][save_dir][identifier] / f"{identifier}.csv"
+            ),
+        hyper_params={
+        "n_estimators": args.n_estimators,
+        "max_features": args.max_features,
+        "max_depth": args.max_depth,
+        "min_samples_split": args.min_samples_split,
+        "min_samples_leaf": args.min_samples_leaf,
+        },
+        n_resamples=args.n_resamples,
+        test_size=args.test_size,
+        save_path=paths["prediction_output_dirs"][save_dir][identifier],
+        skip_existing=args.skip_existing,
+        save_models=args.save_models,
+        save_feat_imp=args.save_feat_imp,
+        min_training_samples=args.minimum_targs
+    )

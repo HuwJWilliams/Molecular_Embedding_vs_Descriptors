@@ -1,28 +1,30 @@
+"""
+Functions used for joining datasets
+"""
+# region Imports
 import pandas as pd
 from glob import glob
 import numpy as np
-
 from pathlib import Path
-SCRIPTS_DIR = Path(__file__).resolve().parents[2]
-SRC_DIR = SCRIPTS_DIR / "src"
-
 import sys
 from rdkit import Chem
 from rdkit.Chem import Descriptors
+# endregion
+
+# region Pathing
+SCRIPTS_DIR = Path(__file__).resolve().parents[2]
+SRC_DIR = SCRIPTS_DIR / "src"
 
 sys.path.insert(0, str(SRC_DIR / "pathing"))
-from get_paths import getPaths
-
 sys.path.insert(0, str(SRC_DIR / "datasets"))
+
+from get_paths import getPaths
 from analyse_datasets import checkLipinskiCriteria
 
-
 paths = getPaths()
+# endregion
 
-
-# Creating a single csv for all properties 
-# which holds SMILES and properties
-
+# region Function Definitions
 def makeUniqueSMILES(
         properties: list=["Boiling_Point", "LogD", "LD50", "pKa", "pIC50"],
         target_dict: dict=paths["targets"],
@@ -66,7 +68,6 @@ def makeUniqueSMILES(
     else:
         print(f"'{out_path}' already exists. Skipping.")
 
-
 def _find_bad_ids(df: pd.DataFrame, file: str, n=20):
     idx = df.index
 
@@ -86,8 +87,6 @@ def _find_bad_ids(df: pd.DataFrame, file: str, n=20):
         # show which rows they correspond to
         print(df.iloc[list(pd.Series(bad_mask).to_numpy().nonzero()[0])].head(3))
 
-
-
 def combineAllFeats(
     full_smi_df: pd.DataFrame | str | Path = paths["targets"]["all"],
     feat_set_ls: list = [
@@ -95,10 +94,14 @@ def combineAllFeats(
         "mordred", 
         "chemberta", 
         "molformer",
+        "chembertasey",
+        "molformer-c3-1b",
+        "maccs",
+        "selformer",
         "morgan"
         ],
     feature_paths: dict = paths["full_features"],
-    cols_to_drop: list[str] = ["SMILES"],
+    cols_to_drop: list[str] | None = None,
     properties: list = None,
     save: bool=True,
     save_path: str | Path=paths["full_features"]["all"],
@@ -111,12 +114,8 @@ def combineAllFeats(
     lipinski_logp: float = 6,
     lipinski_n_hbd: int = 6,
     lipinski_n_hba: int = 11,
-    save_full_with_nans: bool = True,
-    full_with_nans_suffix: str = "_with_nans",
 ):
     built_feature_dfs = {}
-    built_feature_dfs_full = {}
-    dropped_columns_by_feature = {}
     
     if properties is None:
         properties = list(feature_paths.keys())[:-1]
@@ -179,12 +178,11 @@ def combineAllFeats(
             for file in files:
                 df = pd.read_csv(file, index_col="ID", low_memory=False)
 
-                # Drop potentially problematic columns like SMILES
-                df = df.drop(columns=[col for col in cols_to_drop if col in df.columns])
+                if cols_to_drop:
+                    df = df.drop(columns=[col for col in cols_to_drop if col in df.columns])
 
                 # diagnose raw IDs
                 _find_bad_ids(df, file)  
-                df = df.apply(pd.to_numeric, errors="coerce")
                 temp_df = pd.concat([temp_df, df], axis=0)
 
             # safe sort
@@ -200,33 +198,24 @@ def combineAllFeats(
         print(f"Length of DF: {len(full_feat_df)}")
         print("Rows with any NaN:", full_feat_df.isna().any(axis=1).sum())
 
-        full_feat_df_full = full_feat_df.copy()
-
-        if full_feat_df_full.index.has_duplicates:
-            print(f"Dropping duplicate IDs for {desc_emb} (full + clean)")
-            full_feat_df_full = full_feat_df_full.loc[
-                ~full_feat_df_full.index.duplicated(keep="first")
-            ]
+        if full_feat_df.index.has_duplicates:
+            duplicate_count = int(full_feat_df.index.duplicated(keep="first").sum())
+            raise ValueError(
+                f"{desc_emb} has {duplicate_count} duplicate IDs after joining. "
+                "Fix duplicate IDs upstream before joining feature datasets."
+            )
 
         if max_atoms is not None or max_mw is not None or lipinski_criteria:
-            full_feat_df_full = full_feat_df_full.loc[
-                full_feat_df_full.index.astype(str).isin(keep_ids)
+            full_feat_df = full_feat_df.loc[
+                full_feat_df.index.astype(str).isin(keep_ids)
             ].copy()
             print(
-                f"Filtered {desc_emb} full dataframe to {len(full_feat_df_full)} rows "
+                f"Filtered {desc_emb} dataframe to {len(full_feat_df)} rows "
                 "after SMILES-based thresholds"
             )
 
-        print("Dropping columns with NaN present")
-        before_cols = full_feat_df_full.columns
-        full_feat_df_clean = full_feat_df_full.dropna(axis=1)
-        after_cols = full_feat_df_clean.columns
-        dropped_cols = before_cols.difference(after_cols)
-        print(f"Dropped {len(dropped_cols)}")
-
-        built_feature_dfs[desc_emb] = full_feat_df_clean
-        built_feature_dfs_full[desc_emb] = full_feat_df_full
-        dropped_columns_by_feature[desc_emb] = dropped_cols
+        print("No feature columns dropped during joining")
+        built_feature_dfs[desc_emb] = full_feat_df
 
     if align_common_ids and built_feature_dfs:
         aligned_dfs, common_ids = getCommonIDs(
@@ -237,31 +226,11 @@ def combineAllFeats(
             built_feature_dfs[desc_emb] = aligned_df
             print(f"Retained {len(common_ids)} common IDs for {desc_emb}")
 
-    if align_common_ids and built_feature_dfs_full:
-        aligned_dfs_full, common_ids_full = getCommonIDs(
-            df_path_ls=list(built_feature_dfs_full.values()),
-            save=False,
-        )
-        for desc_emb, aligned_df in zip(built_feature_dfs_full.keys(), aligned_dfs_full):
-            built_feature_dfs_full[desc_emb] = aligned_df
-            print(f"Retained {len(common_ids_full)} common IDs for {desc_emb} (full)")
-
     if save:
-        for desc_emb, full_feat_df_clean in built_feature_dfs.items():
+        for desc_emb, full_feat_df in built_feature_dfs.items():
             out_path = feature_paths[feat_path][desc_emb]
             out_path.parent.mkdir(parents=True, exist_ok=True)
-            full_feat_df_clean.to_csv(out_path, index_label="ID")
-
-            if save_full_with_nans:
-                full_out_path = out_path.with_name(
-                    f"{out_path.stem}{full_with_nans_suffix}{out_path.suffix}"
-                )
-                built_feature_dfs_full[desc_emb].to_csv(full_out_path, index_label="ID")
-
-            with open(out_path.parent / f"nan_cols_{desc_emb}.txt", "w") as f:
-                for col in dropped_columns_by_feature[desc_emb]:
-                    f.write(col + "\n")
-
+            full_feat_df.to_csv(out_path, index_label="ID")
 
 def getCommonIDs(
         df_path_ls: list[pd.DataFrame | str | Path] = paths['full_features']['all'].values(),
@@ -312,7 +281,6 @@ def getCommonIDs(
 
     return aligned_dfs, common_ids
 
-
 def _load_all_targets_df(
         full_smi_df: pd.DataFrame | str | Path = paths["targets"]["all"],
     ) -> pd.DataFrame:
@@ -326,7 +294,6 @@ def _load_all_targets_df(
         raise ValueError("Input dataframe must contain a 'SMILES' column.")
 
     return df
-
 
 def _get_ids_below_atom_threshold(
         full_smi_df: pd.DataFrame | str | Path = paths["targets"]["all"],
@@ -344,7 +311,6 @@ def _get_ids_below_atom_threshold(
     keep_ids = df.index[atom_counts < max_atoms]
     return keep_ids.astype(str).tolist()
 
-
 def _get_ids_below_mw_threshold(
         full_smi_df: pd.DataFrame | str | Path = paths["targets"]["all"],
         max_mw: float = 500.0,
@@ -360,3 +326,4 @@ def _get_ids_below_mw_threshold(
 
     keep_ids = df.index[mol_wts < max_mw]
     return keep_ids.astype(str).tolist()
+# endregion

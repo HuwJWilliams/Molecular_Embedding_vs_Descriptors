@@ -308,7 +308,7 @@ class TL():
 
             # If discrete use multiclass
             elif is_class_like and n_unique <= 6:
-                print("Number of unique values 2 < n >=6 Using RFMultiClassifier")
+                print("Number of unique values 2 < n <=6 Using RFMultiClassifier")
 
                 try:
                     rf_model = RFMultiClassifier(

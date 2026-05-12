@@ -416,51 +416,6 @@ class FeatureGenerator():
             min_unique=min_unique,
             pooling=pooling,
         )
-        
-    def calcSMILESBERT(
-                self,
-                smiles_ls: list[str],
-                id_ls: list[str],
-                batch_size: int=64,
-                max_token_len: int=512,
-                drop_cols: bool=False,
-                min_unique: int=MIN_UNIQUE,
-                pooling: str="mean"
-        ) -> pd.DataFrame:
-            
-            """
-            Description
-            -----------
-            Function to calculate SMILES-BERT embeddings for a list of smiles
-
-            Parameters
-            ----------
-            smiles_ls           list[str]   List of SMILES
-            id_ls               list[str]   List of IDs corresponding to each SMILE
-            batch_size          int         Size of batch to process
-            max_token_len         int         Maximum length of the generated embeddings
-            drop_cols           bool        Flag to drop columns with low variance
-            min_unique          int         Variance threshold for dopping columns       
-            pooling             str         Pooling strategy: "cls" or "mean"
-            """
-
-            if pooling not in {"cls", "mean"}:
-                raise ValueError("pooling must be either 'cls' or 'mean'.")
-            
-            (parsed_ids, parsed_smiles, _), _ = self._check_and_parse_smiles(
-                smiles_ls=smiles_ls,
-                id_ls=id_ls
-            )
-
-            return self._calc_named_transformer_embeddings(
-                input_texts=parsed_smiles,
-                ids=parsed_ids,
-                batch_size=batch_size,
-                max_token_len=max_token_len,
-                drop_cols=drop_cols,
-                min_unique=min_unique,
-                pooling=pooling,
-            )
     
 
     # ====== Batch Feature Calculations
@@ -1140,12 +1095,6 @@ class FeatureGenerator():
                 max_token_len=max_token_len,
             ),
             "selformer": lambda: self.calcSELFormer(
-                smiles_ls=smi_batch,
-                id_ls=id_batch,
-                batch_size=64,
-                max_token_len=max_token_len,
-            ),
-            "smilesbert": lambda: self.calcSMILESBERT(
                 smiles_ls=smi_batch,
                 id_ls=id_batch,
                 batch_size=64,
