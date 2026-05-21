@@ -405,8 +405,10 @@ run_1 = False
 
 if run_1:
     for (prop, col) in [
-        ("bp", "Boiling_Point"), 
-        #("pka", "pKa"), 
+        # ("bp", "Boiling_Point"), 
+        #("pka", "pKa"),
+        # ("pka_paper1_basic", "pKa"), 
+        ("pka_paper1_acidic", "pKa"), 
         #("log_ld50", "LOG_LD50"),
         #("pic50", "pIC50")
     ]:
@@ -417,36 +419,39 @@ if run_1:
         trimmed_perf = {}
 
         for k, p in results.items():
-            json_paths[k] = str(p / "last_20_pct_perf.json")
+            try:
+                if "molformer-c3-1b" in str(k) or "molformer-c3-1b" in str(p):
+                    continue
+                json_paths[k] = str(p / "last_20_pct_perf.json")
 
-            pred_path = str(p / "last_20pct_pred.csv.gz")
-            pred_df = pd.read_csv(pred_path, index_col=0)
-            pred_df = pred_df[pred_df.index.isin(lipinski_ids)]
-            
+                pred_path = str(p / "last_20pct_pred.csv.gz")
+                pred_df = pd.read_csv(pred_path, index_col=0)
+                # pred_df = pred_df[pred_df.index.isin(lipinski_ids)]
+
+                true_path = paths["targets"][prop]
+                true_df = pd.read_csv(true_path, index_col=0)
+                true_test_data = true_df.loc[pred_df.index]
 
 
-            true_path = paths["targets"][prop]
-            true_df = pd.read_csv(true_path, index_col=0)
-            true_test_data = true_df.loc[pred_df.index]
-
-
-            _, _, metrics = plot_true_vs_pred(
-                true_test_data=true_test_data,
-                pred_df=pred_df,
-                true_col=col,
-                pred_col=col,
-                save_path=save_path,
-                remove_true_outliers=True,
-                # remove_pred_outliers=True,
-                save_fname=f"true_vs_pred_scatter_{k}_99_true_trim",
-                # save_fname=f"true_vs_pred_scatter_{k}_99_pred_trim",
-                # save_fname=f"true_vs_pred_scatter_{k}",
-                save_plot=True,
-                model_name=k,
-                upper_pct=95,
-                lower_pct=1
-            )
-            trimmed_perf[k] = metrics
+                _, _, metrics = plot_true_vs_pred(
+                    true_test_data=true_test_data,
+                    pred_df=pred_df,
+                    true_col=col,
+                    pred_col=col,
+                    save_path=save_path,
+                    # remove_true_outliers=True,
+                    # remove_pred_outliers=True,
+                    # save_fname=f"true_vs_pred_scatter_{k}_99_true_trim",
+                    # save_fname=f"true_vs_pred_scatter_{k}_99_pred_trim",
+                    save_fname=f"true_vs_pred_scatter_{k}",
+                    save_plot=True,
+                    model_name=k,
+                    upper_pct=95,
+                    lower_pct=1
+                )
+                trimmed_perf[k] = metrics
+            except Exception as e:
+                print(e)
 
         v.plotModelPerformanceBars(
             model_jsons=trimmed_perf,
@@ -455,9 +460,9 @@ if run_1:
             show_plots=False,
             save_plot=True,
             save_path=save_path,
-            save_fname="model_performance_99_true_trim",
+            # save_fname="model_performance_99_true_trim",
             # save_fname=f"model_performance_99_pred_trim",
-            # save_fname="model_performance",
+            save_fname="model_performance",
         )
 
 
@@ -707,7 +712,7 @@ if run_5:
 
 
 
-run_6 = True
+run_6 = False
 if run_6: 
     rdkit_df_p = "/users/yhb18174/TL_project/datasets/descriptors/BP_descriptors/bp_rdkit_1.csv" #paths["full_features"]["fit_lipinski"]["rdkit"]
     #"/users/yhb18174/TL_project/datasets/all/all_mordred_with_nans.csv" #paths["full_features"]["all"]["mordred"]
@@ -716,3 +721,89 @@ if run_6:
     rdkit_df = pd.read_csv(rdkit_df_p, index_col="ID")
     # print(rdkit_df["NumAromaticRings_rdkit"].max())
     print(len(rdkit_df.columns))
+
+
+run_7 = True
+if run_7:
+    import selfies
+    from transformers import AutoTokenizer
+
+    sys.path.insert(0, "/users/yhb18174/TL_project/scripts/config/")
+    from pipeline_config import TRANSFORMER_FEATURE_SPECS
+
+    p = "/users/yhb18174/TL_project/datasets/reorganisation_energies/DS3-800.csv"
+    df = pd.read_csv(p)
+    df = df.dropna(subset=["SMILES"]).copy()
+    df["SMILES"] = df["SMILES"].astype(str)
+
+    def smiles_to_selfies(smi):
+        try:
+            return selfies.encoder(smi)
+        except selfies.EncoderError:
+            return None
+
+    for feature_set, spec in TRANSFORMER_FEATURE_SPECS.items():
+        if spec["input_kind"] == "smiles":
+            input_texts = df["SMILES"]
+            stats_df = df
+        elif spec["input_kind"] == "selfies":
+            selfies_df = df.copy()
+            selfies_df["SELFIES"] = selfies_df["SMILES"].apply(smiles_to_selfies)
+            invalid_selfies = selfies_df["SELFIES"].isna().sum()
+            selfies_df = selfies_df.dropna(subset=["SELFIES"]).copy()
+            input_texts = selfies_df["SELFIES"]
+            stats_df = selfies_df
+        else:
+            continue
+
+        tokenizer = AutoTokenizer.from_pretrained(spec["tokeniser"], trust_remote_code=True)
+        token_lengths = input_texts.apply(
+            lambda text: len(tokenizer(text, truncation=False, add_special_tokens=True)["input_ids"])
+        )
+        max_idx = token_lengths.idxmax()
+        p025, p975 = token_lengths.quantile([0.025, 0.975])
+
+        print(f"\n{feature_set}")
+        print(f"Tokenizer: {spec['tokeniser']}")
+        if spec["input_kind"] == "selfies":
+            print(f"Invalid SELFIES conversions skipped: {invalid_selfies}")
+        print(f"Min token length: {token_lengths.min()}")
+        print(f"Average token length: {token_lengths.mean():.2f}")
+        print(f"Max token length: {token_lengths.loc[max_idx]}")
+        print(f"Central 95% token range: {p025:.0f}-{p975:.0f}")
+        print(f"Row index: {max_idx}")
+        if "ID" in stats_df.columns:
+            print(f"ID: {stats_df.loc[max_idx, 'ID']}")
+        print(f"SMILES: {stats_df.loc[max_idx, 'SMILES']}")
+        if spec["input_kind"] == "selfies":
+            print(f"SELFIES: {stats_df.loc[max_idx, 'SELFIES']}")
+
+
+run_8 = False
+
+if run_8:
+    import pandas as pd
+
+    import matplotlib.pyplot as plt
+
+    rdkit = pd.read_csv(
+        "/users/yhb18174/TL_project/datasets/all/fit_lipinski/all_rdkit.csv",
+        index_col="ID",
+    )
+
+    x_col = "MolWt_rdkit"
+    y_col = "AvgIpc_rdkit"
+
+    plot_df = rdkit[[x_col, y_col]].dropna()
+
+    ipc_cutoff = plot_df[y_col].quantile(0.90)
+    plot_df = plot_df.loc[plot_df[y_col] <= ipc_cutoff]
+
+    plt.figure(figsize=(7, 5))
+    plt.scatter(plot_df[x_col], plot_df[y_col], s=8, alpha=0.35)
+    plt.xlabel("MolWt")
+    plt.ylabel("Ipc")
+    plt.title("MolWt vs AvgIpc")
+    plt.grid(alpha=0.25)
+    plt.tight_layout()
+    plt.savefig("/users/yhb18174/TL_project/datasets/all/descriptor_analysis/MolWt_vs_AvgIpc.png", dpi=300, bbox_inches="tight")

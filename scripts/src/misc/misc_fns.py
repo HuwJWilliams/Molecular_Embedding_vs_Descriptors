@@ -4,6 +4,10 @@ from glob import glob
 import logging
 import sys
 import numpy as np
+from rdkit import Chem
+from rdkit.Chem.Scaffolds import MurckoScaffold
+from collections import defaultdict
+import random
 
 FILE_DIR = Path(__file__).resolve()
 PROJ_DIR = FILE_DIR.parents[3]
@@ -332,3 +336,78 @@ def getMostImportantFeatures(
 def molid2Smiles(molid):
     cleaned_all = pd.read_csv(PROJ_DIR / "datasets" / "all" / "cleaned_all.csv")
     return cleaned_all.loc[cleaned_all["ID"] == molid, "SMILES"].iloc[0]
+
+def genMurckoScaffold(smiles, include_chirality=False):
+    mol=Chem.MolFromSmiles(smiles)
+
+    if mol is None:
+        return None 
+    
+    scaffold = MurckoScaffold.MurckoScaffoldSmiles(
+            mol=mol, includeChirality=include_chirality
+        )
+    
+    return scaffold
+
+def splitByMurckoScaffold(
+    df,
+    smi_col="SMILES",
+    n_cmpds=2000,
+    max_scaff_diversity_pass=5
+):
+
+    scaffold_to_indices = defaultdict(list)
+
+    # Use dataframe indices directly
+    for idx, smi in df[smi_col].items():
+
+        scaffold = genMurckoScaffold(smi)
+
+        if scaffold is not None:
+            scaffold_to_indices[scaffold].append(idx)
+
+    scaffold_groups = list(scaffold_to_indices.values())
+
+    random.shuffle(scaffold_groups)
+
+    for group in scaffold_groups:
+        random.shuffle(group)
+
+    selected = []
+    selected_set = set()
+
+    for group in scaffold_groups:
+
+        if len(selected) >= n_cmpds:
+            break
+
+        if len(group) <= 2:
+            take = 1
+        else:
+            take = min(max_scaff_diversity_pass, len(group))
+
+        remaining = n_cmpds - len(selected)
+        take = min(take, remaining)
+
+        chosen = group[:take]
+
+        selected.extend(chosen)
+        selected_set.update(chosen)
+
+    # Fill remaining slots
+    if len(selected) < n_cmpds:
+
+        remaining_pool = []
+
+        for group in scaffold_groups:
+            for idx in group:
+                if idx not in selected_set:
+                    remaining_pool.append(idx)
+
+        random.shuffle(remaining_pool)
+
+        needed = n_cmpds - len(selected)
+
+        selected.extend(remaining_pool[:needed])
+
+    return df.loc[selected]

@@ -1,8 +1,3 @@
-"""
-Script to run the analysis following the cross-feature predictions
-"""
-
-# region Imports and Pathing
 import sys
 import pandas as pd
 from pathlib import Path
@@ -31,102 +26,7 @@ sys.path.insert(0, str(SRC_DIR / "misc"))
 from misc_fns import getFeatures
 
 paths = getPaths()
-# endregion
 
-# region Setting up Analysis Class and Variables
-v = Visualise(save_all=False)
-print("Visualise class loaded")
-
-# --- Getting default run names
-cp = list(paths["prediction_output_dirs"]["cross_feature_predictions"].keys())
-lcp = list(paths["prediction_output_dirs"]["lipinski_cross_feature_predictions"].keys())
-unique_exp_names = list(set(cp + lcp))
-# endregion
-
-# region Passing Arguments
-
-parser = argparse.ArgumentParser(
-    description="Generating cross-feature analysis"
-    )
-
-parser.add_argument(
-    "--result-dir",
-    default="cross_feature_predictions",
-    help="Directory to look for cross-feature predictions.\
-          Put here the name of dir as it appears in the pathing json (e,g,. 'cross_feature_predictions')"
-)
-
-parser.add_argument(
-    "--run-all",
-    action="store_true",
-    help="Flag to run all available cross-prediction analysis"
-)
-
-parser.add_argument(
-    "--run-experiment",
-    nargs="+",
-    choices=unique_exp_names,
-    help=f"Name of the experiments ran. For full cross-feature predictions:\n{cp}\n" \
-    f"For Lipinski cross-feature predictions:\n{lcp}\n"\
-    "Note: This only works with the original default pathing"
-)
-
-parser.add_argument(
-    "--exclude-low-var",
-    action="store_true",
-    help="Flag to exclude low variance columns"
-)
-
-parser.add_argument(
-    "--show-var",
-    action="store_true",
-    help="Flag to show the variance of target features"
-)
-
-parser.add_argument(
-    "--var-threshold",
-    type=float,
-    default=0.8,
-    help="Fraction of entries which have the same common value \n" \
-    "(i.e., 0.8 = 20 % of values are different from the most common)"
-)
-
-parser.add_argument(
-    "--no-groups",
-    action="store_true",
-    help="Flag to plot individual features (mostly useful for feature sets without groups)"
-)
-
-parser.add_argument(
-    "--skip-cols",
-    nargs="+",
-    help="Feature columns to skip from feature/member bar plots"
-)
-
-parser.add_argument(
-    "--radar-skip-cols",
-    nargs="+",
-    help="Feature columns to skip from radar/group averages only",
-    default=["Ipc"]
-)
-
-parser.add_argument(
-    "--radar-task",
-    default="regression"
-)
-
-parser.add_argument(
-    "--run-avg",
-    action="store_true",
-    help="Flag to average across all specified experiments"
-)
-
-# endregion
-
-# region Parsing Arguments
-args = parser.parse_args()
-cp_dir = paths["prediction_output_dirs"][args.result_dir]
-var_threshold = args.var_threshold
 TASK_METRICS = {
     "regression": {
         "metric": "Pearson_r",
@@ -160,20 +60,6 @@ task_type_map = {
 def _available_metrics(df: pd.DataFrame, wanted: list[str]) -> list[str]:
     return [m for m in wanted if m in df.columns]
 
-
-def resolve_excluded_cols(index, cols):
-    if not cols:
-        return []
-
-    labels = [str(label) for label in index]
-    resolved = set()
-    for col in cols:
-        col = str(col)
-        resolved.update(label for label in labels if label == col)
-        resolved.update(label for label in labels if label.startswith(f"{col}_"))
-
-    return sorted(resolved)
-
 # endregion
 
 # region Function Definitions prior to running
@@ -187,7 +73,8 @@ def avg_results(exp_list):
     avg_df = combined.groupby(level=1).mean(numeric_only=True)
     return avg_df
     
-def get_group_perf_per_task(group_map, exp_perf_df, excl_cols):
+
+def get_group_perf_per_task(group_map, exp_perf_df):
     group_perf_by_task = {}
 
     for task_name, task_cfg in TASK_METRICS.items():
@@ -204,6 +91,7 @@ def get_group_perf_per_task(group_map, exp_perf_df, excl_cols):
         gp_df.to_csv(exp_dir / f"{task_name}_group_perf.csv")
         group_perf_by_task[task_name] = gp_df
     return group_perf_by_task
+
 
 def plot_group_radar_for_val(group_perf_by_task, task):
     palette = sns.color_palette("tab10")
@@ -248,6 +136,7 @@ def plot_group_radar_for_val(group_perf_by_task, task):
             c1=c1,
             c2=c2
         )
+
 
 def plot_members_of_groups(exp_perf_df, group_name, group_members):
     print(f"Plotting performance of individual members for the group {group_name}:")
@@ -315,6 +204,7 @@ def plot_members_of_groups(exp_perf_df, group_name, group_members):
                 f"Skipping group '{group_name}' for metric '{metric_col}' "
                 f"due to plotting error: {e}"
             )
+
 
 def plot_no_group_bars(exp_perf_df: pd.DataFrame, l_var_col: list[str]) -> None:
     """
@@ -414,80 +304,3 @@ def plot_no_group_bars(exp_perf_df: pd.DataFrame, l_var_col: list[str]) -> None:
             bbox_inches="tight",
         )
         plt.close()
-
-
-# endregion
-
-# region Running script functionality
-if args.run_all:
-    exp_list = list(cp_dir.keys())
-
-elif not args.run_all and bool(args.run_experiment):
-    exp_list = args.run_experiment
-
-else:
-    raise ValueError("You must set either '--run-all' or specify results with '--run-experiment'"\
-                     f"Experiments to choose from:\n{unique_exp_names}")
-
-if args.run_avg:
-    wrds = exp_list[0].split("_")
-    pred = wrds[1]
-    list_to_avg = exp_list
-    exp_list=[f"pred_{pred}_tr_avg"]
-
-for exp in exp_list:
-    wrds = exp.split("_")
-    pred = wrds[1]
-    tr = wrds[3]
-    exp_dir = cp_dir[exp]
-
-    if args.run_avg:
-        exp_perf_df = avg_results(list_to_avg)
-    else:
-        exp_perf_df_path = exp_dir / f"{exp}.csv"
-        exp_perf_df = pd.read_csv(Path(exp_perf_df_path), index_col=0)
-
-    pred_ft_df = Path(paths["full_features"]["all"][pred])
-    
-    l_var_col = getLowVarianceColumns(
-        pred_ft_df, threshold=var_threshold
-        )
-    
-    excl_cols = l_var_col if args.exclude_low_var else []
-    if args.skip_cols:
-        excl_cols.extend(resolve_excluded_cols(exp_perf_df.index, args.skip_cols))
-    radar_excl_cols = list(excl_cols)
-    radar_excl_cols.extend(resolve_excluded_cols(exp_perf_df.index, args.radar_skip_cols))
-    
-    if args.show_var:
-        desc_an_dir = pred_ft_df.parent / "descriptor_analysis"
-        save_name = f"low_variance_features_{pred}"
-
-        if not Path(desc_an_dir / save_name).exists():
-            print(f"Plotting low variance columns in following path:\n{desc_an_dir / save_name}")
-            
-            plotLowVarianceColumns(
-                input_df=pred_ft_df,
-                threshold=var_threshold,
-                output_path=desc_an_dir,
-                save_name=save_name)
-        else:
-            print(f"Low variance column plot exists in following path:\n{desc_an_dir / save_name}")
-
-
-    if not args.no_groups:
-        group_map=getGroups(pred)
-        group_perf_by_task=get_group_perf_per_task(group_map=group_map, exp_perf_df=exp_perf_df, excl_cols=radar_excl_cols)
-        plot_group_radar_for_val(group_perf_by_task=group_perf_by_task, task=args.radar_task)
-        
-
-        for group_name, group_members in group_map.items():
-            plot_members_of_groups(
-                group_name=group_name, group_members=group_members, exp_perf_df=exp_perf_df
-                )
-
-    # --- Plotting without groups (always run for all available task metrics)
-    plot_no_group_bars(exp_perf_df=exp_perf_df, l_var_col=l_var_col)
-
-
-# endregion

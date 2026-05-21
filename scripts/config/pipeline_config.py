@@ -20,13 +20,18 @@ DEFAULT_TARGET_COLUMNS = {
 SUPPORTED_FEATURE_SETS = (
     "rdkit",
     "mordred",
+    "morgan",
+    "maccs",
     "chemberta",
     "chembertasey",
     "molformer",
     "molformer-c3-1b",
     "selformer",
-    "morgan",
-    "maccs",
+    "ft-chemberta",
+    "ft-chembertasey",
+    "ft-molformer",
+    "ft-molformer-c3-1b",
+    "ft-selformer"
 )
 
 TRANSFORMER_FEATURE_SPECS: dict[str, dict[str, Any]] = {

@@ -193,10 +193,6 @@ class TL():
             self.logger.debug(f"Predicting target_column...")
             target_column = str(target_column).strip()
 
-            if skip_existing and target_column in completed_targets:
-                self.logger.info(f"Skipping {target_column} ({i+1}/{len(targets_df.columns)})... already processed")
-                continue
-
             if target_column.upper() == "SMILES":
                 self.logger.info(f"Skipping {target_column}: SMILES column detected")
                 continue
@@ -271,6 +267,35 @@ class TL():
                 )
                 combined_data = combined_data.loc[combined_data[target_column].notna()].copy()
                 combined_data[target_column] = combined_data[target_column].astype(int)
+
+            if is_class_like and n_unique == 2:
+                expected_task_type = "binary_classification"
+            elif is_class_like and n_unique <= 6:
+                expected_task_type = "multiclass_classification"
+            else:
+                expected_task_type = "regression"
+
+            if skip_existing and target_column in completed_targets:
+                previous_task_type = None
+                if "task_type" in total_performance_df.columns:
+                    previous_task_type = total_performance_df.loc[target_column, "task_type"]
+
+                if previous_task_type == expected_task_type:
+                    self.logger.info(
+                        f"Skipping {target_column} ({i+1}/{len(targets_df.columns)})... "
+                        f"already processed as {previous_task_type}"
+                    )
+                    continue
+
+                self.logger.info(
+                    f"Re-running {target_column} ({i+1}/{len(targets_df.columns)}): "
+                    f"previous task_type={previous_task_type}, expected task_type={expected_task_type}"
+                )
+
+            print(target_column)
+            print("n_unique:", n_unique)
+            print("unique values:", sorted(target_series.dropna().unique()))
+            print("is_class_like:", is_class_like)
 
             # If binary use classifier
             if is_class_like and n_unique == 2:
@@ -684,8 +709,6 @@ class TL():
 
         return total_performance_df
             
-
-
     def trainSingleTargetRFModel(
         self,
         data: pd.DataFrame,
@@ -802,10 +825,9 @@ class TL():
             )
             targ_true = targets_true[target_column]
 
-            targ_pred, targ_true, perf_dict = calculatePerformance(
-                targ_preds=targ_pred,
-                targ_true=targ_true,
-                logger=self.logger
+            perf_dict = self._calculate_performance(
+                pred_targs=targ_pred,
+                true_targs=targ_true
             )
 
             if save_preds:

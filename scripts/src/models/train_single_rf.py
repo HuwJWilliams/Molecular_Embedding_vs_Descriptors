@@ -41,6 +41,8 @@ p.add_argument("--lipinski", action="store_true", help="Flag to ensure mols fit 
 p.add_argument("--repeats", type=int, default=1, help="Number of independent RF repeats to run")
 p.add_argument("--base-seed", type=int, default=42, help="Base random seed used to seed each repeat")
 p.add_argument("--n-resamples", type=int, default=50, help="Number of internal resamples per repeat")
+p.add_argument("--max_nan_frac", type=float, default=0, help="Fraction of NaN rows to drop a column")
+p.add_argument("--corr-threshold", type=float, default=0.9, help="Correlation threshold for training features")
 # endregion
 
 # region Running Script
@@ -50,6 +52,8 @@ if __name__ == "__main__":
     feat = args.feature_set
     target_col = resolve_target_column(task, args.target_column)
     identifier = args.identifier or f"{task}_{feat}"
+    max_nan_frac = args.max_nan_frac
+    corr_threshold = args.corr_threshold
 
     in_features = data_paths["full_features"][task][feat]
     in_targets  = data_paths["targets"][task]
@@ -77,15 +81,15 @@ if __name__ == "__main__":
     # Drop metadata and any descriptor-generation error strings before RF fitting.
     X, clean_report = clean_feature_df(
         X,
-        max_nan_fraction=0.10,
+        max_nan_fraction=max_nan_frac,
         drop_constant_cols=True,
-        median_impute=True,
-        correlation_threshold=None,
+        median_impute=False,
+        correlation_threshold=corr_threshold,
     )
 
     print("Feature cleaning report:")
     print(f"  Dropped metadata cols: {len(clean_report['dropped_metadata'])}")
-    print(f"  Dropped >10% NaN cols: {len(clean_report.get('dropped_high_nan_cols', []))}")
+    print(f"  Dropped >{max_nan_frac * 100}% NaN cols: {len(clean_report.get('dropped_high_nan_cols', []))}")
     print(f"  Dropped constant cols: {len(clean_report['dropped_constant_cols'])}")
     print(f"  Median-imputed cols: {len(clean_report['median_imputed_cols'])}")
     print(f"  Dropped correlated cols: {len(clean_report['dropped_correlated_cols'])}")
@@ -158,8 +162,8 @@ if __name__ == "__main__":
             calc_perf=True,
             save_preds=True,
             save_path=repeat_dir,
-            preds_filename="last_20pct_pred",
-            perf_filename="last_20_pct_perf",
+            preds_filename="external_preds",
+            perf_filename="external_perf",
         )
 
         repeat_perf = {
@@ -175,39 +179,39 @@ if __name__ == "__main__":
             **internal_perf,
         })
 
+        (repeat_dir / "external_perf.json").unlink(missing_ok=True)
+        (repeat_dir / f"{target_col}_internal_performance_dict.json").unlink(missing_ok=True)
+        (repeat_dir / "training_data" / "performance_stats.json").unlink(missing_ok=True)
+
         pred_name = f"repeat_{repeat_n:03d}"
-        saved_pred_df = pd.read_csv(repeat_dir / "last_20pct_pred.csv.gz", index_col="ID")
+        saved_pred_df = pd.read_csv(repeat_dir / "external_preds.csv.gz", index_col="ID")
         repeat_pred_series.append(saved_pred_df[target_col].rename(pred_name))
 
-    perf_df = pd.DataFrame(repeat_perf_records).set_index("repeat")
-    perf_df.to_csv(out_dir / "repeat_external_performance.csv")
+    def summarise_performance(records: list[dict]) -> dict:
+        perf_df = pd.DataFrame(records).set_index("repeat")
+        numeric_perf = perf_df.select_dtypes(include="number").drop(columns=["seed"], errors="ignore")
 
-    internal_perf_df = pd.DataFrame(repeat_internal_records).set_index("repeat")
-    internal_perf_df.to_csv(out_dir / "repeat_internal_performance.csv")
+        return {
+            "individual": perf_df.reset_index().to_dict(orient="records"),
+            "mean": {
+                metric: round(float(value), 6)
+                for metric, value in numeric_perf.mean(axis=0).items()
+            },
+            "std": {
+                metric: round(float(value), 6)
+                for metric, value in numeric_perf.std(axis=0).items()
+            },
+        }
 
-    numeric_perf = perf_df.select_dtypes(include="number").drop(columns=["seed"], errors="ignore")
-    perf_mean = numeric_perf.mean(axis=0).to_dict()
-    perf_std = numeric_perf.std(axis=0).to_dict()
-
-    average_perf = {
-        metric: round(float(value), 6)
-        for metric, value in perf_mean.items()
-    }
-    performance_summary = {
+    rf_performance = {
         "n_repeats": args.repeats,
         "base_seed": args.base_seed,
-        "mean": average_perf,
-        "std": {
-            metric: round(float(value), 6)
-            for metric, value in perf_std.items()
-        },
+        "internal": summarise_performance(repeat_internal_records),
+        "external": summarise_performance(repeat_perf_records),
     }
 
-    with open(out_dir / "repeat_external_performance_summary.json", "w") as f:
-        json.dump(performance_summary, f, indent=4)
-
-    with open(out_dir / "last_20_pct_perf.json", "w") as f:
-        json.dump(average_perf, f, indent=4)
+    with open(out_dir / "rf_performance.json", "w") as f:
+        json.dump(rf_performance, f, indent=4)
 
     if repeat_pred_series:
         pred_df = pd.concat(repeat_pred_series, axis=1)

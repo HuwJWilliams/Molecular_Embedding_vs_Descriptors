@@ -337,6 +337,7 @@ class RFRegressor(_RFBase):
         search_seeds: list = None,
         final_rf_seed: int = None,
         final_model_name: str = "final_model",
+        save_training_ids_only: bool=True
     ):
         cv_seeds, search_seeds = self._prepare_seed_lists(
             n_resamples=n_resamples,
@@ -445,16 +446,22 @@ class RFRegressor(_RFBase):
             with open(f"{save_path}/training_data/best_params.json", "w") as file:
                 json.dump(best_params, file, indent=4)
 
-            features.to_csv(
-                f"{save_path}/training_data/training_features.csv.gz",
-                index_label="ID",
-                compression="gzip",
-            )
-            targets.to_csv(
-                f"{save_path}/training_data/training_targets.csv.gz",
-                index_label="ID",
-                compression="gzip",
-            )
+            if not save_training_ids_only:
+                features.to_csv(
+                    f"{save_path}/training_data/training_features.csv.gz",
+                    index_label="ID",
+                    compression="gzip",
+                )
+                targets.to_csv(
+                    f"{save_path}/training_data/training_targets.csv.gz",
+                    index_label="ID",
+                    compression="gzip",
+                )
+            else:
+                targets.index.to_frame(index=False, name="ID").to_csv(
+                    f"{save_path}/training_data/training_ids.csv",
+                    index=False,
+                )
 
         self.logger.info(
             f"Performance of final RandomForestRegressor model:\n{self.performance_dict}\n"
@@ -739,15 +746,17 @@ class RFClassifier(_RFBase):
         best_params["random_state"] = final_rf_seed
         best_params = self._cast_best_params(best_params)
 
-        self.performance_dict = {
-            "Accuracy": round(float(np.nanmean([perf["acc"] for perf in self.performance_ls])), 4),
-            "Sensitivity": round(float(np.nanmean([perf["sens"] for perf in self.performance_ls])), 4),
-            "Specificity": round(float(np.nanmean([perf["spec"] for perf in self.performance_ls])), 4),
-            "PPV": round(float(np.nanmean([perf["ppv"] for perf in self.performance_ls])), 4),
-            "NPV": round(float(np.nanmean([perf["npv"] for perf in self.performance_ls])), 4),
-            "AUC": round(float(np.nanmean([perf["auc"] for perf in self.performance_ls])), 4),
-            "MCC": round(float(np.nanmean([perf["mcc"] for perf in self.performance_ls])), 4),
-        }
+        if not self.use_multiclass:
+            self.performance_dict = {
+                "Accuracy": round(float(np.nanmean([perf.get("acc", np.nan) for perf in self.performance_ls])), 4),
+                "Sensitivity": round(float(np.nanmean([perf.get("sens", np.nan) for perf in self.performance_ls])), 4),
+                "Specificity": round(float(np.nanmean([perf.get("spec", np.nan) for perf in self.performance_ls])), 4),
+                "PPV": round(float(np.nanmean([perf.get("ppv", np.nan) for perf in self.performance_ls])), 4),
+                "NPV": round(float(np.nanmean([perf.get("npv", np.nan) for perf in self.performance_ls])), 4),
+                "AUC": round(float(np.nanmean([perf.get("auc", np.nan) for perf in self.performance_ls])), 4),
+                "MCC": round(float(np.nanmean([perf.get("mcc", np.nan) for perf in self.performance_ls])), 4),
+            }
+
 
         avg_feat_importance = np.mean(feat_importance_ls, axis=0)
         feat_importance_df = pd.DataFrame(

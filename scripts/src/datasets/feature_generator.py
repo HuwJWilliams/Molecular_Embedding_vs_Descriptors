@@ -4,17 +4,30 @@ import numpy as np
 import logging
 from pathlib import Path
 import sys
+import matplotlib.pyplot as plt
 from rdkit import Chem
 from rdkit.Chem import Descriptors, AllChem, rdFingerprintGenerator, MACCSkeys
 from mordred import Calculator, descriptors
-from transformers import AutoTokenizer, AutoModel
+from transformers import (
+    AutoTokenizer, 
+    AutoModel,
+    AutoConfig,
+    AutoModelForSequenceClassification,
+    TrainingArguments,
+    EarlyStoppingCallback,
+    Trainer
+    )
+from sklearn.preprocessing import StandardScaler
+from sklearn.metrics import (
+    mean_squared_error,
+    mean_absolute_error,
+    r2_score
+)
+from scipy.stats import pearsonr
 import torch
 import selfies
-
-try:
-    import deepchem as dc
-except ImportError:
-    dc = None
+from sklearn.model_selection import train_test_split
+from datasets import Dataset
 
 FILE_DIR = Path(__file__).resolve()
 PROJ_DIR = FILE_DIR.parents[3]
@@ -22,11 +35,11 @@ SCRIPTS_DIR = PROJ_DIR / "scripts"
 SRC_DIR = SCRIPTS_DIR / "src"
 
 sys.path.insert(0, str(SRC_DIR / "pathing"))
-from get_paths import getPaths
-
 sys.path.insert(0, str(SRC_DIR / "misc"))
-from misc_fns import setupLogger
 sys.path.insert(0, str(SCRIPTS_DIR / "config"))
+
+from get_paths import getPaths
+from misc_fns import setupLogger
 from pipeline_config import TRANSFORMER_FEATURE_SPECS
 
 LOG_LEVEL = logging.DEBUG
@@ -70,6 +83,7 @@ class FeatureGenerator():
         self.feature_set = feature_set.lower()
         self.tokeniser = "Uninitialised"
         self.encoder = "Uninitialised"
+        self.fine_tuning_model = "Uninitialised"
 
         transformer_spec = TRANSFORMER_FEATURE_SPECS.get(self.feature_set)
         if transformer_spec:
@@ -83,16 +97,7 @@ class FeatureGenerator():
 
         return
 
-    def _require_deepchem(self) -> None:
-        """Guard DeepChem-dependent feature paths without breaking other backends."""
-        if dc is None:
-            raise ImportError(
-                "DeepChem is required for this feature set. "
-                "Use the tlp_py311 environment or install deepchem in the active env."
-            )
-
-    # ====== Feature Calculations
-
+    # region ====== Feature Calculations
     def calcRDKit(
             self,
             smiles_ls: list[str],
@@ -194,9 +199,9 @@ class FeatureGenerator():
             self.logger.info(f"Mordred data frame created with shape: {final_df.shape}")
 
         return final_df
-    
-        
-    # ====== Fingerprint Calculations
+    # endregion    
+
+    # region ====== Fingerprint Calculations
 
     def calcMorganFingerprints(
             self,
@@ -240,7 +245,6 @@ class FeatureGenerator():
 
         return fp_df
         
-
     def calcMACCSKeys(
       self,
       smiles_ls: list[str],
@@ -275,9 +279,9 @@ class FeatureGenerator():
         fp_df.index.name = "ID"
 
         return fp_df
-        
-    # ====== Embedding Calculations
-
+    # endregion    
+    
+    # region ====== Frozen Embedding Calculations
     def calcChemBERTa(
             self,
             smiles_ls: list[str],
@@ -416,10 +420,256 @@ class FeatureGenerator():
             min_unique=min_unique,
             pooling=pooling,
         )
-    
+    # endregion
 
-    # ====== Batch Feature Calculations
- 
+    # region ====== Fine-Tuning Transformers to task
+    def fineTuneTransformer(
+                self,
+                smiles_ls: list[str],
+                ids: list[str],
+                targets: list[float],
+                model_label: str,
+                batch_size: int,
+                max_token_len: int,
+                pooling: str,
+                output_dir: Path | str,
+                test_frac: float=0.2,
+                early_stopping_patience: int = 0,
+                dropout_rate: float = 0.1,
+                training_kwargs: dict | None = None,
+    ):
+        if training_kwargs is None:
+            training_kwargs = {
+                "num_train_epochs": 3,
+                "learning_rate": 2e-5,
+                "weight_decay": 0.01,
+                "eval_strategy": "epoch",
+                "save_strategy": "epoch",
+                "logging_strategy": "steps",
+                "logging_steps": 25,
+                "load_best_model_at_end": True,
+                "metric_for_best_model": "mse",
+                "greater_is_better": False,
+                "report_to": "none",
+                "max_grad_norm": 1.0
+            }
+
+        if pooling not in {"cls", "mean"}:
+            raise ValueError("pooling must be either 'cls' or 'mean'.")
+
+        input_texts = smiles_ls
+        if self.feature_set == "selformer":
+            targets_by_id = dict(zip(ids, targets))
+            ids, input_texts, _ = self._smiles2selfies(smiles_ls=smiles_ls, id_ls=ids)
+            targets = [targets_by_id[mol_id] for mol_id in ids]
+
+        if len(input_texts) != len(ids):
+            self.logger.error(
+                f"Length of input texts and IDs not the same."
+                f"(texts = {len(input_texts)}, IDs = {len(ids)})"
+            )
+            raise ValueError("len(input_texts) != len(ids)")
+        
+        if len(input_texts) != len(targets):
+            self.logger.error(
+                f"Length of input texts and targets not the same."
+                f"(texts = {len(input_texts)}, IDs = {len(ids)})"
+            )
+            raise ValueError("len(input_texts) != len(targets)")
+
+        self.logger.info(f"Creating {model_label} fine-tuned embeddings for {len(input_texts)} entries.")
+        self.logger.debug(f"Tokeniser:\n{self.tokeniser}\nEncoder:\n{self.encoder}")
+        self.logger.info(f"Pooling strategy: {pooling}")
+
+        (
+            train_txt,
+            val_txt,
+            train_targ,
+            val_targ,
+            train_ids,
+            val_ids
+         ) = train_test_split(
+             input_texts, 
+             targets, 
+             ids, 
+             test_size=test_frac
+             )
+        
+        scaler = StandardScaler()
+
+        train_targ = scaler.fit_transform(np.asarray(train_targ).reshape(-1, 1)).reshape(-1)
+        val_targ = scaler.transform(np.asarray(val_targ).reshape(-1, 1)).reshape(-1)
+    
+        train_data = Dataset.from_dict({
+            "ID": train_ids,
+            "text": train_txt,
+            "labels": train_targ
+        })
+
+        val_data = Dataset.from_dict({
+            "ID": val_ids,
+            "text": val_txt,
+            "labels": val_targ
+        })
+
+        def __tokenise_batch(batch):
+            return self.tokeniser(
+                batch["text"],
+                padding=True,
+                truncation=True,
+                max_length=max_token_len,
+                add_special_tokens=True
+            )
+        
+        train_data=train_data.map(__tokenise_batch, batched=True)
+        train_data = train_data.remove_columns(["ID", "text"])
+        train_data.set_format("torch")
+
+        val_data=val_data.map(__tokenise_batch, batched=True)
+        val_data = val_data.remove_columns(["ID", "text"])
+        val_data.set_format("torch")
+
+        model_name = TRANSFORMER_FEATURE_SPECS.get(self.feature_set)["model"]
+        fine_tune_config = AutoConfig.from_pretrained(
+            model_name,
+            trust_remote_code=True,
+        )
+
+        dropout_attributes = [    
+            "hidden_dropout_prob",
+            "attention_probs_dropout_prob",
+            "classifier_dropout"]
+        
+        for attr in dropout_attributes:
+            if hasattr(fine_tune_config, attr):
+                setattr(fine_tune_config, attr, dropout_rate)
+
+        fine_tune_config.problem_type = "regression"
+        fine_tune_config.num_labels = 1
+
+        self.fine_tuning_model = AutoModelForSequenceClassification.from_pretrained(
+            model_name,
+            trust_remote_code=True,
+            config=fine_tune_config
+        )
+
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.fine_tuning_model.to(device)
+
+        training_kwargs = dict(training_kwargs)
+        training_kwargs["output_dir"] = str(output_dir)
+        training_kwargs["per_device_train_batch_size"] = batch_size
+        training_kwargs["per_device_eval_batch_size"] = batch_size
+        training_args = TrainingArguments(**training_kwargs)
+
+        def compute_metrics(eval_pred):
+            pred_logits, true = eval_pred
+            pred = pred_logits.squeeze()
+
+            pred = np.asarray(pred_logits).reshape(-1)
+            true = np.asarray(true).reshape(-1)
+
+            errors = true - pred
+            bias = np.mean(errors)
+            sdep = (np.mean((true - pred - (np.mean(true - pred))) ** 2)) ** 0.5
+            mse = mean_squared_error(true, pred)
+            rmse = np.sqrt(mse)
+            r2 = r2_score(true, pred)
+            
+            try:
+                r_pearson, p_pearson = pearsonr(true, pred)
+            except Exception:
+                r_pearson, p_pearson = np.nan, np.nan
+
+            return {
+                "bias": bias,
+                "sdep": sdep,
+                "mse": mse,
+                "rmse": rmse,
+                "r2": r2,
+                "r_pearson": r_pearson,
+                "p_pearson": p_pearson,
+            }
+
+        callbacks = []
+
+        if early_stopping_patience > 0:
+            callbacks.append(
+                EarlyStoppingCallback(
+                    early_stopping_patience=early_stopping_patience
+                )
+            )
+
+        trainer = Trainer(
+            model=self.fine_tuning_model,
+            args=training_args,
+            train_dataset=train_data,
+            eval_dataset=val_data,
+            tokenizer=self.tokeniser,
+            compute_metrics=compute_metrics,
+            callbacks=callbacks
+        )
+
+        self.logger.info("Starting regression fine-tuning.")
+        train_result=trainer.train()
+        self._save_training_mse_curve(
+            log_history=trainer.state.log_history,
+            output_dir=output_dir,
+        )
+
+        self.logger.info("Evaluating fine-tuned regression model.")
+        eval_result = trainer.evaluate()
+
+        self.fine_tuning_model = trainer.model
+        self.fine_tuning_model.eval()
+
+        self.encoder = self.fine_tuning_model.base_model
+        self.encoder.eval()
+
+        return {
+            "trainer": trainer,
+            "model": self.fine_tuning_model,
+            "train_metrics": train_result.metrics,
+            "eval_metrics": eval_result,
+            "output_dir": output_dir,
+            "train_ids": train_ids,
+            "val_ids": val_ids
+        }
+
+    def _save_training_mse_curve(
+            self,
+            log_history: list[dict],
+            output_dir: Path | str,
+    ):
+        output_dir = Path(output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        log_df = pd.DataFrame(log_history)
+        if log_df.empty:
+            self.logger.warning("No trainer log history available for plotting.")
+            return
+
+        log_df.to_csv(output_dir / "fine_tuning_log_history.csv", index=False)
+
+        fig, ax = plt.subplots(figsize=(7, 4))
+        plotted = False
+        if "eval_mse" in log_df.columns:
+            eval_df = log_df.dropna(subset=["eval_mse"])
+            if not eval_df.empty:
+                ax.plot(eval_df["epoch"], eval_df["eval_mse"], marker="o", label="eval MSE")
+                plotted = True
+
+        if plotted:
+            ax.set_xlabel("Epoch")
+            ax.set_ylabel("Loss / MSE")
+            ax.legend()
+            fig.tight_layout()
+            fig.savefig(output_dir / "fine_tuning_mse_loss.png", dpi=300)
+        plt.close(fig)
+
+
+
+    # region ====== Batch Feature Calculations
     def calcBatchFeatures(
             self,
             smiles_ls: list[str],
@@ -430,6 +680,7 @@ class FeatureGenerator():
             fpath: str | Path = "./",
             compression: str | None=None,
             drop_cols: bool=False,
+            pooling: str="mean",
     ):
         
         """
@@ -447,6 +698,7 @@ class FeatureGenerator():
         fpath               str | Path  Path to save the descriptor datasets to
         compression         str         Type of compression to save dataset as (e.g., "gzip")
         drop_cols           bool        Flag to drop columns with low variance
+        pooling             str         Pooling strategy for transformer embeddings
         """
 
         self.logger.info(f"Calculating {self.feature_set} descriptors in batches of {batch_size}.")
@@ -472,7 +724,7 @@ class FeatureGenerator():
                 id for id in id_ls[i : i + batch_size]
             ]
 
-            df = self._calculate_features(smi_batch, id_batch, ignore_3D, max_token_len)
+            df = self._calculate_features(smi_batch, id_batch, ignore_3D, max_token_len, pooling)
             
             fpath_str = str(fpath).replace('*', str(current_batch_no))
             base_path = Path(fpath_str)
@@ -516,8 +768,9 @@ class FeatureGenerator():
         )
 
         return df
+    # endregion
 
-    # ====== Trimming Rows that are outliers
+    # region====== Trimming Rows that are outliers
     def trimRowsByPercentile(
             self,
             input_df: str | Path | pd.DataFrame,
@@ -611,9 +864,9 @@ class FeatureGenerator():
             return trimmed_df, removed_df
 
         return trimmed_df
+    # endregion
 
-
-    # ====== Hidden Functions
+    # region ====== Hidden Functions
 
     def _calc_transformer_embeddings(
                 self,
@@ -1057,7 +1310,8 @@ class FeatureGenerator():
             smi_batch: list[str],
             id_batch: list[str],
             ignore_3D: bool,
-            max_token_len: int
+            max_token_len: int,
+            pooling: str="mean",
     ):
         """
         Function to package the feature generation functions
@@ -1075,30 +1329,35 @@ class FeatureGenerator():
                 id_ls=id_batch,
                 batch_size=64,
                 max_token_len=max_token_len,
+                pooling=pooling,
             ),
             "chembertasey": lambda: self.calcChemBERTa(
                 smiles_ls=smi_batch,
                 id_ls=id_batch,
                 batch_size=64,
                 max_token_len=max_token_len,
+                pooling=pooling,
             ),
             "molformer": lambda: self.calcMolFormer(
                 smiles_ls=smi_batch,
                 id_ls=id_batch,
                 batch_size=64,
                 max_token_len=max_token_len,
+                pooling=pooling,
             ),
             "molformer-c3-1b": lambda: self.calcMolFormer(
                 smiles_ls=smi_batch,
                 id_ls=id_batch,
                 batch_size=64,
                 max_token_len=max_token_len,
+                pooling=pooling,
             ),
             "selformer": lambda: self.calcSELFormer(
                 smiles_ls=smi_batch,
                 id_ls=id_batch,
                 batch_size=64,
                 max_token_len=max_token_len,
+                pooling=pooling,
             ),
             "morgan": lambda: self.calcMorganFingerprints(smiles_ls=smi_batch, id_ls=id_batch),
             "maccs": lambda: self.calcMACCSKeys(smiles_ls=smi_batch, id_ls=id_batch),
@@ -1141,3 +1400,5 @@ class FeatureGenerator():
             )
             
         return valid_ids, valid_selfies, invalid_ids
+    
+    # endregion
