@@ -25,7 +25,7 @@ from get_paths import addNewDatasetPaths, getPaths
 sys.path.insert(0, str(SRC_DIR / "datasets"))
 from standardise_dataset import cleanAndSaveDataset
 
-PATHS_JSON = str(SRC_DIR / "pathing" / "test_paths.json")
+PATHS_JSON = str(SRC_DIR / "pathing" / "paths.json")
 paths = getPaths(PATHS_JSON)
 # endregion
 
@@ -81,6 +81,7 @@ parser.add_argument(
 
 parser.add_argument(
     "--rename-cols",
+    default=None,
     help="Dictionary to rename columns (e.g., \n \
         {'Boiling Point {measured, converted}: 'Boiling _Point, 'Unit, K' : 'Unit'})"
 )
@@ -92,11 +93,15 @@ dataset_name = args.dataset_name
 
 raw_data_path = Path(paths["raw_data"][dataset_name])
 data_name = raw_data_path.stem
-cleaned_data_path = paths["imp_dirs"]["datasets_dir"] / "targets" / f"{data_name}_cleaned.csv"
+cleaned_data_path = (
+    paths["imp_dirs"]["datasets_dir"] / dataset_name / f"{data_name}_cleaned.csv"
+)
 
 usecols = [args.smiles_col, args.target_col]
 if bool(args.id_col):
     usecols.append(args.id_col)
+
+rename_cols = json.loads(args.rename_cols) if args.rename_cols else None
 
 # endregion
 
@@ -108,7 +113,7 @@ cleanAndSaveDataset(
     target_col=args.target_col,
     smiles_col=args.smiles_col,
     id_col=args.id_col,
-    rename=json.loads(args.rename_cols),
+    rename=rename_cols,
     shuffle_rows=args.shuffle_data,
     plot_feature_distribution=args.plot_distribution,
     id_prefix=args.id_prefix
