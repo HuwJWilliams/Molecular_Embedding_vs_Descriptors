@@ -723,7 +723,7 @@ if run_6:
     print(len(rdkit_df.columns))
 
 
-run_7 = True
+run_7 = False
 if run_7:
     import selfies
     from transformers import AutoTokenizer
@@ -731,7 +731,7 @@ if run_7:
     sys.path.insert(0, "/users/yhb18174/TL_project/scripts/config/")
     from pipeline_config import TRANSFORMER_FEATURE_SPECS
 
-    p = "/users/yhb18174/TL_project/datasets/reorganisation_energies/DS3-800.csv"
+    p = "/users/yhb18174/TL_project/datasets/reorganisation_energies/DS3_8000.csv"
     df = pd.read_csv(p)
     df = df.dropna(subset=["SMILES"]).copy()
     df["SMILES"] = df["SMILES"].astype(str)
@@ -779,7 +779,7 @@ if run_7:
             print(f"SELFIES: {stats_df.loc[max_idx, 'SELFIES']}")
 
 
-run_8 = False
+run_8 = True
 
 if run_8:
     import pandas as pd
@@ -791,19 +791,120 @@ if run_8:
         index_col="ID",
     )
 
-    x_col = "MolWt_rdkit"
-    y_col = "AvgIpc_rdkit"
+    count = 0
 
-    plot_df = rdkit[[x_col, y_col]].dropna()
+    for col in rdkit.columns:
+        n_unique = rdkit[col].nunique(dropna=True)
 
-    ipc_cutoff = plot_df[y_col].quantile(0.90)
-    plot_df = plot_df.loc[plot_df[y_col] <= ipc_cutoff]
+        if n_unique < 6 and n_unique > 2:
+            print(col, n_unique)
+            count += 1
 
-    plt.figure(figsize=(7, 5))
-    plt.scatter(plot_df[x_col], plot_df[y_col], s=8, alpha=0.35)
-    plt.xlabel("MolWt")
-    plt.ylabel("Ipc")
-    plt.title("MolWt vs AvgIpc")
-    plt.grid(alpha=0.25)
-    plt.tight_layout()
-    plt.savefig("/users/yhb18174/TL_project/datasets/all/descriptor_analysis/MolWt_vs_AvgIpc.png", dpi=300, bbox_inches="tight")
+    print(count)
+
+    # print(np.min(rdkit["NumAromaticRings_rdkit"]))
+    # print(np.max(rdkit["NumAromaticRings_rdkit"]))
+
+    # x_col = "MolWt_rdkit"
+    # y_col = "AvgIpc_rdkit"
+
+    # plot_df = rdkit[[x_col, y_col]].dropna()
+
+    # ipc_cutoff = plot_df[y_col].quantile(0.90)
+    # plot_df = plot_df.loc[plot_df[y_col] <= ipc_cutoff]
+
+    # plt.figure(figsize=(7, 5))
+    # plt.scatter(plot_df[x_col], plot_df[y_col], s=8, alpha=0.35)
+    # plt.xlabel("MolWt")
+    # plt.ylabel("Ipc")
+    # plt.title("MolWt vs AvgIpc")
+    # plt.grid(alpha=0.25)
+    # plt.tight_layout()
+    # plt.savefig("/users/yhb18174/TL_project/datasets/all/descriptor_analysis/MolWt_vs_AvgIpc.png", dpi=300, bbox_inches="tight")
+
+
+run_9 = False
+if run_9:
+
+    from glob import glob
+
+    files = glob("/users/yhb18174/TL_project/results/lipinski_embeddings_and_descriptor_predictions/pred*/pred*.csv")
+
+    for f in files:
+        print(f"processing file: {f}")
+        df = pd.read_csv(f, index_col=0)
+
+        task_type = df["task_type"]
+
+        mask = (
+            task_type.isna()
+            | task_type.astype(str).str.strip().eq("")
+            | task_type.astype(str).str.strip().str.lower().eq("nan")
+        )
+
+        print("rows to update:", mask.sum())
+
+        df.loc[mask, "task_type"] = "regression"
+        df.index.name = "Feature"
+        df.to_csv(f, index=True)
+
+
+run_10 = False
+
+if run_10:
+    from chembl_webresource_client.new_client import new_client
+    import pandas as pd
+
+    activity = new_client.activity
+
+    records = activity.filter(
+        target_chembl_id="CHEMBL203",
+        standard_type="IC50",
+        standard_value__isnull=False
+    ).only([
+        "molecule_chembl_id",
+        "canonical_smiles",
+        "standard_type",
+        "standard_relation",
+        "standard_value",
+        "standard_units",
+        "pchembl_value",
+        "assay_chembl_id",
+        "target_chembl_id",
+        "target_organism",
+        "document_chembl_id"
+    ])
+
+    df = pd.DataFrame.from_records(records)
+
+    print(df.head())
+    print(df.shape)
+
+    df_ic50 = df[
+    (df["standard_units"] == "nM") &
+    (df["standard_value"].notna())
+    ].copy()
+
+    df_ic50["standard_value"] = df_ic50["standard_value"].astype(float)
+
+    print(df_ic50.head())
+    print(df_ic50.shape)
+
+    df_ic50.to_csv("/users/yhb18174/Downloads/CHEMBL203_IC50.csv", index=False)
+
+    df = pd.read_csv("/users/yhb18174/Downloads/CHEMBL203_IC50.csv")
+    df = df.dropna(subset=["standard_value", "canonical_smiles"])
+
+    df = df[
+        (df["standard_relation"] == "=") &
+        (df["standard_units"] == "nM") &
+        (df["standard_type"] == "IC50")
+    ].copy()
+
+    df["standard_value"] = pd.to_numeric(df["standard_value"], errors="coerce")
+    df = df[df["standard_value"] > 0]
+
+    df["pIC50"] = 9 - np.log10(df["standard_value"])
+    df.to_csv("/users/yhb18174/Downloads/CHEMBL203_pIC50.csv", index_label="assay_chembl_id")
+
+

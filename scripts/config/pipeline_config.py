@@ -14,7 +14,11 @@ DEFAULT_TARGET_COLUMNS = {
     "pic50": "pIC50",
     "pka_paper1_acidic": "pKa",
     "pka_paper1_basic": "pKa",
-
+    "elec_re": "Electron_Reorganisation_Energy",
+    "hole_re": "Hole_Reorganisation_Energy",
+    "int_aq_sol": "Solubility",
+    "homo_lumo_gap": "homolumogap",
+    "egfr_pic50": "pIC50"
 }
 
 SUPPORTED_FEATURE_SETS = (

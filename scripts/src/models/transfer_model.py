@@ -199,6 +199,7 @@ class TL():
 
             self.logger.info(f"Processing target: {target_column} ({i+1}/{len(targets_df.columns)})")
             current_target = targets_df[target_column]
+            current_features_df = features_df.drop(columns=[target_column], errors="ignore")
 
             target_df = current_target.to_frame(name=target_column)
 
@@ -214,12 +215,12 @@ class TL():
                 common_idx = features_df.index.intersection(trimmed_target_df.index)
 
                 combined_data = pd.concat(
-                    [features_df.loc[common_idx], trimmed_target_df.loc[common_idx, target_column]],
+                    [current_features_df.loc[common_idx], trimmed_target_df.loc[common_idx, target_column]],
                     axis=1,
                 )
 
             else:
-                combined_data = pd.concat([features_df, current_target], axis=1, join="inner")
+                combined_data = pd.concat([current_features_df, current_target], axis=1, join="inner")
 
             # Pull out the target as a Series
             y = combined_data[target_column]
@@ -254,11 +255,12 @@ class TL():
                 or pd.api.types.is_bool_dtype(non_na_target)
             ):
                 is_class_like = True
+
             elif pd.api.types.is_numeric_dtype(non_na_target):
                 arr = non_na_target.to_numpy(dtype=float)
                 is_class_like = bool(np.all(np.isclose(arr, np.round(arr), atol=1e-9)))
 
-            # Ensure sklearn classifiers see integer class labels for numeric class-like targets.
+            # Cast numeric class-like targets to int labels
             if is_class_like and pd.api.types.is_numeric_dtype(non_na_target):
                 combined_data[target_column] = (
                     pd.to_numeric(combined_data[target_column], errors="coerce")
@@ -267,10 +269,18 @@ class TL():
                 )
                 combined_data = combined_data.loc[combined_data[target_column].notna()].copy()
                 combined_data[target_column] = combined_data[target_column].astype(int)
+                
+                # Recompute n_unique from the cleaned data
+                n_unique = int(combined_data[target_column].nunique())
+                
+                if n_unique < 2:
+                    self.logger.warning(f"  Skipping {target_column}: fewer than 2 unique target values after casting")
+                    continue
 
+            # Now assign task type using the fresh n_unique
             if is_class_like and n_unique == 2:
                 expected_task_type = "binary_classification"
-            elif is_class_like and n_unique <= 6:
+            elif is_class_like and 3 <= n_unique <= 6:
                 expected_task_type = "multiclass_classification"
             else:
                 expected_task_type = "regression"

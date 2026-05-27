@@ -115,8 +115,6 @@ def averageRanges(
         .agg({column: "mean"})
     )
 
-    df[column] = df[column].round(2)
-    
     return df
 
 def removeFragments(
