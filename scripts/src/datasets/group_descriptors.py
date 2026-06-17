@@ -180,7 +180,7 @@ def getMordredGroups(prefix="_mordred"):
 
     groups = {}
 
-    calc = Calculator(descriptors, ignore_3D=True)
+    calc = Calculator(descriptors, ignore_3D=False)
 
     for desc in calc.descriptors:
         module = desc.__module__.split(".")[-1]
@@ -295,4 +295,53 @@ def getGroups(source):
     else:
         raise ValueError(f"Unknown source '{source}'. Choose 'rdkit', 'mordred' or 'maccs'.")
 
-# %%
+
+def findDescriptorGroup(descriptor_name: str) -> tuple[str, str]:
+    """
+    Return (descriptor_set, group) for a descriptor name.
+
+    Accepts either suffixed or unsuffixed descriptor names:
+    - PNSA3
+    - PNSA3_mordred
+    - MolWt
+    - MolWt_rdkit
+    - 125
+    - 125_maccs
+    """
+
+    descriptor_name = str(descriptor_name)
+
+    descriptor_sets = {
+        "rdkit": getRDKitGroups,
+        "mordred": getMordredGroups,
+        "maccs": getMACCSGroups,
+    }
+
+    matches = []
+
+    for descriptor_set, group_func in descriptor_sets.items():
+        group_map = group_func()
+        suffix = f"_{descriptor_set}"
+
+        # Normalise the query for this descriptor set
+        if descriptor_name.endswith(suffix):
+            candidate = descriptor_name
+        else:
+            candidate = f"{descriptor_name}{suffix}"
+
+        for group, members in group_map.items():
+            if candidate in members:
+                matches.append((descriptor_set, group))
+
+    if not matches:
+        raise ValueError(
+            f"Descriptor '{descriptor_name}' was not found in any descriptor group."
+        )
+
+    if len(matches) > 1:
+        print(
+            f"Warning: descriptor '{descriptor_name}' appears in multiple groups: "
+            f"{matches}. Returning first match."
+        )
+
+    return matches[0]

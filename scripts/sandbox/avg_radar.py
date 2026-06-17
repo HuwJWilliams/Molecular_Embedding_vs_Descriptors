@@ -24,7 +24,7 @@ from vis import Visualise
 paths=getPaths()
 v = Visualise()
 
-pred = "maccs"
+pred = "mordred"
 cap_pred = "RDKit" if pred == "rdkit" else pred.capitalize()
 exclude_low_var = True
 var_threshold = 0.8

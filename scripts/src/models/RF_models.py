@@ -553,6 +553,7 @@ class RFClassifier(_RFBase):
                 pred_prob = proba[:, 1]
 
         accuracy = accuracy_score(true, pred)
+        balanced_accuracy = balanced_accuracy_score(true, pred)
         mcc = matthews_corrcoef(true, pred)
 
         sensitivity = np.nan
@@ -580,6 +581,7 @@ class RFClassifier(_RFBase):
 
         performance = {
             "acc": accuracy,
+            "bal_acc": balanced_accuracy,
             "sens": sensitivity,
             "spec": specificity,
             "ppv": ppv,
@@ -749,11 +751,24 @@ class RFClassifier(_RFBase):
         if not self.use_multiclass:
             self.performance_dict = {
                 "Accuracy": round(float(np.nanmean([perf.get("acc", np.nan) for perf in self.performance_ls])), 4),
+                "Balanced_Accuracy": round(float(np.nanmean([perf.get("bal_acc", np.nan) for perf in self.performance_ls])), 4),
                 "Sensitivity": round(float(np.nanmean([perf.get("sens", np.nan) for perf in self.performance_ls])), 4),
                 "Specificity": round(float(np.nanmean([perf.get("spec", np.nan) for perf in self.performance_ls])), 4),
                 "PPV": round(float(np.nanmean([perf.get("ppv", np.nan) for perf in self.performance_ls])), 4),
                 "NPV": round(float(np.nanmean([perf.get("npv", np.nan) for perf in self.performance_ls])), 4),
                 "AUC": round(float(np.nanmean([perf.get("auc", np.nan) for perf in self.performance_ls])), 4),
+                "MCC": round(float(np.nanmean([perf.get("mcc", np.nan) for perf in self.performance_ls])), 4),
+            }
+        else:
+            self.performance_dict = {
+                "Accuracy": round(float(np.nanmean([perf.get("acc", np.nan) for perf in self.performance_ls])), 4),
+                "Balanced_Accuracy": round(
+                    float(np.nanmean([perf.get("bal_acc", np.nan) for perf in self.performance_ls])), 4
+                ),
+                "F1_macro": round(
+                    float(np.nanmean([perf.get("f1_macro", np.nan) for perf in self.performance_ls])), 4
+                ),
+                "AUC_OVR": round(float(np.nanmean([perf.get("auc", np.nan) for perf in self.performance_ls])), 4),
                 "MCC": round(float(np.nanmean([perf.get("mcc", np.nan) for perf in self.performance_ls])), 4),
             }
 

@@ -24,7 +24,6 @@ import shap
 import textwrap
 import joblib
 import re
-from sklearn.preprocessing import StandardScaler, RobustScaler
 from sklearn.metrics import pairwise_distances
 from sklearn.metrics import r2_score
 from sklearn.metrics import mean_squared_error
@@ -410,7 +409,7 @@ class Visualise():
         self,
         group_perf_df,
         title: str = "Radar Plot",
-        figsize: tuple = (11, 11),
+        figsize: tuple | None = (15,11),
         title_fontsize: int = 16,
         label_fontsize: int = 11,
         tick_fontsize: int = 9,
@@ -491,6 +490,7 @@ class Visualise():
         # Optional: make labels nicer (break underscores and wrap)
         pretty_labels = []
         for lab in labels:
+            lab = lab.replace("_rdkit", "").replace("_mordred", "")
             lab2 = lab.replace("_", " ")
             if wrap_labels:
                 lab2 = "\n".join(textwrap.wrap(lab2, width=wrap_width))
@@ -617,7 +617,7 @@ class Visualise():
         group_name: str,
         value_col: str | None = None,
         title: str | None = None,
-        figsize: tuple = (11, 11),
+        figsize: tuple | None = None,
         title_fontsize: int = 16,
         label_fontsize: int = 11,
         tick_fontsize: int = 9,
@@ -669,12 +669,20 @@ class Visualise():
             raise ValueError(
                 f"Group '{group_name}' has no finite '{value_col}' values to plot."
             )
+        member_df[value_col] = pd.to_numeric(member_df[value_col], errors="coerce")
+        member_df = member_df.sort_values(by=value_col, ascending=False)
 
         values = member_df[value_col].to_numpy(dtype=float)
         labels = member_df.index.astype(str).tolist()
+        if figsize is None:
+            figsize = (
+                max(11, min(0.85 * len(labels), 120)),
+                11,
+            )
 
         pretty_labels = []
         for lab in labels:
+            lab = lab.replace("_rdkit", "").replace("_mordred", "")
             lab2 = lab.replace("_", " ")
             if wrap_labels:
                 lab2 = "\n".join(textwrap.wrap(lab2, width=wrap_width))
@@ -4587,3 +4595,376 @@ class Visualise():
                     print(f"Saved: {out_file}")
 
         return all_sim_matrices, mol_comp
+
+    def plotBelowAvgMembersWithLowVarHighlight(
+        self,
+        exp_perf_df: pd.DataFrame,
+        group_name: str,
+        group_members: list[str],
+        l_var_col: list[str],
+        task_type_map: dict,
+        exp: str,
+        pred: str,
+        tr: str,
+        exp_dir: Path,
+        metric_col: str = "Pearson_r",
+        task_type_label: str = "regression",
+        figsize_scale: float = 0.85,
+        max_fig_width: float = 120.0,
+        dpi: int = 300,
+    ) -> None:
+        """
+        Plot a member-level bar chart for a descriptor group, restricted to
+        groups that have at least one member below the dataset-wide average
+        performance. Low-variance feature labels are coloured blue.
+
+        Only operates on regression rows. If the group has no members below
+        the global average, no plot is produced.
+
+        Parameters
+        ----------
+        exp_perf_df : pd.DataFrame
+            Full per-descriptor performance table (index = descriptor names).
+        group_name : str
+            Name of the descriptor group being plotted.
+        group_members : list[str]
+            All descriptor names belonging to this group.
+        l_var_col : list[str]
+            Descriptor names identified as low-variance.
+        task_type_map : dict
+            Maps task-name strings to task_type column values
+            (e.g. {"regression": "regression", ...}).
+        exp : str
+            Experiment name, used in the saved filename.
+        pred : str
+            Predicted feature set name (used in the plot title).
+        tr : str
+            Training feature set name (used in the plot title).
+        exp_dir : Path
+            Root directory for this experiment's outputs. A
+            ``below_avg_with_lowvar`` subdirectory is created here.
+        metric_col : str, optional
+            Performance metric column to plot. Default ``"Pearson_r"``.
+        task_type_label : str, optional
+            Key into ``task_type_map`` that selects the regression rows.
+            Default ``"regression"``.
+        figsize_scale : float, optional
+            Width per bar (inches). Default 0.85.
+        max_fig_width : float, optional
+            Maximum figure width (inches). Default 120.
+        dpi : int, optional
+            Resolution for the saved PNG. Default 300.
+        """
+        import textwrap
+        import numpy as np
+        from matplotlib.patches import Patch
+
+        if metric_col not in exp_perf_df.columns:
+            return
+
+        task_df = exp_perf_df.copy()
+        if "task_type" in task_df.columns:
+            filtered = task_df.loc[
+                task_df["task_type"] == task_type_map[task_type_label]
+            ].copy()
+            if not filtered.empty and filtered[metric_col].notna().any():
+                task_df = filtered
+            else:
+                task_df = task_df.loc[task_df[metric_col].notna()].copy()
+        else:
+            task_df = task_df.loc[task_df[metric_col].notna()].copy()
+
+        if task_df.empty:
+            return
+
+        # Dataset-wide average — consistent threshold across all groups
+        global_avg = pd.to_numeric(task_df[metric_col], errors="coerce").mean()
+
+        present_members = [m for m in group_members if m in task_df.index]
+        if not present_members:
+            return
+
+        values = pd.to_numeric(
+            task_df.loc[present_members, metric_col], errors="coerce"
+        ).replace([float("inf"), float("-inf")], pd.NA).dropna()
+
+        if values.empty or not (values < global_avg).any():
+            return
+
+        values = values.sort_values(ascending=False)
+        labels = values.index.astype(str).tolist()
+        low_var_set = set(l_var_col)
+
+        fig_width = max(11, min(figsize_scale * len(labels), max_fig_width))
+        fig, ax = plt.subplots(figsize=(fig_width, 11))
+
+        bar_colors = [self._getColour(label) for label in labels]
+        x_positions = np.arange(len(labels))
+
+        ax.bar(
+            x_positions,
+            values.to_numpy(dtype=float),
+            color=bar_colors,
+            edgecolor="black",
+            linewidth=0.8,
+            alpha=0.85,
+        )
+
+        ax.axhline(
+            global_avg,
+            color="crimson",
+            linewidth=1.5,
+            linestyle="--",
+            label=f"Dataset avg {metric_col}: {global_avg:.3f}",
+        )
+
+        ax.set_xticks(x_positions)
+        pretty_labels = [
+            "\n".join(
+                textwrap.wrap(
+                    lbl.replace("_rdkit", "").replace("_mordred", "").replace("_", " "),
+                    width=14,
+                )
+            )
+            for lbl in labels
+        ]
+        ticklabels = ax.set_xticklabels(
+            pretty_labels,
+            fontsize=11,
+            fontweight="bold",
+            rotation=70,
+            ha="right",
+        )
+
+        for tick, label in zip(ticklabels, labels):
+            if label in low_var_set:
+                tick.set_color("steelblue")
+
+        ax.set_ylabel(metric_col, fontsize=11, fontweight="bold")
+        ax.set_ylim(0.0, 1.1)
+        ax.set_axisbelow(True)
+        ax.grid(axis="y", linestyle="--", alpha=0.35)
+        ax.set_title(
+            f"{group_name} — Below-average members\n"
+            f"(Trained: {tr}, Predicted: {pred}) | Blue labels = low-variance features",
+            fontsize=14,
+            fontweight="bold",
+            pad=18,
+        )
+
+        handles, existing_labels = ax.get_legend_handles_labels()
+        blue_patch = Patch(
+            facecolor="steelblue",
+            edgecolor="steelblue",
+            label="Low-variance feature",
+        )
+        ax.legend(
+            handles=handles + [blue_patch],
+            labels=existing_labels + ["Low-variance feature"],
+            loc="upper right",
+            fontsize=10,
+            frameon=False,
+        )
+
+        plt.subplots_adjust(top=0.88, bottom=0.28, left=0.08, right=0.96)
+
+        save_path = Path(exp_dir) / "below_avg_with_lowvar"
+        save_path.mkdir(parents=True, exist_ok=True)
+
+        self._savePlot(
+            save_plot=True,
+            save_path=save_path,
+            save_fname=f"{exp}_{group_name}_below_avg_lowvar_highlight",
+            dpi=dpi,
+            description=f"below-avg member bar with low-var highlights: {group_name}",
+            fig=fig,
+        )
+        plt.close(fig)
+
+    def plotLowVarDistributions(
+        self,
+        exp_perf_df: pd.DataFrame,
+        l_var_col: list[str],
+        pred_ft_path: "str | Path",
+        exp_dir: "str | Path",
+        exp: str,
+        metric_col: str = "Pearson_r",
+        bins: int = 40,
+        dpi: int = 150,
+    ) -> None:
+        """
+        Plot a histogram of raw values for every low-variance descriptor,
+        annotating each with its regression performance metric if available.
+
+        Parameters
+        ----------
+        exp_perf_df : pd.DataFrame
+            Per-descriptor performance table (index = descriptor names).
+        l_var_col : list[str]
+            Descriptor names identified as low-variance.
+        pred_ft_path : str or Path
+            Path to the CSV containing the full predicted feature matrix
+            (rows = molecules, columns = descriptors).
+        exp_dir : str or Path
+            Root directory for this experiment's outputs. A
+            ``lowvar_distributions`` subdirectory is created here.
+        exp : str
+            Experiment name, included in the saved filenames.
+        metric_col : str, optional
+            Performance metric to annotate each histogram with.
+            Default ``"Pearson_r"``.
+        bins : int, optional
+            Number of histogram bins. Default 40.
+        dpi : int, optional
+            Resolution for saved PNGs. Default 150.
+        """
+        if not l_var_col:
+            print("No low-variance columns to plot distributions for.")
+            return
+
+        full_features = pd.read_csv(pred_ft_path, index_col=0)
+        save_path = Path(exp_dir) / "lowvar_distributions"
+        save_path.mkdir(parents=True, exist_ok=True)
+
+        for desc in l_var_col:
+            if desc not in full_features.columns:
+                print(f"Skipping low-var distribution for '{desc}': not in feature file.")
+                continue
+
+            desc_distribution = full_features[desc].dropna()
+
+            perf_annotation = ""
+            if desc in exp_perf_df.index and metric_col in exp_perf_df.columns:
+                perf_val = pd.to_numeric(
+                    exp_perf_df.loc[desc, metric_col], errors="coerce"
+                )
+                if pd.notna(perf_val):
+                    perf_annotation = f"  |  {metric_col}={perf_val:.3f}"
+
+            fig, ax = plt.subplots(figsize=(6, 4))
+            ax.hist(
+                desc_distribution,
+                bins=bins,
+                edgecolor="black",
+                color="steelblue",
+                alpha=0.8,
+            )
+            ax.set_xlabel(desc, fontsize=12)
+            ax.set_ylabel("Count", fontsize=12)
+            ax.set_title(
+                f"Low-variance: {desc}{perf_annotation}",
+                fontsize=12,
+                fontweight="bold",
+            )
+            fig.tight_layout()
+
+            self._savePlot(
+                save_plot=True,
+                save_path=save_path,
+                save_fname=f"{exp}_{desc}_lowvar_distribution",
+                dpi=dpi,
+                description=f"low-var distribution: {desc}",
+                fig=fig,
+            )
+            plt.close(fig)
+
+        print(f"Saved {len(l_var_col)} low-variance distributions to {save_path}")
+
+    def resolveExcludedCols(
+        self,
+        index,
+        cols: list[str] | None,
+    ) -> list[str]:
+        """
+        Expand bare descriptor names to include any suffixed variants present
+        in a performance-table index.
+
+        This is useful when command-line skip lists contain unsuffixed names
+        but the plotted performance table contains source-suffixed labels such
+        as ``*_rdkit`` or ``*_mordred``.
+
+        Parameters
+        ----------
+        index : iterable
+            Index-like collection of descriptor labels to search.
+        cols : list[str] or None
+            Descriptor names to resolve.
+
+        Returns
+        -------
+        list[str]
+            Sorted descriptor labels found in ``index`` that either exactly
+            match each requested column or start with ``<column>_``.
+        """
+        if not cols:
+            return []
+
+        labels = [str(label) for label in index]
+        resolved = set()
+        for col in cols:
+            col = str(col)
+            resolved.update(label for label in labels if label == col)
+            resolved.update(label for label in labels if label.startswith(f"{col}_"))
+
+        return sorted(resolved)
+
+    def getGroupPerfPerTask(
+        self,
+        group_map: dict,
+        exp_perf_df: pd.DataFrame,
+        excl_cols: list[str],
+        exp_dir: Path,
+        task_metrics: dict,
+        save_csv: bool = True,
+    ) -> dict:
+        """
+        Compute group-averaged performance metrics for every task type and,
+        optionally, save each task-level group-performance table.
+
+        Parameters
+        ----------
+        group_map : dict
+            Maps descriptor-group names to their member descriptor names.
+        exp_perf_df : pd.DataFrame
+            Per-descriptor performance table.
+        excl_cols : list[str]
+            Descriptor labels to exclude before averaging group performance.
+        exp_dir : Path
+            Experiment output directory used when ``save_csv`` is ``True``.
+        task_metrics : dict
+            Task configuration dictionary. Each task entry should include a
+            ``group_metrics`` list.
+        save_csv : bool, optional
+            Whether to save ``<task>_group_perf.csv`` in ``exp_dir``.
+            Default ``True``.
+
+        Returns
+        -------
+        dict
+            Mapping of task name to its group-performance DataFrame.
+        """
+        group_perf_by_task = {}
+
+        for task_name, task_cfg in task_metrics.items():
+            metrics_present = self._available_metrics(
+                exp_perf_df,
+                task_cfg["group_metrics"],
+            )
+            if not metrics_present:
+                print(f"No available metrics for {task_name}. Skipping.")
+                continue
+
+            gp_df = self.computeGroupPerf(
+                data=exp_perf_df,
+                descriptor_groups=group_map,
+                metrics=metrics_present,
+                exclude=excl_cols,
+            )
+
+            if save_csv:
+                Path(exp_dir).mkdir(parents=True, exist_ok=True)
+                gp_df.to_csv(Path(exp_dir) / f"{task_name}_group_perf.csv")
+
+            group_perf_by_task[task_name] = gp_df
+
+        return group_perf_by_task

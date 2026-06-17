@@ -34,7 +34,7 @@ paths = getPaths()
 # region Function Definitions
 def _load_feature_datasets(name: str, mols:str="all", use_nan_dfs:bool=False) -> pd.DataFrame:
     p = paths["full_features"][mols][name]
-    p = Path(str(p).replace(".csv", "_with_nans.csv")) if use_nan_dfs else p
+    # p = Path(str(p).replace(".csv", "_with_nans.csv")) if use_nan_dfs else p
 
     df = pd.read_csv(p, index_col="ID")
     df = df.drop(columns=["SMILES"], errors="ignore")
@@ -159,13 +159,6 @@ parser.add_argument(
         to train RF models."
 )
 
-parser.add_argument(
-    "--minimum-targs",
-    type=int,
-    default=2500,
-    help="Minimum number of samples to train RF models"
-)
-
 args = parser.parse_args()
 feat = args.feat
 save_dir = args.save_dir
@@ -214,7 +207,6 @@ model.trainWithinFeatureSetRFModels(
     skip_existing=args.skip_existing,
     save_models=args.save_models,
     save_feat_imp=args.save_feat_imp,
-    min_training_samples=args.minimum_targs,
     group_map=group_map,
     exclude_same_group=args.excl_group_desc
 )
