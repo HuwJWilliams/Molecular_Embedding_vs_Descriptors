@@ -52,15 +52,59 @@ exp_keys = [f"pred_{pred}_tr_{tr}" for tr in full_tr_ls]
 all_paths = avg_results_df_paths + other_results_df_paths
 
 TASK_METRICS = {
-    "regression": "Pearson_r",
-    "classification": "AUC",
-    "multiclass": "AUC_OVR",
+    "regression": {
+        "metric": "Pearson_r",
+        "bar_metrics": ["Pearson_r", "r2"],
+        "group_metrics": ["Pearson_r", "r2", "RMSE", "Bias"],
+        "member_suffix": "reg",
+        "radar_metrics": ["avg_Pearson_r", "avg_r2"],
+    },
+    "classification": {
+        "metric": "AUC",
+        "bar_metrics": ["AUC", "MCC", "Balanced_Accuracy"],
+        "group_metrics": [
+            "Accuracy",
+            "Sensitivity",
+            "Specificity",
+            "PPV",
+            "NPV",
+            "AUC",
+            "MCC",
+            "Balanced_Accuracy",
+        ],
+        "member_suffix": "cla",
+        "radar_metrics": ["avg_AUC"],
+    },
+    "multiclass": {
+        "metric": "Balanced_Accuracy",
+        "bar_metrics": ["AUC_OVR", "MCC", "Balanced_Accuracy"],
+        "group_metrics": [
+            "Accuracy",
+            "Balanced_Accuracy",
+            "F1_macro",
+            "AUC_OVR",
+            "MCC",
+        ],
+        "member_suffix": "mcla",
+        "radar_metrics": ["avg_AUC_OVR"],
+    },
 }
 TASK_TYPE_MAP = {
     "regression": "regression",
     "classification": "binary_classification",
     "multiclass": "multiclass_classification",
 }
+
+
+def clean_plot_label(label: str) -> str:
+    label = str(label)
+    for suffix in ("_rdkit", "_mordred"):
+        label = label.replace(suffix, "")
+    return label
+
+
+def _available_metrics(df: pd.DataFrame, wanted: list[str]) -> list[str]:
+    return [m for m in wanted if m in df.columns]
 
 
 group_map = getGroups(pred)
@@ -116,55 +160,120 @@ def _build_task_merged(metric: str, task_name: str) -> pd.DataFrame | None:
     return merged
 
 
-for task_name, metric in TASK_METRICS.items():
-    merged = _build_task_merged(metric=metric, task_name=task_name)
-    if merged is None:
-        print(f"Skipping {task_name}: no available data for metric '{metric}'.")
-        continue
+def plot_task_bars(
+    merged: pd.DataFrame,
+    task_name: str,
+    task_cfg: dict,
+) -> None:
+    metric = task_cfg["metric"]
+    bar_metrics = _available_metrics(merged, task_cfg.get("bar_metrics", [metric]))
+    if not bar_metrics:
+        print(f"Skipping {task_name} bar plot: no bar metrics present.")
+        return
 
+    sort_metric = metric if metric in merged.columns else bar_metrics[0]
+    plot_df = merged.dropna(subset=bar_metrics, how="all").copy()
+    if plot_df.empty:
+        print(f"Skipping {task_name} bar plot: no finite values.")
+        return
+
+    plot_df = plot_df.sort_values(by=sort_metric, ascending=False)
+    plot_df = plot_df[bar_metrics].apply(pd.to_numeric, errors="coerce")
+    plot_df["feature"] = plot_df.index.astype(str)
+    long_df = plot_df.melt(
+        id_vars="feature",
+        value_vars=bar_metrics,
+        var_name="metric",
+        value_name="value",
+    ).dropna(subset=["value"])
+    if long_df.empty:
+        print(f"Skipping {task_name} bar plot: no plottable values after reshape.")
+        return
+    long_df["feature_label"] = long_df["feature"].map(clean_plot_label)
+
+    gr_title = (
+        f"{cap_pred} Prediction (Average Embedding Performance): "
+        f"{', '.join(bar_metrics)}"
+    )
+    plt.figure(figsize=(16, 6))
+    sns.barplot(data=long_df, x="feature_label", y="value", hue="metric")
+
+    if plot_df["feature"].nunique() < 100:
+        plt.xticks(rotation=90, ha="right", fontsize=12)
+    else:
+        plt.xticks([])
+
+    plt.ylabel("Performance score")
+    plt.title(gr_title)
+    plt.ylim(0, 1.05)
+    plt.grid(axis="y", linestyle="--", alpha=0.3)
+    plt.legend(
+        title="Performance metric",
+        bbox_to_anchor=(1.02, 1),
+        loc="upper left",
+        borderaxespad=0,
+    )
+    plt.tight_layout()
+    plt.savefig(
+        save_dir / f"avg_embedding_feature_bar_{task_name}.png",
+        dpi=300,
+        bbox_inches="tight",
+    )
+    plt.close()
+
+
+def plot_regression_radar(merged: pd.DataFrame, task_cfg: dict) -> None:
+    metric = task_cfg["metric"]
     avg_col = f"Avg_{metric}_Embeddings"
     group_col = f"avg_{avg_col}"
+
     group_performance_df = v.computeGroupPerf(
         data=merged[[avg_col]],
         descriptor_groups=group_map,
         metrics=[avg_col],
         exclude=excl_cols,
     )
+    if group_col not in group_performance_df.columns:
+        numeric_cols = group_performance_df.select_dtypes(include="number").columns
+        if numeric_cols.empty:
+            print("Skipping regression radar plot: no numeric grouped values.")
+            return
+        group_col = numeric_cols[0]
 
-    v.plotAveragePerformance(
-        exp_keys=exp_keys,
-        results_dir="lipinski_cross_feature_predictions",
-        pred_set=pred,
-        save_path=save_path.parent,
-        save_fname="avg_embedding_grouped_bar_pearson_r",
+    radar_df = group_performance_df[[group_col]].copy()
+    radar_df[group_col] = pd.to_numeric(radar_df[group_col], errors="coerce")
+    radar_df = radar_df.replace([float("inf"), float("-inf")], pd.NA).dropna(
+        subset=[group_col]
     )
-
-    # Drop NaN/Inf groups before radar plotting
-    group_performance_df[group_col] = pd.to_numeric(
-        group_performance_df[group_col],
-        errors="coerce",
-    )
-    group_performance_df = group_performance_df.replace(
-        [float("inf"), float("-inf")], pd.NA
-    )
-    group_performance_df = group_performance_df.dropna(subset=[group_col])
-    if group_performance_df.empty:
-        print(f"Skipping {task_name}: no finite grouped values for '{group_col}'.")
-        continue
-
-    save_path = save_dir / f"avg_embedding_group_radar_{task_name}.csv"
-    merged.to_csv(save_path)
+    if radar_df.empty:
+        print(
+            f"Skipping regression radar plot: no finite grouped values for '{group_col}'."
+        )
+        return
 
     pretty_metric = " ".join(part.capitalize() for part in metric.split("_"))
     gr_title = f"{cap_pred} Prediction (Average Embedding Performance): {pretty_metric}"
-
     v.plotGroupRadar(
-        group_performance_df[[group_col]],
+        radar_df,
         title=gr_title,
         save_plot=True,
-        save_path=save_path.parent,
-        save_fname=f"avg_emb_group_radar_{task_name}_{gr_fname_suffix}".rstrip("_"),
-        metadata={
-            "Title": gr_title,
-        },
+        save_path=save_dir,
+        save_fname=f"avg_emb_group_radar_regression_{gr_fname_suffix}".rstrip("_"),
+        metadata={"Title": gr_title},
     )
+
+
+for task_name, task_cfg in TASK_METRICS.items():
+    metric = task_cfg["metric"]
+    merged = _build_task_merged(metric=metric, task_name=task_name)
+    if merged is None:
+        print(f"Skipping {task_name}: no available data for metric '{metric}'.")
+        continue
+
+    if task_name == "regression":
+        plot_regression_radar(merged=merged, task_cfg=task_cfg)
+    else:
+        plot_task_bars(merged=merged, task_name=task_name, task_cfg=task_cfg)
+
+    # Save the merged average-performance table for inspection.
+    merged.to_csv(save_dir / f"avg_embedding_merged_{task_name}.csv")
