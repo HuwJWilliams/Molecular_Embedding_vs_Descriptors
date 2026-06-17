@@ -178,7 +178,8 @@ def plot_task_bars(
         return
 
     sort_metric = avg_bar_cols[0]
-    plot_df = merged.dropna(subset=avg_bar_cols, how="all").copy()
+    # Keep only rows where all requested metrics are present so the grouped bars stay aligned.
+    plot_df = merged.dropna(subset=avg_bar_cols, how="any").copy()
     if plot_df.empty:
         print(f"Skipping {task_name} bar plot: no finite values.")
         return
@@ -232,11 +233,19 @@ def plot_task_bars(
     plt.close()
 
 
-def plot_regression_radar(merged: pd.DataFrame, task_cfg: dict) -> None:
-    metric = task_cfg["metric"]
-    avg_col = f"Avg_{metric}_Embeddings"
-    group_col = f"avg_{avg_col}"
+def plot_regression_radar(
+    merged: pd.DataFrame,
+    task_cfg: dict,
+    metric_name: str,
+) -> None:
+    avg_col = f"Avg_{metric_name}_Embeddings"
+    if avg_col not in merged.columns:
+        print(
+            f"Skipping regression radar plot for metric '{metric_name}': missing {avg_col}."
+        )
+        return
 
+    group_col = f"avg_{avg_col}"
     group_performance_df = v.computeGroupPerf(
         data=merged[[avg_col]],
         descriptor_groups=group_map,
@@ -246,7 +255,9 @@ def plot_regression_radar(merged: pd.DataFrame, task_cfg: dict) -> None:
     if group_col not in group_performance_df.columns:
         numeric_cols = group_performance_df.select_dtypes(include="number").columns
         if numeric_cols.empty:
-            print("Skipping regression radar plot: no numeric grouped values.")
+            print(
+                f"Skipping regression radar plot for metric '{metric_name}': no numeric grouped values."
+            )
             return
         group_col = numeric_cols[0]
 
@@ -257,31 +268,37 @@ def plot_regression_radar(merged: pd.DataFrame, task_cfg: dict) -> None:
     )
     if radar_df.empty:
         print(
-            f"Skipping regression radar plot: no finite grouped values for '{group_col}'."
+            f"Skipping regression radar plot for metric '{metric_name}': no finite grouped values for '{group_col}'."
         )
         return
 
-    pretty_metric = " ".join(part.capitalize() for part in metric.split("_"))
+    pretty_metric = " ".join(part.capitalize() for part in metric_name.split("_"))
     gr_title = f"{cap_pred} Prediction (Average Embedding Performance): {pretty_metric}"
     v.plotGroupRadar(
         radar_df,
         title=gr_title,
         save_plot=True,
         save_path=save_dir,
-        save_fname=f"avg_emb_group_radar_regression_{gr_fname_suffix}".rstrip("_"),
+        save_fname=(
+            f"avg_emb_group_radar_regression_{metric_name}_{gr_fname_suffix}"
+        ).rstrip("_"),
         metadata={"Title": gr_title},
     )
 
 
 for task_name, task_cfg in TASK_METRICS.items():
     if task_name == "regression":
-        metric = task_cfg["metric"]
-        merged = _build_task_merged(metric=metric, task_name=task_name)
-        if merged is None:
-            print(f"Skipping {task_name}: no available data for metric '{metric}'.")
-            continue
-        plot_regression_radar(merged=merged, task_cfg=task_cfg)
-        merged.to_csv(save_dir / f"avg_embedding_merged_{task_name}.csv")
+        for metric in task_cfg.get("bar_metrics", [task_cfg["metric"]]):
+            merged = _build_task_merged(metric=metric, task_name=task_name)
+            if merged is None:
+                print(f"Skipping {task_name}: no available data for metric '{metric}'.")
+                continue
+            plot_regression_radar(
+                merged=merged,
+                task_cfg=task_cfg,
+                metric_name=metric,
+            )
+            merged.to_csv(save_dir / f"avg_embedding_merged_{task_name}_{metric}.csv")
         continue
 
     metrics_to_build = task_cfg.get("bar_metrics", [task_cfg["metric"]])
