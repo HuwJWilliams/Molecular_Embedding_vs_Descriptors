@@ -166,29 +166,39 @@ def plot_task_bars(
     task_cfg: dict,
 ) -> None:
     metric = task_cfg["metric"]
-    bar_metrics = _available_metrics(merged, task_cfg.get("bar_metrics", [metric]))
-    if not bar_metrics:
-        print(f"Skipping {task_name} bar plot: no bar metrics present.")
+    bar_metrics = task_cfg.get("bar_metrics", [metric])
+    avg_bar_cols = [
+        f"Avg_{m}_Embeddings"
+        for m in bar_metrics
+        if f"Avg_{m}_Embeddings" in merged.columns
+    ]
+
+    if not avg_bar_cols:
+        print(f"Skipping {task_name} bar plot: no averaged bar metrics present.")
         return
 
-    sort_metric = metric if metric in merged.columns else bar_metrics[0]
-    plot_df = merged.dropna(subset=bar_metrics, how="all").copy()
+    sort_metric = avg_bar_cols[0]
+    plot_df = merged.dropna(subset=avg_bar_cols, how="all").copy()
     if plot_df.empty:
         print(f"Skipping {task_name} bar plot: no finite values.")
         return
 
     plot_df = plot_df.sort_values(by=sort_metric, ascending=False)
-    plot_df = plot_df[bar_metrics].apply(pd.to_numeric, errors="coerce")
+    plot_df = plot_df[avg_bar_cols].apply(pd.to_numeric, errors="coerce")
     plot_df["feature"] = plot_df.index.astype(str)
     long_df = plot_df.melt(
         id_vars="feature",
-        value_vars=bar_metrics,
+        value_vars=avg_bar_cols,
         var_name="metric",
         value_name="value",
     ).dropna(subset=["value"])
     if long_df.empty:
         print(f"Skipping {task_name} bar plot: no plottable values after reshape.")
         return
+
+    long_df["metric_label"] = long_df["metric"].map(
+        lambda c: c.replace("Avg_", "").replace("_Embeddings", "")
+    )
     long_df["feature_label"] = long_df["feature"].map(clean_plot_label)
 
     gr_title = (
@@ -196,7 +206,7 @@ def plot_task_bars(
         f"{', '.join(bar_metrics)}"
     )
     plt.figure(figsize=(16, 6))
-    sns.barplot(data=long_df, x="feature_label", y="value", hue="metric")
+    sns.barplot(data=long_df, x="feature_label", y="value", hue="metric_label")
 
     if plot_df["feature"].nunique() < 100:
         plt.xticks(rotation=90, ha="right", fontsize=12)
@@ -264,16 +274,36 @@ def plot_regression_radar(merged: pd.DataFrame, task_cfg: dict) -> None:
 
 
 for task_name, task_cfg in TASK_METRICS.items():
-    metric = task_cfg["metric"]
-    merged = _build_task_merged(metric=metric, task_name=task_name)
-    if merged is None:
-        print(f"Skipping {task_name}: no available data for metric '{metric}'.")
+    if task_name == "regression":
+        metric = task_cfg["metric"]
+        merged = _build_task_merged(metric=metric, task_name=task_name)
+        if merged is None:
+            print(f"Skipping {task_name}: no available data for metric '{metric}'.")
+            continue
+        plot_regression_radar(merged=merged, task_cfg=task_cfg)
+        merged.to_csv(save_dir / f"avg_embedding_merged_{task_name}.csv")
         continue
 
-    if task_name == "regression":
-        plot_regression_radar(merged=merged, task_cfg=task_cfg)
-    else:
-        plot_task_bars(merged=merged, task_name=task_name, task_cfg=task_cfg)
+    metrics_to_build = task_cfg.get("bar_metrics", [task_cfg["metric"]])
+    merged_frames = []
+    for metric in metrics_to_build:
+        metric_merged = _build_task_merged(metric=metric, task_name=task_name)
+        if metric_merged is None:
+            continue
+        avg_col = f"Avg_{metric}_Embeddings"
+        if avg_col in metric_merged.columns:
+            merged_frames.append(
+                metric_merged[[avg_col]].rename(
+                    columns={avg_col: f"Avg_{metric}_Embeddings"}
+                )
+            )
 
-    # Save the merged average-performance table for inspection.
+    if not merged_frames:
+        print(
+            f"Skipping {task_name}: no available data for any requested metrics {metrics_to_build}."
+        )
+        continue
+
+    merged = pd.concat(merged_frames, axis=1)
+    plot_task_bars(merged=merged, task_name=task_name, task_cfg=task_cfg)
     merged.to_csv(save_dir / f"avg_embedding_merged_{task_name}.csv")
