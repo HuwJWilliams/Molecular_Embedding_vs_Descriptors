@@ -1054,10 +1054,17 @@ if run_12:
 
         print(f"Cleaned {f}")
 
-run_13 = False
+run_13 = True
 if run_13:
     res_dir = "/users/yhb18174/TL_project/results/lipinski_embeddings_and_descriptor_predictions/"
-    csv_paths = ["pred_mordred_tr_maccs/pred_mordred_tr_maccs.csv", "pred_mordred_tr_morgan/pred_mordred_tr_morgan.csv"]
+    csv_paths = ["pred_mordred_tr_maccs/pred_mordred_tr_maccs.csv", 
+                 "pred_mordred_tr_morgan/pred_mordred_tr_morgan.csv",
+                 "pred_mordred_tr_chemberta/pred_mordred_tr_chemberta.csv",
+                 "pred_mordred_tr_chembertasey/pred_mordred_tr_chembertasey.csv",
+                 "pred_mordred_tr_molformer/pred_mordred_tr_molformer.csv",
+                 "pred_mordred_tr_molformer-c3-1b/pred_mordred_tr_molformer-c3-1b.csv",
+                 "pred_mordred_tr_selformer/pred_mordred_tr_selformer.csv"
+                 ]
 
     for p in csv_paths:
         csv_path = res_dir + p
@@ -1087,42 +1094,99 @@ if run_14:
     from group_descriptors import getGroups
 
     csv_path = Path(
-        "/users/yhb18174/TL_project/results/lipinski_embeddings_and_descriptor_predictions/pred_mordred_tr_rdkit/pred_mordred_tr_rdkit.csv"
+        "/users/yhb18174/TL_project/results/lipinski_embeddings_and_descriptor_predictions/"
+        "pred_mordred_tr_avg_emb/pred_mordred_tr_avg_emb.csv"
     )
+
+    # Change this to "Autocorrelation" or "MoRSE"
+    desc_group = "MoRSE"
+
     save_dir = csv_path.parent
 
-    r2_cutoff = 0.6
-    avg_r2_line = 0.8315
+    r2_cutoff = 0.00
+    avg_r2_line = 0.66
 
     df = pd.read_csv(csv_path, index_col=0)
 
-    autocorr_features = getGroups("mordred")["Autocorrelation"]
+    desc_features = getGroups("mordred")[desc_group]
 
-    autocorr_df = df.loc[
-        df.index.isin(autocorr_features) & (df["task_type"] == "regression")
+    desc_df = df.loc[
+        df.index.isin(desc_features) & (df["task_type"] == "regression")
     ].copy()
 
-    autocorr_df["r2"] = pd.to_numeric(autocorr_df["r2"], errors="coerce")
-    autocorr_df = autocorr_df.dropna(subset=["r2"])
+    desc_df["r2"] = pd.to_numeric(desc_df["r2"], errors="coerce")
+    desc_df = desc_df.dropna(subset=["r2"])
 
     def clean_name(name):
         return str(name).replace("_mordred", "").replace("_rdkit", "")
 
     def get_lag(descriptor):
+        """
+        Extract the first number in the descriptor name.
+
+        Examples:
+            ATS1m   -> 1
+            AATS2v  -> 2
+            Mor01m  -> 1
+            Mor32se -> 32
+        """
         match = re.search(r"\d+", clean_name(descriptor))
         return int(match.group()) if match else None
 
     def get_family(descriptor):
-        match = re.match(r"([A-Za-z]+)\d+", clean_name(descriptor))
+        """
+        Extract the descriptor family before the first number.
+
+        Examples:
+            ATS1m   -> ATS
+            AATS2v  -> AATS
+            MATS3se -> MATS
+            GATS4p  -> GATS
+            Mor01m  -> Mor
+        """
+        name = clean_name(descriptor)
+        match = re.match(r"([A-Za-z]+)\d+", name)
         return match.group(1) if match else "Unknown"
 
-    # 1. Bar plot of low-r2 Autocorrelation descriptors
-    low_r2_df = autocorr_df.loc[autocorr_df["r2"] < r2_cutoff].sort_values(
+    def get_property(descriptor):
+        """
+        Extract property suffix after the first number.
+    
+        Examples:
+            Mor01m   -> m
+            Mor02v   -> v
+            Mor03se  -> se
+            Mor04     -> unweighted
+            ATS1m    -> m
+            AATS2se  -> se
+        """
+        name = clean_name(descriptor)
+    
+        # Remove any separators just in case
+        name = name.replace("-", "").replace("_", "")
+    
+        match = re.match(r"[A-Za-z]+\.?\d+([A-Za-z]*)$", name)
+    
+        if not match:
+            print(f"Could not parse property from: {descriptor} -> {name}")
+            return "Unknown"
+    
+        suffix = match.group(1)
+    
+        if suffix == "":
+            return "unweighted"
+    
+        return suffix
+
+    # ------------------------------------------------------------------
+    # 1. Bar plot of low-r2 descriptors
+    # ------------------------------------------------------------------
+    low_r2_df = desc_df.loc[desc_df["r2"] < r2_cutoff].sort_values(
         "r2",
         ascending=True,
     )
 
-    print(f"\nAutocorrelation descriptors with r2 < {r2_cutoff}:")
+    print(f"\n{desc_group} descriptors with r2 < {r2_cutoff}:")
     for descriptor, row in low_r2_df.iterrows():
         print(f"{descriptor}: {row['r2']:.4f}")
 
@@ -1132,13 +1196,13 @@ if run_14:
     plt.bar(labels, low_r2_df["r2"], edgecolor="black")
     plt.axhline(r2_cutoff, color="red", linestyle="--", linewidth=1)
     plt.ylabel("r2")
-    plt.xlabel("Autocorrelation feature")
-    plt.title(f"Autocorrelation Features Below {r2_cutoff} r2")
+    plt.xlabel(f"{desc_group} feature")
+    plt.title(f"{desc_group} Features Below {r2_cutoff} r2")
     plt.xticks(rotation=75, ha="right", fontsize=8)
     plt.tight_layout()
 
     save_path = (
-        save_dir / f"autocorrelation_below_{str(r2_cutoff).replace('.', 'p')}_r2.png"
+        save_dir / f"{desc_group}_below_{str(r2_cutoff).replace('.', 'p')}_r2.png"
     )
     plt.savefig(save_path, dpi=300, bbox_inches="tight")
     plt.close()
@@ -1146,13 +1210,15 @@ if run_14:
     print(f"\nSaved plot to: {save_path}")
     print(f"Features plotted: {len(low_r2_df)}")
 
-    # 2. Box plot by lag / distance
-    lag_df = autocorr_df.copy()
+    # ------------------------------------------------------------------
+    # 2. Box plot by lag / signal index
+    # ------------------------------------------------------------------
+    lag_df = desc_df.copy()
     lag_df["lag"] = [get_lag(idx) for idx in lag_df.index]
     lag_df = lag_df.dropna(subset=["lag"])
     lag_df["lag"] = lag_df["lag"].astype(int)
 
-    print("\nAutocorrelation r2 by lag:")
+    print(f"\n{desc_group} r2 by lag/index:")
     print(
         lag_df.groupby("lag")["r2"]
         .agg(["count", "mean", "median", "min", "max"])
@@ -1162,22 +1228,30 @@ if run_14:
     plt.figure(figsize=(12, 6))
     sns.boxplot(data=lag_df, x="lag", y="r2", color="steelblue")
     plt.axhline(avg_r2_line, color="red", linestyle="--", linewidth=1)
-    plt.xlabel("Autocorrelation lag / distance")
+
+    if desc_group == "MoRSE":
+        plt.xlabel("MoRSE signal index")
+        plt.title("MoRSE Descriptor r2 by Signal Index")
+    else:
+        plt.xlabel(f"{desc_group} lag / distance")
+        plt.title(f"{desc_group} Descriptor r2 by Lag")
+
     plt.ylabel("r2")
-    plt.title("Autocorrelation Descriptor r2 by Lag")
     plt.tight_layout()
 
-    save_path = save_dir / "autocorrelation_r2_by_lag_boxplot.png"
+    save_path = save_dir / f"{desc_group}_r2_by_lag_boxplot.png"
     plt.savefig(save_path, dpi=300, bbox_inches="tight")
     plt.close()
 
     print(f"\nSaved plot to: {save_path}")
 
-    # 3. Box plot by Autocorrelation descriptor family
-    family_df = autocorr_df.copy()
+    # ------------------------------------------------------------------
+    # 3. Box plot by descriptor family
+    # ------------------------------------------------------------------
+    family_df = desc_df.copy()
     family_df["family"] = [get_family(idx) for idx in family_df.index]
 
-    print("\nAutocorrelation r2 by descriptor family:")
+    print(f"\n{desc_group} r2 by descriptor family:")
     print(
         family_df.groupby("family")["r2"]
         .agg(["count", "mean", "median", "min", "max"])
@@ -1185,7 +1259,10 @@ if run_14:
     )
 
     family_order = (
-        family_df.groupby("family")["r2"].median().sort_values(ascending=False).index
+        family_df.groupby("family")["r2"]
+        .median()
+        .sort_values(ascending=False)
+        .index
     )
 
     plt.figure(figsize=(max(10, 0.7 * len(family_order)), 6))
@@ -1197,17 +1274,59 @@ if run_14:
         color="steelblue",
     )
     plt.axhline(avg_r2_line, color="red", linestyle="--", linewidth=1)
-    plt.xlabel("Autocorrelation descriptor family")
+    plt.xlabel(f"{desc_group} descriptor family")
     plt.ylabel("r2")
-    plt.title("Autocorrelation Descriptor r2 by Family")
+    plt.title(f"{desc_group} Descriptor r2 by Family")
     plt.xticks(rotation=45, ha="right")
     plt.tight_layout()
 
-    save_path = save_dir / "autocorrelation_r2_by_descriptor_family_boxplot.png"
+    save_path = save_dir / f"{desc_group}_r2_by_descriptor_family_boxplot.png"
     plt.savefig(save_path, dpi=300, bbox_inches="tight")
     plt.close()
 
     print(f"\nSaved plot to: {save_path}")
+
+    # ------------------------------------------------------------------
+    # 4. Box plot by property suffix
+    # ------------------------------------------------------------------
+    property_df = desc_df.copy()
+    property_df["property"] = [get_property(idx) for idx in property_df.index]
+
+    print(f"\n{desc_group} r2 by property suffix:")
+    print(
+        property_df.groupby("property")["r2"]
+        .agg(["count", "mean", "median", "min", "max"])
+        .sort_values("median", ascending=False)
+    )
+
+    property_order = (
+        property_df.groupby("property")["r2"]
+        .median()
+        .sort_values(ascending=False)
+        .index
+    )
+
+    plt.figure(figsize=(max(10, 0.85 * len(property_order)), 6))
+    sns.boxplot(
+        data=property_df,
+        x="property",
+        y="r2",
+        order=property_order,
+        color="steelblue",
+    )
+    plt.axhline(avg_r2_line, color="red", linestyle="--", linewidth=1)
+    plt.xlabel("Property suffix")
+    plt.ylabel("r2")
+    plt.title(f"{desc_group} Descriptor r2 by Property Suffix")
+    plt.xticks(rotation=45, ha="right")
+    plt.tight_layout()
+
+    save_path = save_dir / f"{desc_group}_r2_by_property_suffix_boxplot.png"
+    plt.savefig(save_path, dpi=300, bbox_inches="tight")
+    plt.close()
+
+    print(f"\nSaved plot to: {save_path}")
+
 
 
 run_15 = False
@@ -1414,7 +1533,7 @@ if run_16:
     print(f"Autocorrelation descriptors plotted: {corr.shape[0]}")
     print(f"Saved heatmap to: {save_path}")
 
-# run_17 = True
+# run_17 (= True)
 
 # if run_17:
 #     import re
@@ -1778,7 +1897,7 @@ if run_19:
 
         print(f"Saved heatmap to: {heatmap_path}")
 
-run_20=True
+run_20=False
 if run_20:
     path = "/users/yhb18174/TL_project/results/lipinski_embeddings_and_descriptor_predictions/pred_mordred_tr_morgan/pred_mordred_tr_morgan.csv"
     df = pd.read_csv(path)
@@ -1882,3 +2001,634 @@ if run_21:
     )
     plt.show()
         
+run_21 = False
+if run_21:
+    path = "/users/yhb18174/TL_project/results/lipinski_embeddings_and_descriptor_predictions/pred_mordred_tr_*/*_group_perf.csv"
+    files = glob(path)
+    
+    for f in files:
+        df = pd.read_csv(f, index_col=0, low_memory=False)
+
+        averaged_cols = df.select_dtypes(include="number").mean().to_dict()
+
+        print(f)
+        print(averaged_cols)
+        
+        
+run_22 = False
+if run_22:
+    from pathlib import Path
+    import pandas as pd
+    import matplotlib.pyplot as plt
+    import numpy as np
+    from scipy.stats import gaussian_kde
+    
+    mordred_df = pd.read_csv(
+        "/users/yhb18174/TL_project/datasets/all/all_mordred.csv",
+        index_col=0,
+        low_memory=False,
+    )
+
+    save_path = Path("/users/yhb18174/TL_project/datasets/all/descriptor_analysis/")
+    save_path.mkdir(parents=True, exist_ok=True)
+
+    columns = [
+        "nAcid_mordred",
+        "nBase_mordred",
+        "nRot_mordred",
+        "RotRatio_mordred",
+        "GeomPetitjeanIndex_mordred",
+        "GeomShapeIndex_mordred",
+        "PBF_mordred"
+    ]
+
+    summary_rows = []
+
+    for column in columns:
+        if column not in mordred_df.columns:
+            print(f"Skipping {column}: column not found")
+            continue
+
+        s = pd.to_numeric(mordred_df[column], errors="coerce").dropna()
+
+        if s.empty:
+            print(f"Skipping {column}: no numeric values")
+            continue
+
+        min_val = s.min()
+        max_val = s.max()
+        avg_val = s.mean()
+        med_val = s.median()
+        q10 = s.quantile(0.10)
+        q90 = s.quantile(0.90)
+        percent_at_median = (s == med_val).mean() * 100
+
+        summary_rows.append({
+            "column": column,
+            "min": min_val,
+            "max": max_val,
+            "average": avg_val,
+            "median": med_val,
+            "q10": q10,
+            "q90": q90,
+            "percent_at_median": percent_at_median,
+        })
+
+        print(f"\n{column}")
+        print(f"min: {min_val}")
+        print(f"max: {max_val}")
+        print(f"average: {avg_val}")
+        print(f"median: {med_val}")
+        print(f"10th percentile: {q10}")
+        print(f"90th percentile: {q90}")
+        print(f"% at median: {percent_at_median:.2f}%")
+
+        vals = s.values.astype(float)
+
+        fig, ax = plt.subplots(figsize=(7, 3))
+
+        # Shade central 80% of the data
+        ax.axvspan(
+            q10, q90,
+            alpha=0.2,
+            label=f"Central 80% = [{q10:.2f}, {q90:.2f}]"
+        )
+
+        # KDE needs at least 2 unique points
+        if len(np.unique(vals)) > 1:
+            kde = gaussian_kde(vals)
+            x = np.linspace(min_val - 0.5, max_val + 0.5, 500)
+            y = kde(x)
+
+            ax.fill_between(x, y, alpha=0.7)
+            ax.plot(x, y, linewidth=1.5)
+        else:
+            # fallback if all values are identical
+            x = np.array([vals[0] - 0.5, vals[0], vals[0] + 0.5])
+            y = np.array([0, 1, 0])
+            ax.fill_between(x, y, alpha=0.7)
+            ax.plot(x, y, linewidth=1.5)
+
+        ax.axvline(avg_val, linestyle="--", linewidth=1, label=f"Mean = {avg_val:.2f}")
+        ax.axvline(med_val, linestyle=":", linewidth=1, label=f"Median = {med_val:.2f}")
+
+        ax.set_title(f"Distribution of {column}")
+        ax.set_xlabel(column)
+        ax.set_ylabel("Density")
+        ax.set_yticks([])
+
+        ax.spines["left"].set_visible(False)
+        ax.spines["right"].set_visible(False)
+        ax.spines["top"].set_visible(False)
+
+        ax.legend()
+        fig.tight_layout()
+
+        out_file = save_path / f"{column}_ridgeplot_kde.png"
+        plt.savefig(out_file, dpi=300, bbox_inches="tight")
+        plt.show()
+        plt.close()
+
+    summary_df = pd.DataFrame(summary_rows)
+    summary_df.to_csv(
+        save_path / "selected_descriptor_distribution_summary.csv",
+        index=False,
+    )
+    
+    
+run_23 = False
+
+if run_23:
+    import pandas as pd
+    import matplotlib.pyplot as plt
+    from collections import Counter
+    from pathlib import Path
+    from rdkit import Chem
+    from rdkit.Chem import Lipinski
+
+    def atom_label(atom):
+        """
+        Return atom symbol.
+        Uses lowercase for aromatic atoms, e.g. aromatic carbon = c.
+        """
+        symbol = atom.GetSymbol()
+
+        if atom.GetIsAromatic():
+            return symbol.lower()
+
+        return symbol
+
+    def get_rotatable_bond_types_from_mol(mol):
+        """
+        Return bond-type labels for all rotatable bonds in one molecule.
+        """
+        if mol is None:
+            return []
+
+        bond_types = []
+
+        for atom_idx_1, atom_idx_2 in mol.GetSubstructMatches(
+            Lipinski.RotatableBondSmarts
+        ):
+            atom_1 = mol.GetAtomWithIdx(atom_idx_1)
+            atom_2 = mol.GetAtomWithIdx(atom_idx_2)
+
+            label_1 = atom_label(atom_1)
+            label_2 = atom_label(atom_2)
+
+            # Sort so C-N and N-C are counted as the same type
+            bond_type = "-".join(sorted([label_1, label_2]))
+
+            bond_types.append(bond_type)
+
+        return bond_types
+
+    def plot_top_rotatable_bond_types(
+        df,
+        smiles_col="SMILES",
+        top_n=5,
+        save_path=None,
+    ):
+        """
+        Count rotatable bond atom-pair types across a dataframe of SMILES strings,
+        plot top N as a pie chart, and group all remaining types as Other.
+        """
+
+        all_bond_types = []
+        invalid_smiles = 0
+        molecules_with_no_rotatable_bonds = 0
+
+        for smi in df[smiles_col].dropna():
+            mol = Chem.MolFromSmiles(smi)
+
+            if mol is None:
+                invalid_smiles += 1
+                continue
+
+            bond_types = get_rotatable_bond_types_from_mol(mol)
+
+            if len(bond_types) == 0:
+                molecules_with_no_rotatable_bonds += 1
+
+            all_bond_types.extend(bond_types)
+
+        counts = Counter(all_bond_types)
+
+        if not counts:
+            raise ValueError("No rotatable bonds found in the dataframe.")
+
+        top_counts = counts.most_common(top_n)
+
+        top_labels = [label for label, count in top_counts]
+        top_values = [count for label, count in top_counts]
+
+        other_count = sum(
+            count for label, count in counts.items()
+            if label not in top_labels
+        )
+
+        plot_labels = top_labels.copy()
+        plot_values = top_values.copy()
+
+        if other_count > 0:
+            plot_labels.append("Other")
+            plot_values.append(other_count)
+
+        summary_df = pd.DataFrame(
+            {
+                "rotatable_bond_type": plot_labels,
+                "count": plot_values,
+            }
+        )
+
+        summary_df["percentage"] = (
+            summary_df["count"] / summary_df["count"].sum() * 100
+        )
+
+        print("\nTop rotatable bond types:")
+        print(summary_df)
+
+        print(f"\nInvalid SMILES skipped: {invalid_smiles}")
+        print(
+            "Molecules with no rotatable bonds: "
+            f"{molecules_with_no_rotatable_bonds}"
+        )
+        print(f"Total rotatable bonds counted: {sum(plot_values)}")
+
+        if save_path is not None:
+            save_path = Path(save_path)
+            save_path.parent.mkdir(parents=True, exist_ok=True)
+
+        plt.figure(figsize=(7, 7))
+        plt.pie(
+            summary_df["count"],
+            labels=summary_df["rotatable_bond_type"],
+            autopct="%1.1f%%",
+            startangle=90,
+        )
+        plt.title(f"Top {top_n} Rotatable Bond Types Across Dataset")
+        plt.tight_layout()
+
+        if save_path is not None:
+            plt.savefig(save_path, dpi=300, bbox_inches="tight")
+            print(f"\nSaved pie chart to: {save_path}")
+
+            summary_path = save_path.with_suffix(".csv")
+            summary_df.to_csv(summary_path, index=False)
+            print(f"Saved summary CSV to: {summary_path}")
+
+        plt.show()
+
+        return summary_df, counts
+
+
+    df = pd.read_csv("/users/yhb18174/TL_project/datasets/all/all_rdkit.csv")
+    summary_df, all_counts = plot_top_rotatable_bond_types(
+        df,
+        smiles_col="SMILES",
+        top_n=5,
+        save_path="/users/yhb18174/TL_project/scripts/sandbox/rot_bond.png",
+    )
+    
+run_24 = False
+
+if run_24:
+    import pandas as pd
+    import matplotlib.pyplot as plt
+    from collections import Counter
+    from pathlib import Path
+
+    from rdkit import Chem
+    from rdkit.Chem import Lipinski
+    from rdkit.Chem.rdchem import HybridizationType
+
+    def carbon_hybrid_class(atom):
+        """
+        Return carbon hybridisation class for carbon atoms.
+        Non-carbon atoms return None.
+        """
+        if atom.GetAtomicNum() != 6:
+            return None
+
+        hyb = atom.GetHybridization()
+
+        if hyb == HybridizationType.SP:
+            return "Csp1"
+        elif hyb == HybridizationType.SP2:
+            return "Csp2"
+        elif hyb == HybridizationType.SP3:
+            return "Csp3"
+        else:
+            return "C_other"
+
+    def classify_rotatable_bond_by_carbon_hybridisation(mol):
+        """
+        Classify each RDKit-defined rotatable bond by whether it involves
+        sp3 carbon, sp2 carbon, both, or neither.
+        """
+        if mol is None:
+            return []
+
+        classes = []
+
+        for atom_idx_1, atom_idx_2 in mol.GetSubstructMatches(
+            Lipinski.RotatableBondSmarts
+        ):
+            atom_1 = mol.GetAtomWithIdx(atom_idx_1)
+            atom_2 = mol.GetAtomWithIdx(atom_idx_2)
+
+            hybrids = {
+                carbon_hybrid_class(atom_1),
+                carbon_hybrid_class(atom_2),
+            }
+
+            hybrids.discard(None)
+
+            has_sp2 = "Csp2" in hybrids
+            has_sp3 = "Csp3" in hybrids
+            has_sp1 = "Csp1" in hybrids
+
+            if has_sp2 and has_sp3:
+                classes.append("Csp2-Csp3")
+            elif has_sp3:
+                classes.append("Csp3-involving")
+            elif has_sp2:
+                classes.append("Csp2-involving")
+            elif has_sp1:
+                classes.append("Csp1-involving")
+            else:
+                classes.append("No Csp1/Csp2/Csp3")
+
+        return classes
+
+    def plot_rotatable_bond_carbon_hybridisation_ratios(
+        df,
+        smiles_col="SMILES",
+        save_path=None,
+    ):
+        """
+        Plot dataset-level ratios of rotatable bonds involving Csp3, Csp2,
+        both Csp2-Csp3, Csp1, or none.
+        """
+
+        all_classes = []
+        invalid_smiles = 0
+        molecules_with_no_rotatable_bonds = 0
+
+        for smi in df[smiles_col].dropna():
+            mol = Chem.MolFromSmiles(smi)
+
+            if mol is None:
+                invalid_smiles += 1
+                continue
+
+            classes = classify_rotatable_bond_by_carbon_hybridisation(mol)
+
+            if len(classes) == 0:
+                molecules_with_no_rotatable_bonds += 1
+
+            all_classes.extend(classes)
+
+        counts = Counter(all_classes)
+
+        if not counts:
+            raise ValueError("No rotatable bonds found in the dataframe.")
+
+        summary_df = pd.DataFrame(
+            {
+                "rotatable_bond_class": list(counts.keys()),
+                "count": list(counts.values()),
+            }
+        )
+
+        summary_df["percentage"] = (
+            summary_df["count"] / summary_df["count"].sum() * 100
+        )
+
+        order = [
+            "Csp3-involving",
+            "Csp2-involving",
+            "Csp2-Csp3",
+            "Csp1-involving",
+            "No Csp1/Csp2/Csp3",
+        ]
+
+        summary_df["order"] = summary_df["rotatable_bond_class"].apply(
+            lambda x: order.index(x) if x in order else len(order)
+        )
+        summary_df = summary_df.sort_values("order").drop(columns="order")
+
+        print("\nRotatable bond carbon-hybridisation ratios:")
+        print(summary_df)
+
+        print(f"\nInvalid SMILES skipped: {invalid_smiles}")
+        print(f"Molecules with no rotatable bonds: {molecules_with_no_rotatable_bonds}")
+        print(f"Total rotatable bonds counted: {summary_df['count'].sum()}")
+
+        if save_path is not None:
+            save_path = Path(save_path)
+            save_path.parent.mkdir(parents=True, exist_ok=True)
+
+        plt.figure(figsize=(7, 7))
+        plt.pie(
+            summary_df["count"],
+            labels=summary_df["rotatable_bond_class"],
+            autopct="%1.1f%%",
+            startangle=90,
+        )
+        plt.title("Rotatable Bond Ratios by Carbon Hybridisation")
+        plt.tight_layout()
+
+        if save_path is not None:
+            plt.savefig(save_path, dpi=300, bbox_inches="tight")
+            print(f"\nSaved pie chart to: {save_path}")
+
+            summary_path = save_path.with_suffix(".csv")
+            summary_df.to_csv(summary_path, index=False)
+            print(f"Saved summary CSV to: {summary_path}")
+
+        plt.show()
+
+        return summary_df, counts
+    df = pd.read_csv("/users/yhb18174/TL_project/datasets/all/all_rdkit.csv")
+
+    summary_df, all_counts = plot_rotatable_bond_carbon_hybridisation_ratios(
+        df,
+        smiles_col="SMILES",
+        save_path="/users/yhb18174/TL_project/scripts/sandbox/rot_bond_carbon_hybridisation_ratios.png",
+    )
+    
+    
+run_25 = False
+
+if run_25:
+    from collections import Counter
+    from pathlib import Path
+
+    import pandas as pd
+    import matplotlib.pyplot as plt
+    from rdkit import Chem
+    from rdkit.Chem.rdchem import HybridizationType
+
+    COMMON_ATOMS = ["O", "N", "S", "P", "F", "Cl", "Br", "I"]
+
+    def atom_class_label(atom):
+        """
+        Classify atoms as:
+            Csp1, Csp2, Csp3, C_other,
+            O, N, S, P, F, Cl, Br, I,
+            Other
+        """
+        symbol = atom.GetSymbol()
+
+        if symbol == "C":
+            hyb = atom.GetHybridization()
+
+            if hyb == HybridizationType.SP:
+                return "Csp1"
+            elif hyb == HybridizationType.SP2:
+                return "Csp2"
+            elif hyb == HybridizationType.SP3:
+                return "Csp3"
+            else:
+                return "C_other"
+
+        if symbol in COMMON_ATOMS:
+            return symbol
+
+        return "Other"
+
+    def plot_dataset_atom_composition_pie(
+        df,
+        smiles_col="SMILES",
+        save_path=None,
+    ):
+        """
+        Count all atoms across the full dataframe and plot a pie chart
+        of atom composition.
+        """
+
+        atom_counts = Counter()
+        invalid_smiles = 0
+
+        for smi in df[smiles_col].dropna():
+            mol = Chem.MolFromSmiles(smi)
+
+            if mol is None:
+                invalid_smiles += 1
+                continue
+
+            for atom in mol.GetAtoms():
+                atom_counts[atom_class_label(atom)] += 1
+
+        if not atom_counts:
+            raise ValueError("No valid atoms found in the dataframe.")
+
+        summary_df = pd.DataFrame(
+            {
+                "atom_class": list(atom_counts.keys()),
+                "count": list(atom_counts.values()),
+            }
+        )
+
+        summary_df["percentage"] = (
+            summary_df["count"] / summary_df["count"].sum() * 100
+        )
+
+        summary_df = summary_df.sort_values("count", ascending=False)
+
+        print("\nDataset atom composition:")
+        print(summary_df)
+
+        print(f"\nInvalid SMILES skipped: {invalid_smiles}")
+        print(f"Total atoms counted: {summary_df['count'].sum()}")
+
+        if save_path is not None:
+            save_path = Path(save_path)
+            save_path.parent.mkdir(parents=True, exist_ok=True)
+
+        plt.figure(figsize=(8, 8))
+        plt.pie(
+            summary_df["count"],
+            labels=summary_df["atom_class"],
+            autopct="%1.1f%%",
+            startangle=90,
+        )
+        plt.title("Dataset Atom Composition")
+        plt.tight_layout()
+
+        if save_path is not None:
+            plt.savefig(save_path, dpi=300, bbox_inches="tight")
+            print(f"\nSaved pie chart to: {save_path}")
+
+            summary_path = save_path.with_suffix(".csv")
+            summary_df.to_csv(summary_path, index=False)
+            print(f"Saved summary CSV to: {summary_path}")
+
+        plt.show()
+
+        return summary_df, atom_counts
+    df = pd.read_csv("/users/yhb18174/TL_project/datasets/all/all_rdkit.csv")
+
+    atom_summary_df, atom_counts = plot_dataset_atom_composition_pie(
+        df,
+        smiles_col="SMILES",
+        save_path="/users/yhb18174/TL_project/scripts/sandbox/atom_composition_pie.png",
+    )
+    
+    
+run_26 = False
+if run_26:
+    
+    desc_features = getGroups("mordred")["EState"]
+    print(len(desc_features))
+    df_p = "/users/yhb18174/TL_project/results/lipinski_embeddings_and_descriptor_predictions/pred_mordred_avg_transformers/avg_stats_across_embedding_models.csv"
+    df = pd.read_csv(df_p, index_col=0)
+    
+    in_df = []
+    n_reg = 0
+    n_reg_not_na = 0
+    n_bc = 0
+    n_mc = 0
+    n_other = 0
+    
+    out_df = []
+    
+    for desc in desc_features:
+        if desc in df.index:
+            in_df.append(desc)
+
+            task_type = df.loc[desc, "task_type"]
+
+            if task_type == "regression":
+                n_reg += 1
+            
+                r2_value = pd.to_numeric(df.loc[desc, "r2"], errors="coerce")
+                if pd.notna(r2_value):
+                    n_reg_not_na += 1
+                    
+            elif task_type == "binary_classification":
+                n_bc += 1
+            elif task_type == "multiclass_classification":
+                n_mc += 1
+            else:
+                n_other += 1
+        else:
+            out_df.append(desc)
+
+    print(f"In avg_df: {len(in_df)}")
+    print(in_df)
+
+    print("\nOut of avg_df:")
+    print(f"Out: {len(out_df)}")
+    print(out_df)
+
+    print("\nTask type counts among EState descriptors present in avg_df:")
+    print(f"Regression: {n_reg}")
+    print(f"Regression not na: {n_reg_not_na}")
+    print(f"Binary classification: {n_bc}")
+    print(f"Multiclass classification: {n_mc}")
+    print(f"Other/unknown: {n_other}")
+
+    
+            

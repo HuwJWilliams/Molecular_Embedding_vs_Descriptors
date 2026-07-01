@@ -17,7 +17,7 @@ def clean_feature_df(
 
     report = {
         "dropped_metadata": [],
-        "dropped_nan_cols": [],
+        "dropped_high_nan_cols": [],
         "dropped_constant_cols": [],
         "median_imputed_cols": [],
         "dropped_correlated_cols": [],
@@ -66,3 +66,4 @@ def clean_feature_df(
             report["dropped_correlated_cols"] = correlated_cols
 
     return df, report
+

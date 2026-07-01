@@ -140,7 +140,7 @@ cp_dir = paths["prediction_output_dirs"][args.result_dir]
 var_threshold = args.var_threshold
 TASK_METRICS = {
     "regression": {
-        "metric": "Pearson_r",
+        "metric": "r2",
         "bar_metrics": ["Pearson_r", "r2"],
         "group_metrics": ["Pearson_r", "r2", "RMSE", "Bias"],
         "member_suffix": "reg",
@@ -672,11 +672,6 @@ task_type_map = {
     "multiclass": "multiclass_classification",
 }
 
-
-def _available_metrics(df: pd.DataFrame, wanted: list[str]) -> list[str]:
-    return [m for m in wanted if m in df.columns]
-
-
 def resolve_excluded_cols(index, cols):
     if not cols:
         return []
@@ -689,13 +684,6 @@ def resolve_excluded_cols(index, cols):
         resolved.update(label for label in labels if label.startswith(f"{col}_"))
 
     return sorted(resolved)
-
-
-def clean_plot_label(label: str) -> str:
-    label = str(label)
-    for suffix in ("_rdkit", "_mordred"):
-        label = label.replace(suffix, "")
-    return label
 
 # endregion
 
