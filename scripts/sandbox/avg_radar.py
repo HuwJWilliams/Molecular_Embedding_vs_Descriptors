@@ -189,9 +189,72 @@ def safe_name(name: str) -> str:
 def clean_descriptor_label(label: str) -> str:
     """Remove common descriptor suffixes for cleaner plot labels."""
     label = str(label)
-    for suffix in ("_mordred", "_rdkit"):
+    for suffix in ("_mordred", "_rdkit", "_maccs"):
         label = label.replace(suffix, "")
     return label
+
+
+def descriptor_variants(label: str) -> set[str]:
+    """
+    Return common suffixed/unsuffixed variants of a descriptor label.
+
+    The performance CSVs and group maps should normally agree exactly, but
+    older scripts sometimes mixed labels such as `MolWt` and `MolWt_rdkit`.
+    Group/member lookups use these variants so rows are not silently skipped
+    just because one side has the descriptor-set suffix and the other does not.
+    """
+    label = str(label)
+    variants = {label}
+    suffixes = ("_mordred", "_rdkit", "_maccs")
+
+    for suffix in suffixes:
+        if label.endswith(suffix):
+            base = label[: -len(suffix)]
+            variants.add(base)
+            variants.update(f"{base}{s}" for s in suffixes)
+        else:
+            variants.add(f"{label}{suffix}")
+
+    return variants
+
+
+def descriptor_is_excluded(label: str, exclude_cols: set[str]) -> bool:
+    """Return True if a descriptor or one of its suffix variants is excluded."""
+    return bool(descriptor_variants(label) & exclude_cols)
+
+
+def resolve_group_members(
+    members: Iterable[str],
+    index: pd.Index,
+    exclude_cols: set[str] | None = None,
+) -> list[str]:
+    """
+    Resolve descriptor group members to the actual labels present in `index`.
+
+    Matching is exact first, then by common descriptor suffix variants. Output
+    labels are the labels from `index`, preserving the dataframe's real index.
+    """
+    exclude_cols = exclude_cols or set()
+    label_lookup: dict[str, str] = {}
+    for idx in index:
+        idx_str = str(idx)
+        for variant in descriptor_variants(idx_str):
+            label_lookup.setdefault(variant, idx)
+
+    resolved = []
+    seen = set()
+    for member in members:
+        for variant in descriptor_variants(str(member)):
+            actual = label_lookup.get(variant)
+            if actual is None or actual in seen:
+                continue
+            if descriptor_is_excluded(str(actual), exclude_cols):
+                continue
+            resolved.append(actual)
+            seen.add(actual)
+            break
+
+    return resolved
 
 
 def find_metric_column(df: pd.DataFrame, metric: str) -> str | None:
@@ -241,7 +304,49 @@ def normalize_metric_columns(df: pd.DataFrame) -> pd.DataFrame:
         for col in df.columns
         if col.lower() in canonical_lookup and col != canonical_lookup[col.lower()]
     }
-    return df.rename(columns=rename_map) if rename_map else df
+    df = df.rename(columns=rename_map) if rename_map else df.copy()
+
+    for metric in ALL_KNOWN_METRICS:
+        if metric in df.columns:
+            df[metric] = pd.to_numeric(df[metric], errors="coerce")
+
+    return df
+
+
+def infer_task_mask_from_metrics(df: pd.DataFrame, task_name: str) -> pd.Series:
+    """
+    Infer task membership from populated metric columns.
+
+    This is a fallback/augmentation for imperfect `task_type` metadata. Binary
+    and multiclass share metrics such as Accuracy, Balanced_Accuracy, and MCC,
+    so rows with metrics unique to another task are excluded from inference.
+    """
+    task_metrics = available_metrics(df, TASK_METRICS[task_name])
+    if not task_metrics:
+        return pd.Series(False, index=df.index)
+
+    metric_frame = pd.DataFrame(
+        {m: get_metric_series(df, m) for m in task_metrics},
+        index=df.index,
+    )
+    mask = metric_frame.notna().any(axis=1)
+
+    other_unique_metrics = set()
+    task_metric_set = set(TASK_METRICS[task_name])
+    for other_task, other_metrics in TASK_METRICS.items():
+        if other_task == task_name:
+            continue
+        other_unique_metrics.update(set(other_metrics) - task_metric_set)
+
+    present_other_unique = available_metrics(df, sorted(other_unique_metrics))
+    if present_other_unique:
+        other_frame = pd.DataFrame(
+            {m: get_metric_series(df, m) for m in present_other_unique},
+            index=df.index,
+        )
+        mask = mask & ~other_frame.notna().any(axis=1)
+
+    return mask
 
 
 def filter_task_rows(df: pd.DataFrame, task_name: str) -> pd.DataFrame:
@@ -250,22 +355,20 @@ def filter_task_rows(df: pd.DataFrame, task_name: str) -> pd.DataFrame:
     "multiclass") using the `task_type` column, tolerant of casing and
     common label variants (see TASK_TYPE_ALIASES).
 
-    Raises a clear error if `task_type` is missing entirely, rather than
-    silently guessing from which metric columns happen to be populated -
-    metric-based guessing was unreliable (classification and multiclass
-    share several metric names) and previously caused descriptors to be
-    dropped or misclassified.
+    Falls back to metric-populated rows when `task_type` is missing or when
+    the metadata under-selects rows. This keeps older/partially generated CSVs
+    usable while still preferring explicit task metadata.
     """
-    if "task_type" not in df.columns:
-        raise KeyError(
-            "'task_type' column not found - cannot classify descriptors by "
-            "task without it. Check that the prediction CSVs include a "
-            "task_type column."
-        )
-
+    task_type_mask = pd.Series(False, index=df.index)
     aliases = TASK_TYPE_ALIASES[task_name]
-    normalized = df["task_type"].astype(str).str.strip().str.lower()
-    return df.loc[normalized.isin(aliases)].copy()
+    if "task_type" in df.columns:
+        normalized = df["task_type"].astype(str).str.strip().str.lower()
+        task_type_mask = normalized.isin(aliases)
+
+    metric_mask = infer_task_mask_from_metrics(df, task_name)
+    combined_mask = task_type_mask | metric_mask
+
+    return df.loc[combined_mask].copy()
 
 
 def resolve_results_dir(paths: dict, result_dir_key: str):
@@ -337,6 +440,47 @@ def average_model_results(model_results: dict[str, pd.DataFrame]) -> pd.DataFram
     return avg_df
 
 
+def get_task_count_summary(df: pd.DataFrame) -> pd.DataFrame:
+    """Count rows/metric-populated rows by inferred task for diagnostics."""
+    rows = []
+
+    for task_name, metrics in TASK_METRICS.items():
+        task_df = filter_task_rows(df, task_name)
+        present_metrics = available_metrics(task_df, metrics)
+
+        if present_metrics and not task_df.empty:
+            metric_frame = pd.DataFrame(
+                {m: get_metric_series(task_df, m) for m in present_metrics},
+                index=task_df.index,
+            )
+            n_with_any_metric = int(metric_frame.notna().any(axis=1).sum())
+        else:
+            n_with_any_metric = 0
+
+        rows.append(
+            {
+                "task": task_name,
+                "task_type": TASK_TYPE_MAP[task_name],
+                "n_rows": len(task_df),
+                "n_rows_with_any_task_metric": n_with_any_metric,
+                "metrics_present": ", ".join(present_metrics),
+            }
+        )
+
+    return pd.DataFrame(rows)
+
+
+def print_task_count_summary(label: str, df: pd.DataFrame) -> None:
+    """Print concise task counts to help diagnose missing descriptor rows."""
+    summary = get_task_count_summary(df)
+    print(f"\nTask counts for {label}:")
+    for row in summary.itertuples(index=False):
+        print(
+            f"  - {row.task}: {row.n_rows} rows "
+            f"({row.n_rows_with_any_task_metric} with task metrics)"
+        )
+
+
 def make_descriptor_r2_table(model_results: dict[str, pd.DataFrame]) -> pd.DataFrame:
     """Create a descriptor-level r2 table for each model plus the average."""
     r2_frames = []
@@ -388,10 +532,11 @@ def group_descriptors_long(
         )
 
         for group_name, members in group_map.items():
-            present_members = [
-                m for m in members
-                if m in task_df.index and m not in exclude_cols
-            ]
+            present_members = resolve_group_members(
+                members=members,
+                index=task_df.index,
+                exclude_cols=exclude_cols,
+            )
             if not present_members:
                 continue
 
@@ -530,8 +675,8 @@ def plot_group_task_bars(
 
         for group_name, members in group_map.items():
             present_members = [
-                m for m in members
-                if m in metric_values.index and pd.notna(metric_values.loc[m])
+                m for m in resolve_group_members(members, metric_values.index)
+                if pd.notna(metric_values.loc[m])
             ]
             if len(present_members) < min_members:
                 continue
@@ -580,7 +725,8 @@ def plot_low_performing_descriptors(
     descriptor_to_groups: dict[str, list[str]] = {}
     for group_name, members in group_map.items():
         for member in members:
-            descriptor_to_groups.setdefault(member, []).append(group_name)
+            for variant in descriptor_variants(str(member)):
+                descriptor_to_groups.setdefault(variant, []).append(group_name)
 
     for task_name, metric in PLOT_METRIC_BY_TASK.items():
         task_df = filter_task_rows(avg_df, task_name)
@@ -599,7 +745,7 @@ def plot_low_performing_descriptors(
             continue
 
         low_df["descriptor_group"] = [
-            ";".join(descriptor_to_groups.get(idx, ["Unmapped"])) for idx in low_df.index
+            ";".join(descriptor_to_groups.get(str(idx), ["Unmapped"])) for idx in low_df.index
         ]
         low_df = low_df.sort_values(metric, ascending=True)
 
@@ -634,7 +780,7 @@ def plot_low_performing_descriptors(
 
         # 2. Group-specific low-performing plots for this task type.
         for group_name, members in group_map.items():
-            present_members = [m for m in members if m in low_df.index]
+            present_members = resolve_group_members(members, low_df.index)
             if not present_members:
                 continue
 
@@ -685,7 +831,8 @@ def get_group_task_fraction_summary(
         metric_values = get_metric_series(task_df, metric)
         valid_descriptors = [
             idx for idx in task_df.index
-            if idx not in exclude_cols and pd.notna(metric_values.loc[idx])
+            if not descriptor_is_excluded(str(idx), exclude_cols)
+            and pd.notna(metric_values.loc[idx])
         ]
 
         total_task_descriptors = len(valid_descriptors)
@@ -693,10 +840,10 @@ def get_group_task_fraction_summary(
             print(f"Skipping group fraction summary for {task_name}: no valid descriptors.")
             continue
 
-        valid_set = set(valid_descriptors)
-
         for group_name, members in group_map.items():
-            present_members = [m for m in members if m in valid_set]
+            present_members = [
+                m for m in resolve_group_members(members, pd.Index(valid_descriptors))
+            ]
             if not present_members:
                 continue
 
@@ -900,19 +1047,31 @@ def main() -> None:
 
     # 1. Load all model result CSVs (column names canonicalised on load).
     model_results = load_model_results(results_dir, args.pred, args.models)
+    for model, df in model_results.items():
+        print_task_count_summary(model, df)
 
     # 2. Average all numeric performance columns across transformer models.
     avg_df = average_model_results(model_results)
+    print_task_count_summary("averaged embedding results", avg_df)
 
     if exclude_cols:
-        avg_df = avg_df.drop(index=[c for c in exclude_cols if c in avg_df.index], errors="ignore")
+        exclude_set = set(exclude_cols)
+        avg_df = avg_df.drop(
+            index=[idx for idx in avg_df.index if descriptor_is_excluded(str(idx), exclude_set)],
+            errors="ignore",
+        )
 
     avg_df.to_csv(out_dir / "avg_stats_across_embedding_models.csv")
+    get_task_count_summary(avg_df).to_csv(out_dir / "task_count_summary.csv", index=False)
 
     # 3. r2 table for each model and average across regression descriptors.
     r2_table = make_descriptor_r2_table(model_results)
     if exclude_cols:
-        r2_table = r2_table.drop(index=[c for c in exclude_cols if c in r2_table.index], errors="ignore")
+        exclude_set = set(exclude_cols)
+        r2_table = r2_table.drop(
+            index=[idx for idx in r2_table.index if descriptor_is_excluded(str(idx), exclude_set)],
+            errors="ignore",
+        )
     r2_table.to_csv(out_dir / "descriptor_r2_by_model_with_average.csv")
 
     # 4. Group performances for regression, classification, and multiclass.
