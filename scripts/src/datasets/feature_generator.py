@@ -28,6 +28,8 @@ import torch
 import selfies
 from sklearn.model_selection import train_test_split
 from datasets import Dataset
+import inspect
+import transformers
 
 FILE_DIR = Path(__file__).resolve()
 PROJ_DIR = FILE_DIR.parents[3]
@@ -46,7 +48,7 @@ LOG_LEVEL = logging.DEBUG
 PATHS = getPaths()
 MIN_UNIQUE = 2
 
-# %% --- Classes & Functions
+# %% --- Classes & Function        
 class FeatureGenerator():
     """
     Class to hold all of the feature generation functions
@@ -89,7 +91,8 @@ class FeatureGenerator():
             self._initialise_embedding_models(
                 tokeniser=transformer_spec["tokeniser"],
                 model=transformer_spec["model"],
-                revision=transformer_spec["commit_hash"]
+                revision=transformer_spec["commit_hash"],
+                code_revision=transformer_spec.get("code_revision"),
             )
 
         if self.encoder != "Uninitialised":
@@ -424,26 +427,26 @@ class FeatureGenerator():
 
     # region ====== Fine-Tuning Transformers to task
     def fineTuneTransformer(
-                self,
-                smiles_ls: list[str],
-                ids: list[str],
-                targets: list[float],
-                model_label: str,
-                batch_size: int,
-                max_token_len: int,
-                pooling: str,
-                output_dir: Path | str,
-                test_frac: float=0.2,
-                early_stopping_patience: int = 0,
-                dropout_rate: float = 0.1,
-                training_kwargs: dict | None = None,
+            self,
+            smiles_ls: list[str],
+            ids: list[str],
+            targets: list[float],
+            model_label: str,
+            batch_size: int,
+            max_token_len: int,
+            pooling: str,
+            output_dir: Path | str,
+            test_frac: float = 0.2,
+            early_stopping_patience: int = 0,
+            dropout_rate: float = 0.1,
+            training_kwargs: dict | None = None,
     ):
         if training_kwargs is None:
             training_kwargs = {
                 "num_train_epochs": 3,
                 "learning_rate": 2e-5,
                 "weight_decay": 0.01,
-                "eval_strategy": "epoch",
+                "evaluation_strategy": "epoch",
                 "save_strategy": "epoch",
                 "logging_strategy": "steps",
                 "logging_steps": 25,
@@ -454,153 +457,165 @@ class FeatureGenerator():
                 "max_grad_norm": 1.0,
                 "save_safetensors": False,
             }
-
+    
         if pooling not in {"cls", "mean"}:
             raise ValueError("pooling must be either 'cls' or 'mean'.")
-
+    
         input_texts = smiles_ls
+    
         if self.feature_set == "selformer":
             targets_by_id = dict(zip(ids, targets))
-            ids, input_texts, _ = self._smiles2selfies(smiles_ls=smiles_ls, id_ls=ids)
+            ids, input_texts, _ = self._smiles2selfies(
+                smiles_ls=smiles_ls,
+                id_ls=ids,
+            )
             targets = [targets_by_id[mol_id] for mol_id in ids]
-
+    
         if len(input_texts) != len(ids):
             self.logger.error(
-                f"Length of input texts and IDs not the same."
+                f"Length of input texts and IDs not the same. "
                 f"(texts = {len(input_texts)}, IDs = {len(ids)})"
             )
             raise ValueError("len(input_texts) != len(ids)")
-        
+    
         if len(input_texts) != len(targets):
             self.logger.error(
-                f"Length of input texts and targets not the same."
-                f"(texts = {len(input_texts)}, IDs = {len(ids)})"
+                f"Length of input texts and targets not the same. "
+                f"(texts = {len(input_texts)}, targets = {len(targets)})"
             )
             raise ValueError("len(input_texts) != len(targets)")
-
-        self.logger.info(f"Creating {model_label} fine-tuned embeddings for {len(input_texts)} entries.")
-        self.logger.debug(f"Tokeniser:\n{self.tokeniser}\nEncoder:\n{self.encoder}")
+    
+        self.logger.info(
+            f"Creating {model_label} fine-tuned model for {len(input_texts)} entries."
+        )
         self.logger.info(f"Pooling strategy: {pooling}")
-
+    
         (
             train_txt,
             val_txt,
             train_targ,
             val_targ,
             train_ids,
-            val_ids
-         ) = train_test_split(
-             input_texts, 
-             targets, 
-             ids, 
-             test_size=test_frac
-             )
-        
+            val_ids,
+        ) = train_test_split(
+            input_texts,
+            targets,
+            ids,
+            test_size=test_frac,
+        )
+    
         scaler = StandardScaler()
-
-        train_targ = scaler.fit_transform(np.asarray(train_targ).reshape(-1, 1)).reshape(-1)
-        val_targ = scaler.transform(np.asarray(val_targ).reshape(-1, 1)).reshape(-1)
+    
+        train_targ = scaler.fit_transform(
+            np.asarray(train_targ, dtype=np.float32).reshape(-1, 1)
+        ).reshape(-1)
+    
+        val_targ = scaler.transform(
+            np.asarray(val_targ, dtype=np.float32).reshape(-1, 1)
+        ).reshape(-1)
     
         train_data = Dataset.from_dict({
             "ID": train_ids,
             "text": train_txt,
-            "labels": train_targ
+            "labels": train_targ.astype(np.float32),
         })
-
+    
         val_data = Dataset.from_dict({
             "ID": val_ids,
             "text": val_txt,
-            "labels": val_targ
+            "labels": val_targ.astype(np.float32),
         })
-
+    
         def __tokenise_batch(batch):
             return self.tokeniser(
                 batch["text"],
                 padding=True,
                 truncation=True,
                 max_length=max_token_len,
-                add_special_tokens=True
+                add_special_tokens=True,
             )
-        
-        train_data=train_data.map(__tokenise_batch, batched=True)
+    
+        train_data = train_data.map(__tokenise_batch, batched=True)
         train_data = train_data.remove_columns(["ID", "text"])
         train_data.set_format("torch")
-
-        val_data=val_data.map(__tokenise_batch, batched=True)
+    
+        val_data = val_data.map(__tokenise_batch, batched=True)
         val_data = val_data.remove_columns(["ID", "text"])
         val_data.set_format("torch")
-
-        model_name = TRANSFORMER_FEATURE_SPECS.get(self.feature_set)["model"]
-        revision = TRANSFORMER_FEATURE_SPECS.get(self.feature_set)["commit_hash"]
-        
+    
+        spec = TRANSFORMER_FEATURE_SPECS[self.feature_set]
+    
+        model_name = spec["model"]
+        revision = spec["commit_hash"]
+        code_revision = spec.get("code_revision")
+    
+        hf_kwargs = {
+            "trust_remote_code": True,
+            "revision": revision,
+        }
+    
+        if code_revision is not None:
+            hf_kwargs["code_revision"] = code_revision
+    
         fine_tune_config = AutoConfig.from_pretrained(
             model_name,
-            trust_remote_code=True,
-            revision=revision
+            **hf_kwargs,
         )
-
-        dropout_attributes = [    
+    
+        for attr in (
             "hidden_dropout_prob",
             "attention_probs_dropout_prob",
-            "classifier_dropout"]
-        
-        for attr in dropout_attributes:
+            "classifier_dropout",
+        ):
             if hasattr(fine_tune_config, attr):
                 setattr(fine_tune_config, attr, dropout_rate)
-
+    
         fine_tune_config.problem_type = "regression"
         fine_tune_config.num_labels = 1
-
+    
         self.fine_tuning_model = AutoModelForSequenceClassification.from_pretrained(
             model_name,
-            trust_remote_code=True,
             config=fine_tune_config,
-            revision=revision
+            **hf_kwargs,
         )
-
+        
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.fine_tuning_model.to(device)
-
+    
         training_kwargs = dict(training_kwargs)
-        
         training_kwargs["output_dir"] = str(output_dir)
         training_kwargs["per_device_train_batch_size"] = batch_size
         training_kwargs["per_device_eval_batch_size"] = batch_size
-        
-        # Required for MoLFormer: safetensors cannot save some non-contiguous tensors
+    
+        # Required for MoLFormer: safetensors can fail on non-contiguous tensors.
         training_kwargs["save_safetensors"] = False
         
-        training_args_signature = inspect.signature(TrainingArguments.__init__)
-        
-        if "eval_strategy" in training_kwargs and "eval_strategy" not in training_args_signature.parameters:
-            training_kwargs["evaluation_strategy"] = training_kwargs.pop("eval_strategy")
-        
-        if "evaluation_strategy" in training_kwargs and "evaluation_strategy" not in training_args_signature.parameters:
-            training_kwargs["eval_strategy"] = training_kwargs.pop("evaluation_strategy")
+        training_kwargs = self._normalise_training_kwargs_for_installed_transformers(
+            training_kwargs
+        )
         
         training_args = TrainingArguments(**training_kwargs)
-        
-        self.logger.info(f"save_safetensors = {training_args.save_safetensors}")
-
         def compute_metrics(eval_pred):
             pred_logits, true = eval_pred
-            pred = pred_logits.squeeze()
-
+    
+            if isinstance(pred_logits, tuple):
+                pred_logits = pred_logits[0]
+    
             pred = np.asarray(pred_logits).reshape(-1)
             true = np.asarray(true).reshape(-1)
-
+    
             errors = true - pred
             bias = np.mean(errors)
-            sdep = (np.mean((true - pred - (np.mean(true - pred))) ** 2)) ** 0.5
+            sdep = np.sqrt(np.mean((errors - np.mean(errors)) ** 2))
             mse = mean_squared_error(true, pred)
             rmse = np.sqrt(mse)
             r2 = r2_score(true, pred)
-            
+    
             try:
                 r_pearson, p_pearson = pearsonr(true, pred)
             except Exception:
                 r_pearson, p_pearson = np.nan, np.nan
-
+    
             return {
                 "bias": bias,
                 "sdep": sdep,
@@ -610,17 +625,16 @@ class FeatureGenerator():
                 "r_pearson": r_pearson,
                 "p_pearson": p_pearson,
             }
-
+    
         callbacks = []
-
+    
         if early_stopping_patience > 0:
             callbacks.append(
                 EarlyStoppingCallback(
-                    early_stopping_patience=early_stopping_patience
+                    early_stopping_patience=early_stopping_patience,
                 )
-                )
+            )
     
-        # Making verison safe trainer
         trainer_kwargs = dict(
             model=self.fine_tuning_model,
             args=training_args,
@@ -631,30 +645,32 @@ class FeatureGenerator():
         )
         
         trainer_signature = inspect.signature(Trainer.__init__)
+        trainer_arg_names = set(trainer_signature.parameters)
         
-        if "processing_class" in trainer_signature.parameters:
+        if "processing_class" in trainer_arg_names:
             trainer_kwargs["processing_class"] = self.tokeniser
-        elif "tokenizer" in trainer_signature.parameters:
+        elif "tokenizer" in trainer_arg_names:
             trainer_kwargs["tokenizer"] = self.tokeniser
         
         trainer = Trainer(**trainer_kwargs)
-
+    
         self.logger.info("Starting regression fine-tuning.")
-        train_result=trainer.train()
+        train_result = trainer.train()
+    
         self._save_training_mse_curve(
             log_history=trainer.state.log_history,
             output_dir=output_dir,
         )
-
+    
         self.logger.info("Evaluating fine-tuned regression model.")
         eval_result = trainer.evaluate()
-
+    
         self.fine_tuning_model = trainer.model
         self.fine_tuning_model.eval()
-
+    
         self.encoder = self.fine_tuning_model.base_model
         self.encoder.eval()
-
+    
         return {
             "trainer": trainer,
             "model": self.fine_tuning_model,
@@ -662,9 +678,10 @@ class FeatureGenerator():
             "eval_metrics": eval_result,
             "output_dir": output_dir,
             "train_ids": train_ids,
-            "val_ids": val_ids
+            "val_ids": val_ids,
+            "scaler": scaler,
         }
-
+    
     def _save_training_mse_curve(
             self,
             log_history: list[dict],
@@ -1185,45 +1202,108 @@ class FeatureGenerator():
         
         return df
     
+    def _hf_remote_kwargs(self, revision: str, code_revision: str | None = None) -> dict:
+        kwargs = {
+            "trust_remote_code": True,
+            "revision": revision,
+        }
+        if code_revision is not None:
+            kwargs["code_revision"] = code_revision
+        return kwargs
+    
+    def _normalise_training_kwargs_for_installed_transformers(
+        self,
+        training_kwargs: dict,
+    ) -> dict:
+        """
+        Make TrainingArguments kwargs compatible with the installed Transformers version.
+    
+        transformers 4.35.x expects `evaluation_strategy`.
+        newer transformers versions expect `eval_strategy`.
+        """
+    
+        training_kwargs = dict(training_kwargs)
+    
+        training_args_signature = inspect.signature(TrainingArguments.__init__)
+        training_arg_names = set(training_args_signature.parameters)
+    
+        if "eval_strategy" in training_kwargs and "eval_strategy" not in training_arg_names:
+            if "evaluation_strategy" in training_arg_names:
+                training_kwargs["evaluation_strategy"] = training_kwargs.pop("eval_strategy")
+            else:
+                training_kwargs.pop("eval_strategy")
+    
+        if "evaluation_strategy" in training_kwargs and "evaluation_strategy" not in training_arg_names:
+            if "eval_strategy" in training_arg_names:
+                training_kwargs["eval_strategy"] = training_kwargs.pop("evaluation_strategy")
+            else:
+                training_kwargs.pop("evaluation_strategy")
+    
+        unsupported_args = [
+            key for key in training_kwargs
+            if key not in training_arg_names
+        ]
+    
+        for key in unsupported_args:
+            self.logger.warning(
+                f"Dropping unsupported TrainingArguments kwarg for this Transformers version: {key}"
+            )
+            training_kwargs.pop(key)
+    
+        return training_kwargs
+    
+    
     def _initialise_embedding_models(
             self,
             tokeniser: str,
             model: str,
-            revision: str
+            revision: str,
+            code_revision: str | None = None,
     ):
         """
-        Initialising the embedding models
+        Initialising the embedding models.
         """
-        if tokeniser and model:
-
-            self.logger.info(
-                "Initialising tokeniser and model"
-                f"Tokeniser = {tokeniser}"
-                f"Model = {model}"
-                )
-            
-            try:
-                self.tokeniser = AutoTokenizer.from_pretrained(
-                    tokeniser,
-                    trust_remote_code=True,
-                    revision=revision
-                )
-                self.encoder = AutoModel.from_pretrained(
-                    model,
-                    trust_remote_code=True,
-                    revision=revision
-                ).eval().to("cpu")
-            except Exception as exc:
-                raise RuntimeError(
-                    f"Failed to initialise tokenizer/model for '{model}'. "
-                    "The configured Hugging Face repository may be incomplete "
-                    "(for example missing tokenizer vocab files or weights)."
-                ) from exc
-        else:
-            self.logger.error("No valid tokeniser or model provided:"
-                              f"Tokeniser = {tokeniser}",
-                              f"Model = {model}"
+    
+        if not tokeniser or not model:
+            self.logger.error(
+                "No valid tokeniser or model provided: "
+                f"Tokeniser = {tokeniser}, Model = {model}"
             )
+            return
+    
+        self.logger.info(
+            "Initialising tokeniser and model. "
+            f"Tokeniser = {tokeniser}. "
+            f"Model = {model}. "
+            f"Revision = {revision}. "
+            f"Code revision = {code_revision}."
+        )
+    
+        hf_kwargs = {
+            "trust_remote_code": True,
+            "revision": revision,
+        }
+    
+        if code_revision is not None:
+            hf_kwargs["code_revision"] = code_revision
+    
+        try:
+            self.tokeniser = AutoTokenizer.from_pretrained(
+                tokeniser,
+                **hf_kwargs,
+            )
+    
+            self.encoder = AutoModel.from_pretrained(
+                model,
+                **hf_kwargs,
+            ).eval().to("cpu")
+    
+        except Exception as exc:
+            raise RuntimeError(
+                f"Failed to initialise tokenizer/model for '{model}'. "
+                "The configured Hugging Face repository may be incomplete, "
+                "or the checkpoint revision and remote-code revision may be incompatible."
+            ) from exc
 
     def _drop_columns(
             self,
@@ -1432,5 +1512,6 @@ class FeatureGenerator():
             )
             
         return valid_ids, valid_selfies, invalid_ids
+    
     
     # endregion
