@@ -20,7 +20,6 @@ from transformers import (
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import (
     mean_squared_error,
-    mean_absolute_error,
     r2_score
 )
 from scipy.stats import pearsonr
@@ -45,7 +44,6 @@ from pipeline_config import TRANSFORMER_FEATURE_SPECS
 LOG_LEVEL = logging.DEBUG
 PATHS = getPaths()
 MIN_UNIQUE = 2
-
 
 # %% --- Classes & Functions
 class FeatureGenerator():
@@ -90,6 +88,7 @@ class FeatureGenerator():
             self._initialise_embedding_models(
                 tokeniser=transformer_spec["tokeniser"],
                 model=transformer_spec["model"],
+                revision=transformer_spec["commit_hash"]
             )
 
         if self.encoder != "Uninitialised":
@@ -530,9 +529,12 @@ class FeatureGenerator():
         val_data.set_format("torch")
 
         model_name = TRANSFORMER_FEATURE_SPECS.get(self.feature_set)["model"]
+        revision = TRANSFORMER_FEATURE_SPECS.get(self.feature_set)["commit_hash"]
+        
         fine_tune_config = AutoConfig.from_pretrained(
             model_name,
             trust_remote_code=True,
+            revision=revision
         )
 
         dropout_attributes = [    
@@ -551,6 +553,7 @@ class FeatureGenerator():
             model_name,
             trust_remote_code=True,
             config=fine_tune_config
+            revision=revision
         )
 
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -1160,6 +1163,7 @@ class FeatureGenerator():
             self,
             tokeniser: str,
             model: str,
+            revision: str
     ):
         """
         Initialising the embedding models
@@ -1175,11 +1179,13 @@ class FeatureGenerator():
             try:
                 self.tokeniser = AutoTokenizer.from_pretrained(
                     tokeniser,
-                    trust_remote_code=True
+                    trust_remote_code=True,
+                    revision=revision
                 )
                 self.encoder = AutoModel.from_pretrained(
                     model,
-                    trust_remote_code=True
+                    trust_remote_code=True,
+                    revision=revision
                 ).eval().to("cpu")
             except Exception as exc:
                 raise RuntimeError(
