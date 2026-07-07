@@ -1,5 +1,6 @@
 # %% --- Imports
 import pandas as pd
+import inspect
 import numpy as np
 import logging
 from pathlib import Path
@@ -450,7 +451,8 @@ class FeatureGenerator():
                 "metric_for_best_model": "mse",
                 "greater_is_better": False,
                 "report_to": "none",
-                "max_grad_norm": 1.0
+                "max_grad_norm": 1.0,
+                "save_safetensors": False,
             }
 
         if pooling not in {"cls", "mean"}:
@@ -560,10 +562,25 @@ class FeatureGenerator():
         self.fine_tuning_model.to(device)
 
         training_kwargs = dict(training_kwargs)
+        
         training_kwargs["output_dir"] = str(output_dir)
         training_kwargs["per_device_train_batch_size"] = batch_size
         training_kwargs["per_device_eval_batch_size"] = batch_size
+        
+        # Required for MoLFormer: safetensors cannot save some non-contiguous tensors
+        training_kwargs["save_safetensors"] = False
+        
+        training_args_signature = inspect.signature(TrainingArguments.__init__)
+        
+        if "eval_strategy" in training_kwargs and "eval_strategy" not in training_args_signature.parameters:
+            training_kwargs["evaluation_strategy"] = training_kwargs.pop("eval_strategy")
+        
+        if "evaluation_strategy" in training_kwargs and "evaluation_strategy" not in training_args_signature.parameters:
+            training_kwargs["eval_strategy"] = training_kwargs.pop("evaluation_strategy")
+        
         training_args = TrainingArguments(**training_kwargs)
+        
+        self.logger.info(f"save_safetensors = {training_args.save_safetensors}")
 
         def compute_metrics(eval_pred):
             pred_logits, true = eval_pred
@@ -601,17 +618,26 @@ class FeatureGenerator():
                 EarlyStoppingCallback(
                     early_stopping_patience=early_stopping_patience
                 )
-            )
-
-        trainer = Trainer(
+                )
+    
+        # Making verison safe trainer
+        trainer_kwargs = dict(
             model=self.fine_tuning_model,
             args=training_args,
             train_dataset=train_data,
             eval_dataset=val_data,
-            tokenizer=self.tokeniser,
             compute_metrics=compute_metrics,
-            callbacks=callbacks
+            callbacks=callbacks,
         )
+        
+        trainer_signature = inspect.signature(Trainer.__init__)
+        
+        if "processing_class" in trainer_signature.parameters:
+            trainer_kwargs["processing_class"] = self.tokeniser
+        elif "tokenizer" in trainer_signature.parameters:
+            trainer_kwargs["tokenizer"] = self.tokeniser
+        
+        trainer = Trainer(**trainer_kwargs)
 
         self.logger.info("Starting regression fine-tuning.")
         train_result=trainer.train()

@@ -46,6 +46,7 @@ TRANSFORMER_FEATURE_SPECS: dict[str, dict[str, Any]] = {
         "suffix_label": "chemberta",
         "input_kind": "smiles",
         "metadata_col_name": "SMILES",
+        "commit_hash": "f5c45f44d3061f0346888f5c09db17ec1146d29d"
     },
     "chembertasey": {
         "tokeniser": "seyonec/ChemBERTa-zinc-base-v1",
@@ -54,6 +55,7 @@ TRANSFORMER_FEATURE_SPECS: dict[str, dict[str, Any]] = {
         "suffix_label": "chembertasey",
         "input_kind": "smiles",
         "metadata_col_name": "SMILES",
+        "commit_hash": "761d6a18cf99db371e0b43baf3e2d21b3e865a20"
     },
     "molformer": {
         "tokeniser": "ibm/MoLFormer-XL-both-10pct",
@@ -62,6 +64,8 @@ TRANSFORMER_FEATURE_SPECS: dict[str, dict[str, Any]] = {
         "suffix_label": "molformer",
         "input_kind": "smiles",
         "metadata_col_name": "SMILES",
+        "commit_hash": "7b12d946c181a37f6012b9dc3b002275de070314"
+
     },
     "molformer-c3-1b": {
         "tokeniser": "DeepChem/MoLFormer-c3-1.1B",
@@ -70,6 +74,8 @@ TRANSFORMER_FEATURE_SPECS: dict[str, dict[str, Any]] = {
         "suffix_label": "molformer-c3-1b",
         "input_kind": "smiles",
         "metadata_col_name": "SMILES",
+        "commit_hash": "9f1b9ea3590833bd0ea1a70e789c5d3da11ba7ed"
+
     },
     "selformer": {
         "tokeniser": "HUBioDataLab/SELFormer",
@@ -78,7 +84,9 @@ TRANSFORMER_FEATURE_SPECS: dict[str, dict[str, Any]] = {
         "suffix_label": "selformer",
         "input_kind": "selfies",
         "metadata_col_name": "SELFIES",
+        "commit_hash": "177d98b158e999a6cb7fc9743dbfe1e8a17c57e5"
     },
+    
 }
 
 

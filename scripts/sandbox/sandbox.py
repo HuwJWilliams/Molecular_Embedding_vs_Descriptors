@@ -675,6 +675,8 @@ if run_4:
     ax.set_ylabel(f"Absolute error in {col}")
     ax.set_title(f"{prop.upper()} error vs nearest training-set similarity")
 
+    sys.path.insert(0, "/users/yhb18174/TL_project/scripts/src/datasets")
+    from group_descriptors import getGroups
     min_sim = error_df["nearest_train_tanimoto"].min()
     max_sim = error_df["nearest_train_tanimoto"].max()
 
@@ -1054,16 +1056,16 @@ if run_12:
 
         print(f"Cleaned {f}")
 
-run_13 = True
+run_13 = False
 if run_13:
     res_dir = "/users/yhb18174/TL_project/results/lipinski_embeddings_and_descriptor_predictions/"
-    csv_paths = ["pred_mordred_tr_maccs/pred_mordred_tr_maccs.csv", 
-                 "pred_mordred_tr_morgan/pred_mordred_tr_morgan.csv",
-                 "pred_mordred_tr_chemberta/pred_mordred_tr_chemberta.csv",
-                 "pred_mordred_tr_chembertasey/pred_mordred_tr_chembertasey.csv",
-                 "pred_mordred_tr_molformer/pred_mordred_tr_molformer.csv",
-                 "pred_mordred_tr_molformer-c3-1b/pred_mordred_tr_molformer-c3-1b.csv",
-                 "pred_mordred_tr_selformer/pred_mordred_tr_selformer.csv"
+    csv_paths = ["pred_rdkit_tr_maccs/pred_rdkit_tr_maccs.csv", 
+                 "pred_rdkit_tr_morgan/pred_rdkit_tr_morgan.csv",
+                 "pred_rdkit_tr_chemberta/pred_rdkit_tr_chemberta.csv",
+                 "pred_rdkit_tr_chembertasey/pred_rdkit_tr_chembertasey.csv",
+                 "pred_rdkit_tr_molformer/pred_rdkit_tr_molformer.csv",
+                 "pred_rdkit_tr_molformer-c3-1b/pred_rdkit_tr_molformer-c3-1b.csv",
+                 "pred_rdkit_tr_selformer/pred_rdkit_tr_selformer.csv"
                  ]
 
     for p in csv_paths:
@@ -1080,7 +1082,6 @@ if run_13:
         df.to_csv(csv_path)
 
 run_14 = False
-
 if run_14:
     import re
     import sys
@@ -1095,7 +1096,7 @@ if run_14:
 
     csv_path = Path(
         "/users/yhb18174/TL_project/results/lipinski_embeddings_and_descriptor_predictions/"
-        "pred_mordred_tr_avg_emb/pred_mordred_tr_avg_emb.csv"
+        "pred_mordred_avg_transformers/avg_stats_across_embedding_models.csv"
     )
 
     # Change this to "Autocorrelation" or "MoRSE"
@@ -1227,7 +1228,7 @@ if run_14:
 
     plt.figure(figsize=(12, 6))
     sns.boxplot(data=lag_df, x="lag", y="r2", color="steelblue")
-    plt.axhline(avg_r2_line, color="red", linestyle="--", linewidth=1)
+    #plt.axhline(avg_r2_line, color="red", linestyle="--", linewidth=1)
 
     if desc_group == "MoRSE":
         plt.xlabel("MoRSE signal index")
@@ -1273,7 +1274,7 @@ if run_14:
         order=family_order,
         color="steelblue",
     )
-    plt.axhline(avg_r2_line, color="red", linestyle="--", linewidth=1)
+   #plt.axhline(avg_r2_line, color="red", linestyle="--", linewidth=1)
     plt.xlabel(f"{desc_group} descriptor family")
     plt.ylabel("r2")
     plt.title(f"{desc_group} Descriptor r2 by Family")
@@ -1287,45 +1288,133 @@ if run_14:
     print(f"\nSaved plot to: {save_path}")
 
     # ------------------------------------------------------------------
-    # 4. Box plot by property suffix
+    # 4. Scatter plots by property suffix, one plot per family
+    #    colour = lag
+    #    horizontal line = average r2 for that family
     # ------------------------------------------------------------------
     property_df = desc_df.copy()
     property_df["property"] = [get_property(idx) for idx in property_df.index]
-
-    print(f"\n{desc_group} r2 by property suffix:")
+    property_df["lag"] = [get_lag(idx) for idx in property_df.index]
+    property_df["family"] = [get_family(idx) for idx in property_df.index]
+    
+    property_df = property_df.dropna(subset=["property", "r2", "lag", "family"])
+    property_df["lag"] = property_df["lag"].astype(int)
+    
+    print(f"\n{desc_group} r2 by family and property suffix:")
     print(
-        property_df.groupby("property")["r2"]
+        property_df.groupby(["family", "property"])["r2"]
         .agg(["count", "mean", "median", "min", "max"])
-        .sort_values("median", ascending=False)
+        .sort_values(["family", "median"], ascending=[True, False])
     )
-
-    property_order = (
-        property_df.groupby("property")["r2"]
-        .median()
-        .sort_values(ascending=False)
-        .index
-    )
-
-    plt.figure(figsize=(max(10, 0.85 * len(property_order)), 6))
-    sns.boxplot(
-        data=property_df,
-        x="property",
-        y="r2",
-        order=property_order,
-        color="steelblue",
-    )
-    plt.axhline(avg_r2_line, color="red", linestyle="--", linewidth=1)
-    plt.xlabel("Property suffix")
-    plt.ylabel("r2")
-    plt.title(f"{desc_group} Descriptor r2 by Property Suffix")
-    plt.xticks(rotation=45, ha="right")
-    plt.tight_layout()
-
-    save_path = save_dir / f"{desc_group}_r2_by_property_suffix_boxplot.png"
-    plt.savefig(save_path, dpi=300, bbox_inches="tight")
-    plt.close()
-
-    print(f"\nSaved plot to: {save_path}")
+    
+    # Keep lag colours consistent across all family plots
+    unique_lags = sorted(property_df["lag"].unique())
+    palette = sns.color_palette("husl", n_colors=len(unique_lags))
+    lag_to_color = {
+        lag: palette[i]
+        for i, lag in enumerate(unique_lags)
+    }
+    
+    families = sorted(property_df["family"].unique())
+    
+    scatter_save_dir = save_dir / f"{desc_group}_family_property_suffix_scatter_plots"
+    scatter_save_dir.mkdir(parents=True, exist_ok=True)
+    
+    saved_family_plots = []
+    
+    for family in families:
+        family_df = property_df[property_df["family"] == family].copy()
+    
+        if family_df.empty:
+            continue
+    
+        family_avg_r2 = family_df["r2"].mean()
+    
+        property_order = (
+            family_df.groupby("property")["r2"]
+            .median()
+            .sort_values(ascending=False)
+            .index
+        )
+    
+        family_df["property"] = pd.Categorical(
+            family_df["property"],
+            categories=property_order,
+            ordered=True,
+        )
+    
+        family_df = family_df.sort_values(["property", "lag", "r2"])
+    
+        property_to_x = {
+            prop: i
+            for i, prop in enumerate(property_order)
+        }
+    
+        family_df["x_pos"] = family_df["property"].map(property_to_x).astype(float)
+    
+        rng = np.random.default_rng(0)
+        family_df["x_jitter"] = family_df["x_pos"] + rng.normal(
+            loc=0,
+            scale=0.08,
+            size=len(family_df),
+        )
+    
+        fig, ax = plt.subplots(figsize=(max(10, 0.85 * len(property_order)), 6))
+    
+        for lag in unique_lags:
+            lag_subset = family_df[family_df["lag"] == lag]
+    
+            if lag_subset.empty:
+                continue
+    
+            ax.scatter(
+                lag_subset["x_jitter"],
+                lag_subset["r2"],
+                s=55,
+                color=lag_to_color[lag],
+                edgecolor="black",
+                linewidth=0.4,
+                alpha=0.9,
+                label=f"Lag {lag}",
+            )
+    
+        ax.axhline(
+            family_avg_r2,
+            color="red",
+            linestyle="--",
+            linewidth=1.2,
+            label=f"Mean r2 = {family_avg_r2:.3f}",
+        )
+    
+        ax.set_xlabel("Property suffix")
+        ax.set_ylabel("r2")
+        ax.set_title(
+            f"{desc_group} {family} Descriptors\n"
+            f"r2 by Property Suffix, Coloured by Lag"
+        )
+    
+        ax.set_xticks(range(len(property_order)))
+        ax.set_xticklabels(property_order, rotation=45, ha="right")
+    
+        ax.legend(
+            title="Lag / average",
+            bbox_to_anchor=(1.02, 1),
+            loc="upper left",
+            borderaxespad=0,
+        )
+    
+        fig.tight_layout()
+    
+        save_path = (
+            scatter_save_dir /
+            f"{desc_group}_{family}_r2_by_property_suffix_scatter_by_lag.png"
+        )
+    
+        fig.savefig(save_path, dpi=300, bbox_inches="tight")
+        plt.close(fig)
+    
+        saved_family_plots.append(save_path)
+        print(f"Saved plot to: {save_path}")
 
 
 
@@ -2629,6 +2718,418 @@ if run_26:
     print(f"Binary classification: {n_bc}")
     print(f"Multiclass classification: {n_mc}")
     print(f"Other/unknown: {n_other}")
+    
+run_26 = False
+if run_26:
+    rd = paths["prediction_output_dirs"]["lipinski_cross_feature_predictions"]
+    pred = "mordred"
+    group_map = getGroups(pred)
+    models = ["molformer", "molformer-c3-1b", "chemberta", "chembertasey", "selformer"]
+    
+    model_by_task_dict = {}
+    
+    for m in models:
+        exp = f"pred_{pred}_tr_{m}"
+        
+        df = pd.read_csv(rd[exp] / f"{exp}.csv", index_col=0)
+        bc = df[df["task_type"]=="binary_classification"]["Balanced_Accuracy"]
+        mc = df[df["task_type"]=="multiclass_classification"]["Balanced_Accuracy"]
+        r = df[df["task_type"]=="regression"]["r2"]
+        
+        model_by_task_dict[m] = {
+            "regression": r,
+            "binary_classification": bc,
+            "multiclass_classification": mc
+            }
+    
+    regression_df = pd.DataFrame({
+        model: task_dict["regression"]
+        for model, task_dict in model_by_task_dict.items()
+    })
+    regression_df["Average"] = regression_df.mean(axis=1, skipna=True)    
+    
+    
+    binary_classification_df = pd.DataFrame({
+        model: task_dict["binary_classification"]
+        for model, task_dict in model_by_task_dict.items()
+    })
+    binary_classification_df["Average"] = binary_classification_df.mean(axis=1, skipna=True)    
 
     
+    multiclass_classification_df = pd.DataFrame({
+        model: task_dict["multiclass_classification"]
+        for model, task_dict in model_by_task_dict.items()
+    })
+    multiclass_classification_df["Average"] = multiclass_classification_df.mean(axis=1, skipna=True)    
+
+    avg_df_ls = [regression_df, binary_classification_df, multiclass_classification_df]
+
+    
+    reg_desc_groups = {}
+    bin_desc_groups = {}
+    mul_desc_groups = {}
+    
+    regression_df = avg_df_ls[0]
+    binary_classification_df = avg_df_ls[1]
+    multiclass_classification_df = avg_df_ls[2]
+    
+    def getDescriptorGroupInfo(task_df, group_map, threshold_low=0.5, threshold_high=0.7):
+        rows = []
+    
+        for group, descriptors in group_map.items():
+            values = task_df.reindex(descriptors)["Average"].dropna()
+    
+            n_0_to_0p5 = int(((values > 0) & (values <= threshold_low)).sum())
+            n_0p5_to_0p7 = int(((values > threshold_low) & (values <= threshold_high)).sum())
+            n_above_0p7 = int((values > threshold_high).sum())
+    
+            rows.append({
+                "group": group,
+                "descriptors": values.index.tolist(),
+                "values": values.tolist(),
+                "n_total": len(values),
+                "n_0_to_0p5": n_0_to_0p5,
+                "n_0p5_to_0p7": n_0p5_to_0p7,
+                "n_above_0p7": n_above_0p7,
+            })
+    
+        full_df = pd.DataFrame(rows)
+    
+        n_total = full_df["n_total"].sum()
+        n_0_to_0p5 = full_df["n_0_to_0p5"].sum()
+        n_0p5_to_0p7 = full_df["n_0p5_to_0p7"].sum()
+        n_above_0p7 = full_df["n_above_0p7"].sum()
+    
+        return [full_df, n_total, n_0_to_0p5, n_0p5_to_0p7, n_above_0p7]
+    
+    
+    reg_info = getDescriptorGroupInfo(regression_df, group_map)
+    reg_info[0].to_csv("/users/yhb18174/TL_project/scripts/sandbox/reg_info.csv")
+    bin_info = getDescriptorGroupInfo(binary_classification_df, group_map)
+    mul_info = getDescriptorGroupInfo(multiclass_classification_df, group_map)
+    
+
+    def plotDescriptorGroupStackedBins(
+        group_info,
+        task_name,
+        metric_name,
+        out_path=None,
+        sort_by="n_total",
+    ):
+        full_df = group_info[0].copy()
+        task_total = group_info[1]
+    
+        # Remove groups with no descriptors
+        full_df = full_df.loc[full_df["n_total"] > 0].copy()
+    
+        if sort_by is not None:
+            full_df = full_df.sort_values(sort_by, ascending=False)
+    
+        x = np.arange(len(full_df))
+    
+        labels = full_df["group"].astype(str).tolist()
+    
+        red_counts = full_df["n_0_to_0p5"].values
+        orange_counts = full_df["n_0p5_to_0p7"].values
+        green_counts = full_df["n_above_0p7"].values
+    
+        fig_width = max(10, 0.45 * len(full_df))
+        fig, ax = plt.subplots(figsize=(fig_width, 6))
+    
+        ax.bar(
+            x,
+            red_counts,
+            label="0 < x <= 0.5",
+            color="red",
+        )
+    
+        ax.bar(
+            x,
+            orange_counts,
+            bottom=red_counts,
+            label="0.5 < x <= 0.7",
+            color="orange",
+        )
+    
+        ax.bar(
+            x,
+            green_counts,
+            bottom=red_counts + orange_counts,
+            label="0.7 < x",
+            color="green",
+        )
+    
+        ax.set_ylabel("Number of descriptors")
+        ax.set_xlabel("Descriptor group")
+        ax.set_title(
+            f"{task_name}: descriptor performance bins by group\n"
+            f"Metric = {metric_name}; total descriptors in task = {task_total}"
+        )
+    
+        ax.set_xticks(x)
+        ax.set_xticklabels(labels, rotation=60, ha="right")
+    
+        ax.legend()
+        ax.grid(axis="y", linestyle="--", alpha=0.3)
+    
+        fig.tight_layout()
+    
+        if out_path is not None:
+            out_path = Path(out_path)
+            out_path.parent.mkdir(parents=True, exist_ok=True)
+            fig.savefig(out_path, dpi=300, bbox_inches="tight")
+    
+        plt.show()
+    
+        return full_df
+    
+    def plotDescriptorGroupBars(
+        task_df,
+        group_map,
+        task_name,
+        metric_name,
+        out_dir,
+        value_col="Average",
+        sort_values=True,
+        show=False,
+    ):
+        out_dir = Path(out_dir)
+        out_dir.mkdir(parents=True, exist_ok=True)
+    
+        saved_plots = []
+    
+        for group, descriptors in group_map.items():
+            group_df = task_df.reindex(descriptors).copy()
+    
+            if value_col not in group_df.columns:
+                raise ValueError(f"{value_col} not found in task_df columns")
+    
+            group_df = group_df[[value_col]].dropna()
+    
+            if group_df.empty:
+                continue
+    
+            if sort_values:
+                group_df = group_df.sort_values(value_col, ascending=False)
+    
+            labels = group_df.index.astype(str).tolist()
+            values = group_df[value_col].values
+    
+            fig_width = max(8, 0.35 * len(group_df))
+            fig, ax = plt.subplots(figsize=(fig_width, 5))
+    
+            ax.bar(np.arange(len(group_df)), values)
+    
+            ax.set_title(
+                f"{task_name}: {group}\n"
+                f"Metric = {metric_name}"
+            )
+            ax.set_ylabel(metric_name)
+            ax.set_xlabel("Descriptor")
+    
+            ax.set_xticks(np.arange(len(group_df)))
+            ax.set_xticklabels(labels, rotation=60, ha="right")
+    
+            ax.grid(axis="y", linestyle="--", alpha=0.3)
+    
+            ax.axhline(0.5, linestyle="--", linewidth=1, alpha=0.5)
+            ax.axhline(0.7, linestyle="--", linewidth=1, alpha=0.5)
+    
+            fig.tight_layout()
+    
+            out_path = out_dir / f"{pred}_{task_name}_{group}_barplot.png"
+            fig.savefig(out_path, dpi=300, bbox_inches="tight")
+            saved_plots.append(out_path)
+    
+            if show:
+                plt.show()
+            else:
+                plt.close(fig)
+    
+        return saved_plots
+        
+    plot_dir = Path("descriptor_group_stacked_bin_plots")
+    
+    reg_plot_df = plotDescriptorGroupStackedBins(
+        reg_info,
+        task_name="Regression",
+        metric_name="r2",
+        out_path=plot_dir / f"{pred}_regression_descriptor_group_bins.png",
+    )
+    
+    bin_plot_df = plotDescriptorGroupStackedBins(
+        bin_info,
+        task_name="Binary classification",
+        metric_name="Balanced Accuracy",
+        out_path=plot_dir / f"{pred}_binary_classification_descriptor_group_bins.png",
+    )
+    
+    mul_plot_df = plotDescriptorGroupStackedBins(
+        mul_info,
+        task_name="Multiclass classification",
+        metric_name="Balanced Accuracy",
+        out_path=plot_dir / f"{pred}_multiclass_classification_descriptor_group_bins.png",
+    )
+    
+    bar_plot_dir = Path("/users/yhb18174/TL_project/scripts/sandbox/")
+
+    reg_bar_paths = plotDescriptorGroupBars(
+        regression_df,
+        group_map,
+        task_name="Regression",
+        metric_name="r2",
+        out_dir=bar_plot_dir / f"{pred}_regression",
+    )
+    
+    bin_bar_paths = plotDescriptorGroupBars(
+        binary_classification_df,
+        group_map,
+        task_name="Binary classification",
+        metric_name="Balanced Accuracy",
+        out_dir=bar_plot_dir / f"{pred}_binary_classification",
+    )
+    
+    mul_bar_paths = plotDescriptorGroupBars(
+        multiclass_classification_df,
+        group_map,
+        task_name="Multiclass classification",
+        metric_name="Balanced Accuracy",
+        out_dir=bar_plot_dir / f"{pred}_multiclass_classification",
+    )
+    
+    
+            
+    
+run_27 = False
+
+if run_27:
+    mordred = pd.read_csv(
+        "/users/yhb18174/TL_project/results/lipinski_embeddings_and_descriptor_predictions/"
+        "pred_mordred_tr_rdkit/pred_mordred_tr_rdkit.csv",
+        index_col=0,
+    )
+
+    rdkit = pd.read_csv(
+        "/users/yhb18174/TL_project/results/lipinski_embeddings_and_descriptor_predictions/"
+        "pred_rdkit_tr_mordred/pred_rdkit_tr_mordred.csv",
+        index_col=0,
+    )
+
+    maccs = pd.read_csv(
+        "/users/yhb18174/TL_project/results/lipinski_embeddings_and_descriptor_predictions/"
+        "pred_maccs_tr_mordred/pred_maccs_tr_mordred.csv",
+        index_col=0,
+    )
+
+    dfs = {
+        "Mordred": mordred,
+        "RDKit": rdkit,
+        "MACCS": maccs,
+    }
+
+    task_types = [
+        "regression",
+        "binary_classification",
+        "multiclass_classification",
+    ]
+
+    for name, df in dfs.items():
+        print(f"\n{name}")
+
+        for task in task_types:
+            n = len(df.loc[df["task_type"] == task])
+            print(f"  n_{task} = {n}")
+
+    
+run_28 = True
+
+if run_28:
+    import pandas as pd
+    import matplotlib.pyplot as plt
+    import seaborn as sns
+
+    path = "/users/yhb18174/TL_project/datasets/"
+
+    dfs = [
+        ("boiling_point/cleaned_boiling_point.csv", "bp", "Boiling_Point"),
+        ("pka/cleaned_pka.csv", "pKa", "pKa"),
+        ("pka/cleaned_pka_paper1_acidic.csv", "pKa_acid", "pKa"),
+        ("pka/cleaned_pka_paper1_basic.csv", "pKa_basic", "pKa"),
+        ("pic50/cleaned_pic50.csv", "pIC50", "pIC50"),
+        ("LOG_LD50/cleaned_log_ld50.csv", "log_LD50", "LOG_LD50"),
+        ("logD/cleaned_logd.csv", "logD", "LogD"),
+        ("hole_re/hole_re_cleaned.csv", "hole_re", "Hole_Reorganisation_Energy"),
+        ("elec_re/elec_re_cleaned.csv", "elec_re", "Electron_Reorganisation_Energy"),        
+        ("aq_sol/aq_sol_cleaned.csv", "aq_sol", "Solubility"),
+        ("homo_lumo_gap/homo_lumo_gap_cleaned.csv", "homo_lumo_gap", "homolumogap"),
+        ("egfr_pic50/egfr_pic50.csv", "egfr_pIC50", "pIC50"),
+    ]
+
+    for p, save_name, col in dfs[:3]:
+        df = pd.read_csv(path + p, index_col=0)
+
+        values = df[col].dropna()
+
+        mean_val = values.mean()
+        min_val = values.min()
+        max_val = values.max()
+        data_range = max_val - min_val
+
+        q1 = values.quantile(0.25)
+        q3 = values.quantile(0.75)
+        iqr = q3 - q1
+
+        lower_iqr = q1 - 3.0 * iqr
+        upper_iqr = q3 + 3.0 * iqr
+
+        outlier_mask = (df[col] < lower_iqr) | (df[col] > upper_iqr)
+        outliers = df.loc[outlier_mask].copy()
+
+        plt.figure(figsize=(8, 5))
+
+        # Low-tint box showing non-outlier region by 3x IQR
+        plt.axvspan(
+            lower_iqr,
+            upper_iqr,
+            alpha=0.12,
+            label=f"3x IQR bounds: {lower_iqr:.2f} to {upper_iqr:.2f}"
+        )
+
+        sns.histplot(values, kde=True, bins=30)
+
+        # Keep only the mean line
+        plt.axvline(
+            mean_val,
+            linestyle="-",
+            linewidth=2,
+            label=f"Mean = {mean_val:.2f}"
+        )
+
+        plt.xlabel(save_name)
+        plt.ylabel("Count")
+        plt.title(
+            f"Distribution of {save_name} values\n"
+            f"Range: {min_val:.2f} to {max_val:.2f} | "
+            f"Outliers flagged: {outlier_mask.sum()}"
+        )
+
+        plt.legend()
+        plt.tight_layout()
+
+        plt.savefig(f"{save_name}_dist_3xIQR.png", dpi=300, bbox_inches="tight")
+        plt.show()
+
+        outliers.to_csv(f"{save_name}_target_outliers_3xIQR.csv")
+
+        print(f"{save_name}")
+        print(f"  Mean: {mean_val:.4f}")
+        print(f"  Min: {min_val:.4f}")
+        print(f"  Max: {max_val:.4f}")
+        print(f"  Range: {data_range:.4f}")
+        print(f"  Q1: {q1:.4f}")
+        print(f"  Q3: {q3:.4f}")
+        print(f"  IQR: {iqr:.4f}")
+        print(f"  3x IQR bounds: {lower_iqr:.4f} to {upper_iqr:.4f}")
+        print(f"  Outliers flagged: {outlier_mask.sum()} / {df[col].notna().sum()}")
+        print()
             

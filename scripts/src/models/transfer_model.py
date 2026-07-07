@@ -819,7 +819,9 @@ class TL():
         save_models: bool = False,
         save_path: str = "./",
         log_level=logging.DEBUG,
-        n_jobs:int=os.cpu_count()
+        n_jobs:int=os.cpu_count(),
+        trim_3xIQR: bool=True
+
     ) :
         
         save_path = Path(save_path)
@@ -830,7 +832,54 @@ class TL():
             cv_splits=cv_splits,
             log_level=log_level,
         )
-
+        
+        if trim_3xIQR:
+            values = data[target_column].dropna()
+        
+            q1 = values.quantile(0.25)
+            q3 = values.quantile(0.75)
+            iqr = q3 - q1
+        
+            lower_bound = q1 - (3.0 * iqr)
+            upper_bound = q3 + (3.0 * iqr)
+        
+            outlier_mask = (data[target_column] < lower_bound) | (data[target_column] > upper_bound)
+        
+            trimmed_df = data.loc[~outlier_mask].copy()
+            outliers_df = data.loc[outlier_mask].copy()
+        
+            n_total = data[target_column].notna().sum()
+            n_outliers = outlier_mask.sum()
+            n_remaining = trimmed_df[target_column].notna().sum()
+        
+            bounds = {
+                "target_col": target_column,
+                "q1": float(q1),
+                "q3": float(q3),
+                "iqr": float(iqr),
+                "lower_bound": float(lower_bound),
+                "upper_bound": float(upper_bound),
+                "n_total": int(n_total),
+                "n_outliers": int(n_outliers),
+                "n_remaining": int(n_remaining),
+                "percent_removed": float(100 * n_outliers / n_total) if n_total > 0 else 0.0,
+                "outliers": list(outliers_df.index.astype(str)),
+            }
+        
+            bounds_path = save_path / f"{target_column}_3xIQR_bounds.json"
+        
+            with open(bounds_path, "w") as f:
+                json.dump(bounds, f, indent=4)
+        
+            data = trimmed_df.copy()
+        
+            self.logger.info(
+                f"3x IQR trimming applied to {target_column}: "
+                f"removed {n_outliers}/{n_total} rows "
+                f"({bounds['percent_removed']:.2f}%). "
+                f"Bounds: {lower_bound:.4f} to {upper_bound:.4f}"
+            )
+            
         final_model, best_params, performance_dict, feat_importance_df = self.instantiated_model.trainRFRegressor(
             n_resamples=n_resamples,
             data=data,
