@@ -552,7 +552,7 @@ class FeatureGenerator():
         self.fine_tuning_model = AutoModelForSequenceClassification.from_pretrained(
             model_name,
             trust_remote_code=True,
-            config=fine_tune_config
+            config=fine_tune_config,
             revision=revision
         )
 
