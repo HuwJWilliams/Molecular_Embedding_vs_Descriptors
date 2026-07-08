@@ -1,0 +1,123 @@
+"""
+File to hold all of the configuration of the run
+"""
+
+# %% ===== Python Imports =====
+from pathlib import Path
+
+# %% ===== Project Imports & Pathing Setup=====
+SCRIPTS_DIR = Path(__file__).resolve().parents[1]
+SRC_DIR = SCRIPTS_DIR / "src"
+
+# %% ===== Configuration variables =====
+
+# --- Pathing JSON variables
+PATHING_PATH = Path(SCRIPTS_DIR / "src" / "pathing")
+PATHING_JSON_NAME = "final_test_pathing.json"
+PATHING_JSON_PATH = PATHING_PATH / PATHING_JSON_NAME
+
+# --- Supported Feature Sets
+SUPPORTED_FEATURE_SETS = (
+    "rdkit",
+    "mordred",
+    "morgan",
+    "maccs",
+    "chemberta",
+    "chembertasey",
+    "molformer",
+    "molformer-c3-1b",
+    "selformer",
+    "ft-chemberta",
+    "ft-chembertasey",
+    "ft-molformer",
+    "ft-molformer-c3-1b",
+    "ft-selformer",
+)
+
+# --- Transformer Specifications
+TRANSFORMER_FEATURE_SPECS: dict[str, dict[str, str]] = {
+    "chemberta": {
+        "tokeniser": "DeepChem/ChemBERTa-100M-MLM",
+        "model": "DeepChem/ChemBERTa-100M-MLM",
+        "model_label": "ChemBERTa",
+        "suffix_label": "chemberta",
+        "input_kind": "smiles",
+        "metadata_col_name": "SMILES",
+        "commit_hash": "f5c45f44d3061f0346888f5c09db17ec1146d29d",
+    },
+    "chembertasey": {
+        "tokeniser": "seyonec/ChemBERTa-zinc-base-v1",
+        "model": "seyonec/ChemBERTa-zinc-base-v1",
+        "model_label": "ChemBERTaSey",
+        "suffix_label": "chembertasey",
+        "input_kind": "smiles",
+        "metadata_col_name": "SMILES",
+        "commit_hash": "761d6a18cf99db371e0b43baf3e2d21b3e865a20",
+    },
+    "molformer": {
+        "tokeniser": "ibm/MoLFormer-XL-both-10pct",
+        "model": "ibm/MoLFormer-XL-both-10pct",
+        "model_label": "MolFormer",
+        "suffix_label": "molformer",
+        "input_kind": "smiles",
+        "metadata_col_name": "SMILES",
+        "commit_hash": "7b12d946c181a37f6012b9dc3b002275de070314",
+    },
+    "molformer-c3-1b": {
+        "tokeniser": "DeepChem/MoLFormer-c3-1.1B",
+        "model": "DeepChem/MoLFormer-c3-1.1B",
+        "model_label": "MolFormer-c3-1B",
+        "suffix_label": "molformer-c3-1b",
+        "input_kind": "smiles",
+        "metadata_col_name": "SMILES",
+        "commit_hash": "9f1b9ea3590833bd0ea1a70e789c5d3da11ba7ed",
+    },
+    "selformer": {
+        "tokeniser": "HUBioDataLab/SELFormer",
+        "model": "HUBioDataLab/SELFormer",
+        "model_label": "SELFormer",
+        "suffix_label": "selformer",
+        "input_kind": "selfies",
+        "metadata_col_name": "SELFIES",
+        "commit_hash": "177d98b158e999a6cb7fc9743dbfe1e8a17c57e5",
+    },
+}
+
+CFP_ANALYSIS_METRICS = {
+    "regression": {
+        "metric": "r2",
+        "bar_metrics": ["Pearson_r", "r2"],
+        "group_metrics": ["Pearson_r", "r2", "RMSE", "Bias"],
+        "member_suffix": "reg",
+        "radar_metrics": ["avg_Pearson_r", "avg_r2"],
+    },
+    "binary_classification": {
+        "metric": "Balanced_Accuracy",
+        "bar_metrics": ["AUC", "MCC", "Balanced_Accuracy"],
+        "group_metrics": [
+            "Accuracy",
+            "Sensitivity",
+            "Specificity",
+            "PPV",
+            "NPV",
+            "AUC",
+            "MCC",
+            "Balanced_Accuracy",
+        ],
+        "member_suffix": "cla",
+        "radar_metrics": ["avg_AUC"],
+    },
+    "multiclass_classification": {
+        "metric": "Balanced_Accuracy",
+        "bar_metrics": ["AUC_OVR", "MCC", "Balanced_Accuracy"],
+        "group_metrics": [
+            "Accuracy",
+            "Balanced_Accuracy",
+            "F1_macro",
+            "AUC_OVR",
+            "MCC",
+        ],
+        "member_suffix": "mcla",
+        "radar_metrics": ["avg_AUC_OVR"],
+    },
+}
