@@ -121,3 +121,10 @@ CFP_ANALYSIS_METRICS = {
         "radar_metrics": ["avg_AUC_OVR"],
     },
 }
+
+PP_ANALYSIS_METRICS = {
+    "regression": {
+        "metric": "r2",
+        "bar_metrics": ["Pearson_r", "r2", "RMSE", "Bias"],
+    },
+}
