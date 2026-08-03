@@ -17,7 +17,7 @@ DEFAULT_TARGET_COLUMNS = {
     "elec_re": "Electron_Reorganisation_Energy",
     "hole_re": "Hole_Reorganisation_Energy",
     "aq_sol":  "Solubility",
-    "homo_lumo_gap": "homolumogap",
+    #"homo_lumo_gap": "homolumogap",
     "egfr_pic50": "pIC50"
 }
 

@@ -17,8 +17,8 @@ from get_paths import getPaths
 
 FULL_PATHING = getPaths(PATHING_JSON_PATH)
 
-sys.path.insert(0, str(SRC_DIR / "visualise"))
-from visualise import Visualise
+sys.path.insert(0, str(SRC_DIR / "visualisation"))
+from vis import Visualise
 
 sys.path.insert(0, str(SRC_DIR / "datasets"))
 from group_descriptors import getGroups
@@ -28,6 +28,39 @@ v = Visualise(save_all=False)
 
 
 # %% ===== Function Definitions =====
+def getCFPSavePath(
+    full_pathing: dict,
+    save_dir: str,
+    identifier: str,
+    property_name: str | None = None,
+) -> Path:
+    if property_name is None:
+        return Path(full_pathing["prediction_output_dirs"][save_dir][identifier])
+
+    property_rf_paths = full_pathing["prediction_output_dirs"]["rf"][property_name]
+    first_feature_path = Path(next(iter(property_rf_paths.values())))
+
+    # Walk up to the *_predictions_rf directory.
+    prediction_root = next(
+        parent for parent in [first_feature_path, *first_feature_path.parents]
+        if parent.name.endswith("_predictions_rf")
+    )
+
+    return prediction_root / save_dir / identifier
+
+def getCFPAnalysisDir(
+    full_pathing: dict,
+    result_dir: str,
+    exp: str,
+    property_name: str | None = None,
+) -> Path:
+    results_dir = Path(full_pathing["imp_dirs"]["results_dir"])
+
+    if property_name is None:
+        return Path(full_pathing["prediction_output_dirs"][result_dir][exp])
+
+    return results_dir / result_dir / property_name / exp
+
 def plotGroupRadar(
     group_perf_by_task: dict[str, pd.DataFrame],
     plot_dir: str | Path,

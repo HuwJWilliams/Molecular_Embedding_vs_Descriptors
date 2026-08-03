@@ -46,7 +46,7 @@ from get_paths import getPaths
 
 sys.path.insert(0, str(SRC_DIR / "datasets"))
 from group_descriptors import getGroups
-from feature_cleaning import clean_feature_df
+from feature_cleaning import cleanFeatureDF
 
 sys.path.insert(0, str(SRC_DIR / "misc"))
 from misc_fns import loadData, molid2Smiles
@@ -911,6 +911,7 @@ class Visualise:
         x_label: str,
         y_label: str,
         show_x_ticks: bool = True,
+        y_lims: tuple=None,
         title: str = " ",
         figsize: tuple = (12, 6),
         rotation: int = 45,
@@ -921,6 +922,8 @@ class Visualise:
         save_path: Union[str, Path] = None,
         save_fname: str = "barchart",
         dpi: int = 400,
+        y_err_label: str=None,
+        colour_map: dict[str, str]=None
     ):
         """
         Generic function to generate a simple bar chart from a given DataFrame.
@@ -980,10 +983,66 @@ class Visualise:
         """
 
         # Initialise the figure
+        features = data[x_label].astype(str).tolist()
+
+        if colour_map is None:
+            colour_map = self.colour_map
+
+        bar_colours = []
+        bar_hatches = []
+
+        for feature in features:
+            style = colour_map.get(feature)
+
+            if style is None:
+                base_feature = feature.removeprefix("ft-")
+                style = colour_map.get(base_feature, "#808080")
+
+            if isinstance(style, tuple):
+                colour, hatch = style
+            elif isinstance(style, dict):
+                colour = style.get("colour", "#808080")
+                hatch = style.get("hatch")
+            else:
+                colour = style
+                hatch = "//" if feature.startswith("ft-") else None
+
+            bar_colours.append(colour)
+            bar_hatches.append(hatch)
+
         plt.figure(figsize=figsize)
+
         ax = sns.barplot(
-            data=data, x=x_label, y=y_label, palette="tab10", hue=x_label, legend=False
+            data=data,
+            x=x_label,
+            y=y_label,
+            hue=x_label,
+            order=features,
+            palette=bar_colours,
+            legend=False,
+            errorbar=None,
         )
+        
+        if y_lims is not None:
+            ax.set_ylim(y_lims)
+
+        if y_err_label is not None:
+            ax.errorbar(
+                x=range(len(data)),
+                y=data[y_label],
+                yerr=data[y_err_label],
+                fmt="none",
+                ecolor="black",
+                elinewidth=1.5,
+                capsize=4,
+                capthick=1.5,
+            )
+
+        for bar, hatch in zip(ax.patches, bar_hatches):
+            if hatch:
+                bar.set_hatch(hatch)
+                bar.set_edgecolor("black")
+                bar.set_linewidth(1.0)
 
         if show_x_ticks:
             ax.tick_params(axis="x", labelrotation=rotation, labelsize=tick_fontsize)
@@ -1003,8 +1062,6 @@ class Visualise:
             dpi=dpi,
             description="bar chart",
         )
-
-        plt.show()
 
     def plotBoxPlots(
         self,
@@ -2624,7 +2681,11 @@ class Visualise:
         loaded_explainer = None
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
-        full_shap_path = output_dir / "full_shap_analysis.joblib.gz"
+        full_shap_path = (
+            output_dir / "full_shap_analysis.joblib.gz"
+            if full_shap_path is None
+            else Path(full_shap_path)
+        )
 
         if check_full and full_shap_path.exists():
             _, feat_explain, _, _, shap_values = self._load_shap_bundle(
@@ -2638,7 +2699,7 @@ class Visualise:
         else:
             model = joblib.load(model)
             trained_cols = model.feature_names_in_
-            feats = pd.read_csv(features, index_col=0)
+            feats = loadData(features, index_col=0, wildcard="*")
             feats = self._align_features_to_model(
                 feats=feats,
                 trained_cols=trained_cols,
@@ -2660,7 +2721,8 @@ class Visualise:
             feat_explain = feats.sample(min(max_explain, len(feats)), random_state=4)
             bg = self._clean_shap_frame(bg, context=f"shapAnalysis::bg::{pred_feature}")
             feat_explain = self._clean_shap_frame(
-                feat_explain
+                feat_explain,
+                context=f"shapAnalysis::explain::{pred_feature}",
             )
 
             loaded_explainer = explainer(model, bg)
@@ -2754,9 +2816,23 @@ class Visualise:
         )
         raise KeyError(msg)
 
-    def _clean_shap_frame(self, feats: pd.DataFrame) -> pd.DataFrame:
+    def _clean_shap_frame(
+        self,
+        feats: pd.DataFrame,
+        context: str = "",
+    ) -> pd.DataFrame:
         """Return SHAP-safe numeric features (float64, finite, non-empty)."""
-        clean_df, report = clean_feature_df(feats)
+        clean_df, report = cleanFeatureDF(
+            feats,
+            max_nan_fraction=1.0,
+            drop_constant_cols=False,
+            correlation_threshold=None,
+        )
+        clean_df = clean_df.replace([np.inf, -np.inf], np.nan)
+        medians = clean_df.median(axis=0, numeric_only=True)
+        clean_df = clean_df.fillna(medians).fillna(0.0).astype(np.float64)
+        if context:
+            print(f"[SHAP clean] {context}")
         print(report)
         return clean_df
 
@@ -2801,7 +2877,7 @@ class Visualise:
         if len(model_ls) == 0:
             raise FileNotFoundError(f"No model files found in: {models_dir}")
 
-        features = pd.read_csv(features, index_col=0)
+        features = loadData(features, index_col=0, wildcard="*")
         if features.empty:
             raise ValueError("Feature dataframe is empty.")
         features = self._clean_shap_frame(features)
@@ -3016,23 +3092,26 @@ class Visualise:
         if missing:
             raise ValueError(f"Missing required columns in {summary_path}: {missing}")
     
-        # Map descriptors to groups.
-        # Saved descriptors look like AATS0Z_mordred, but descriptor_groups likely contains AATS0Z.
-        desc_to_group = {
-            str(desc): group_name
-            for group_name, desc_ls in descriptor_groups.items()
-            for desc in desc_ls
-        }
-    
-        df["desc_base"] = (
-            df["descriptor"]
-            .astype(str)
-            .str.replace("_rdkit$", "", regex=True)
-            .str.replace("_mordred$", "", regex=True)
-            .str.replace("_maccs$", "", regex=True)
+        desc_to_group = {}
+        for group_name, desc_ls in descriptor_groups.items():
+            for desc in desc_ls:
+                desc = str(desc)
+                desc_to_group[desc] = group_name
+                desc_to_group[
+                    re.sub(r"_(rdkit|mordred|maccs)$", "", desc)
+                ] = group_name
+
+        df["descriptor"] = df["descriptor"].astype(str)
+        df["desc_base"] = df["descriptor"].str.replace(
+            r"_(rdkit|mordred|maccs)$",
+            "",
+            regex=True,
         )
-    
-        df["group"] = df["desc_base"].map(desc_to_group)
+
+        df["group"] = df["descriptor"].map(desc_to_group)
+        df.loc[df["group"].isna(), "group"] = (
+            df.loc[df["group"].isna(), "desc_base"].map(desc_to_group)
+        )
     
         missing_group = df["group"].isna().sum()
         if missing_group:
@@ -3102,15 +3181,16 @@ class Visualise:
         if make_plots and long_path.exists():
             long_df = pd.read_csv(long_path)
     
+            long_df["descriptor"] = long_df["descriptor"].astype(str)
             long_df["desc_base"] = (
                 long_df["descriptor"]
-                .astype(str)
-                .str.replace("_rdkit$", "", regex=True)
-                .str.replace("_mordred$", "", regex=True)
-                .str.replace("_maccs$", "", regex=True)
+                .str.replace(r"_(rdkit|mordred|maccs)$", "", regex=True)
             )
     
-            long_df["group"] = long_df["desc_base"].map(desc_to_group)
+            long_df["group"] = long_df["descriptor"].map(desc_to_group)
+            long_df.loc[long_df["group"].isna(), "group"] = (
+                long_df.loc[long_df["group"].isna(), "desc_base"].map(desc_to_group)
+            )
             long_df = long_df.dropna(subset=["group"]).copy()
     
             for group_name in sorted(long_df["group"].unique()):

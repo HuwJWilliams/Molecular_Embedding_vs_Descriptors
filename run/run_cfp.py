@@ -8,6 +8,7 @@ import argparse
 import pandas as pd
 from pathlib import Path
 import sys
+from glob import glob
 
 # %% ===== Project Imports & Pathing Setup =====
 from config import SRC_DIR, SUPPORTED_FEATURE_SETS, PATHING_JSON_PATH
@@ -20,6 +21,16 @@ from get_paths import getPaths
 
 sys.path.insert(0, str(SRC_DIR / "datasets"))
 from feature_cleaning import cleanFeatureDF
+
+FULL_PATHING = getPaths(PATHING_JSON_PATH)
+
+PROPERTY_CHOICES = [
+    prop
+    for prop in FULL_PATHING["full_features"].keys()
+    if prop not in {"all", "fit_lipinski"}
+]
+
+from cfp_analysis_fns import getCFPSavePath
 
 # %% ===== Argument Parsing =====
 parser = argparse.ArgumentParser(description="Generating cross-feature predictions")
@@ -42,6 +53,16 @@ parser.add_argument(
     "--save-dir",
     default="cross_feature_predictions",
     help="Directory to save the results to",
+)
+
+parser.add_argument(
+    "--property",
+    default=None,
+    choices=PROPERTY_CHOICES,
+    help=(
+        "Optional property-specific feature table to use, e.g. bp, pka, aq_sol. "
+        "If omitted, uses all or fit_lipinski."
+    ),
 )
 
 parser.add_argument(
@@ -128,22 +149,64 @@ parser.add_argument(
 )
 
 args = parser.parse_args()
-mols = "fit_lipinski" if args.lipinski_mols else "all"
+
+if args.property is not None:
+    mols = args.property
+    if args.lipinski_mols:
+        print("--property was supplied, so --lipinski-mols is ignored.")
+else:
+    mols = "fit_lipinski" if args.lipinski_mols else "all"
+
 train = args.train.lower()
 target = args.target.lower()
 identifier = f"pred_{target}_tr_{train}"
 save_dir = args.save_dir
-FULL_PATHING = getPaths(PATHING_JSON_PATH)
 full_feats = FULL_PATHING["full_features"][mols]
+
+save_path = getCFPSavePath(
+    full_pathing=FULL_PATHING,
+    save_dir=save_dir,
+    identifier=identifier,
+    property_name=args.property,
+)
 
 
 # %% ===== Helper Functions =====
+def getFeatureFiles(feature_path: str | Path) -> list[Path]:
+    feature_path = Path(feature_path)
+
+    if "*" not in str(feature_path):
+        if not feature_path.exists():
+            raise FileNotFoundError(f"Feature file not found: {feature_path}")
+        return [feature_path]
+
+    feature_files = [Path(file) for file in sorted(glob(str(feature_path)))]
+
+    # Some older generated files are unbatched, e.g. name.csv instead of name_1.csv.
+    if not feature_files and str(feature_path).endswith("_*.csv"):
+        unbatched_path = Path(str(feature_path).replace("_*.csv", ".csv"))
+        if unbatched_path.exists():
+            feature_files = [unbatched_path]
+
+    if not feature_files:
+        raise FileNotFoundError(f"No feature files matched: {feature_path}")
+
+    return feature_files
+
+
 def loadAndCleanData(
     name: str,
     full_feats: dict,
     correlation_threshold: float | None = None,
 ) -> pd.DataFrame:
-    df = pd.read_csv(full_feats[name], index_col="ID")
+    if name not in full_feats:
+        raise KeyError(f"{name} not found in full_features[{mols}]")
+
+    feature_files = getFeatureFiles(full_feats[name])
+    df = pd.concat(
+        [pd.read_csv(file, index_col="ID", low_memory=False) for file in feature_files],
+        axis=0,
+    )
 
     df, clean_report = cleanFeatureDF(
         df,
@@ -168,18 +231,16 @@ target_df = loadAndCleanData(target, full_feats=full_feats, correlation_threshol
 common_idx = train_df.index.intersection(target_df.index)
 train_df, target_df = train_df.loc[common_idx], target_df.loc[common_idx]
 
-print(f"[Multi-Target RF] train={train}, test={target}, id={identifier}")
+print(f"[Multi-Target RF] mols={mols}, train={train}, test={target}, id={identifier}")
 print(f"Train shape: {train_df.shape}, Test shape: {target_df.shape}")
+print(f"Save path: {save_path}")
 
 model = TL(log_to_file=False, log_identifier=identifier)
 model.trainMultiTargetRFModels(
     features_df=train_df,
     targets_df=target_df,
     output_csv=f"{identifier}.csv",
-    existing_performance_csv=(
-        FULL_PATHING["prediction_output_dirs"][save_dir][identifier]
-        / f"{identifier}.csv"
-    ),
+    existing_performance_csv=save_path / f"{identifier}.csv",
     hyper_params={
         "n_estimators": args.n_estimators,
         "max_features": args.max_features,
@@ -189,7 +250,7 @@ model.trainMultiTargetRFModels(
     },
     n_resamples=args.n_resamples,
     test_size=args.test_size,
-    save_path=FULL_PATHING["prediction_output_dirs"][save_dir][identifier],
+    save_path=save_path,
     skip_existing=args.skip_existing,
     save_models=args.save_models,
     save_feat_imp=args.save_feat_imp,

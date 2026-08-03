@@ -222,19 +222,19 @@ if args.plot_dep:
 
 
 if args.group_shap:
-    if pred_set in ["rdkit", "mordred", "maccs"]:
+    if train_set in ["rdkit", "mordred", "maccs"]:
         v.shapAnalysisForGroups(
             models_dir=tmp_model_dir,
             features=tr_feat_path,
             output_dir=shap_dir,
             max_bg=bg,
             max_explain=exp,
-            descriptor_groups=getGroups(pred_set),
+            descriptor_groups=getGroups(train_set),
             top_n=args.top_n,
             save_full=args.save_full_shap
         )
     else:
         raise ValueError(
-            f"Cannot get groups for {pred_set}.\n"
-            "Groupings are only valid for 'rdkit', 'mordred', and 'maccs'."
+            f"Cannot get groups for training feature set {train_set}.\n"
+            "Groupings are only valid when train-set is 'rdkit', 'mordred', or 'maccs'."
         )

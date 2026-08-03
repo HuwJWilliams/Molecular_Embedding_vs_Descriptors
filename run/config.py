@@ -6,15 +6,35 @@ File to hold all of the configuration of the run
 from pathlib import Path
 
 # %% ===== Project Imports & Pathing Setup=====
-SCRIPTS_DIR = Path(__file__).resolve().parents[1]
+SCRIPTS_DIR = Path(__file__).resolve().parents[1] / "scripts"
 SRC_DIR = SCRIPTS_DIR / "src"
+
+print(f"Scripts dir: {SCRIPTS_DIR}")
 
 # %% ===== Configuration variables =====
 
 # --- Pathing JSON variables
 PATHING_PATH = Path(SCRIPTS_DIR / "src" / "pathing")
-PATHING_JSON_NAME = "final_test_pathing.json"
+PATHING_JSON_NAME = "paths.json"
 PATHING_JSON_PATH = PATHING_PATH / PATHING_JSON_NAME
+
+# --- Target Columns
+TARGET_COLUMNS = {
+    "bp": "Boiling_Point",
+    "logd": "LogD",
+    "pka": "pKa",
+    "pka_paper1_basic": "pKa",
+    "pka_paper1_acidic": "pKa",
+    "ld50": "LD50",
+    "log_ld50": "LOG_LD50",
+    "pic50": "pIC50",
+    "hole_re": "Hole_Reorganisation_Energy",
+    "elec_re": "Electron_Reorganisation_Energy",
+    "aq_sol": "Solubility",
+    "homo_lumo_gap": "homolumogap",
+    "egfr_pic50": "pIC50"
+}
+
 
 # --- Supported Feature Sets
 SUPPORTED_FEATURE_SETS = (

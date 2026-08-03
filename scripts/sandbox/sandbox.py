@@ -2998,7 +2998,6 @@ if run_26:
     )
     
     
-            
     
 run_27 = False
 
@@ -3041,7 +3040,7 @@ if run_27:
             print(f"  n_{task} = {n}")
 
     
-run_28 = True
+run_28 = False
 
 if run_28:
     import pandas as pd
@@ -3051,18 +3050,18 @@ if run_28:
     path = "/users/yhb18174/TL_project/datasets/"
 
     dfs = [
-        ("boiling_point/cleaned_boiling_point.csv", "bp", "Boiling_Point"),
+        # ("boiling_point/cleaned_boiling_point.csv", "bp", "Boiling_Point"),
         ("pka/cleaned_pka.csv", "pKa", "pKa"),
-        ("pka/cleaned_pka_paper1_acidic.csv", "pKa_acid", "pKa"),
-        ("pka/cleaned_pka_paper1_basic.csv", "pKa_basic", "pKa"),
-        ("pic50/cleaned_pic50.csv", "pIC50", "pIC50"),
-        ("LOG_LD50/cleaned_log_ld50.csv", "log_LD50", "LOG_LD50"),
-        ("logD/cleaned_logd.csv", "logD", "LogD"),
-        ("hole_re/hole_re_cleaned.csv", "hole_re", "Hole_Reorganisation_Energy"),
-        ("elec_re/elec_re_cleaned.csv", "elec_re", "Electron_Reorganisation_Energy"),        
-        ("aq_sol/aq_sol_cleaned.csv", "aq_sol", "Solubility"),
-        ("homo_lumo_gap/homo_lumo_gap_cleaned.csv", "homo_lumo_gap", "homolumogap"),
-        ("egfr_pic50/egfr_pic50.csv", "egfr_pIC50", "pIC50"),
+    #     ("pka/cleaned_pka_paper1_acidic.csv", "pKa_acid", "pKa"),
+    #     ("pka/cleaned_pka_paper1_basic.csv", "pKa_basic", "pKa"),
+    #     ("pic50/cleaned_pic50.csv", "pIC50", "pIC50"),
+    #     ("LOG_LD50/cleaned_log_ld50.csv", "log_LD50", "LOG_LD50"),
+    #     ("logD/cleaned_logd.csv", "logD", "LogD"),
+    #     ("hole_re/hole_re_cleaned.csv", "hole_re", "Hole_Reorganisation_Energy"),
+    #     ("elec_re/elec_re_cleaned.csv", "elec_re", "Electron_Reorganisation_Energy"),        
+    #     ("aq_sol/aq_sol_cleaned.csv", "aq_sol", "Solubility"),
+    #     ("homo_lumo_gap/homo_lumo_gap_cleaned.csv", "homo_lumo_gap", "homolumogap"),
+    #     ("egfr_pic50/egfr_pic50.csv", "egfr_pIC50", "pIC50"),
     ]
 
     for p, save_name, col in dfs[:3]:
@@ -3132,4 +3131,755 @@ if run_28:
         print(f"  3x IQR bounds: {lower_iqr:.4f} to {upper_iqr:.4f}")
         print(f"  Outliers flagged: {outlier_mask.sum()} / {df[col].notna().sum()}")
         print()
-            
+          
+run_30=False
+if run_30:
+    import sys
+    import pandas as pd
+
+    SRC_DIR = Path("/users/yhb18174/TL_project/scripts/src/")
+    sys.path.insert(0, str(SRC_DIR / "datasets"))
+    from group_descriptors import getGroups
+
+    slogp_descriptors = getGroups("mordred")["LogS"]
+
+    mordred_df = pd.read_csv(
+        "/users/yhb18174/TL_project/datasets/descriptors/LOGD_descriptors/logd_mordred_1.csv",
+        index_col=0,
+        usecols=["ID"] + slogp_descriptors,
+    )
+
+    aq_sol_df = pd.read_csv(
+        paths["targets"]["logd"],
+        index_col=0,
+    )
+
+    joined_df = mordred_df.join(aq_sol_df[["LogD"]], how="inner")
+
+    corrs = joined_df[slogp_descriptors].corrwith(joined_df["LogD"])
+
+    avg_corr = corrs.mean()
+
+    print(corrs.sort_values(ascending=False))
+    print(f"Average SLogP-group correlation: {avg_corr}")
+
+run_31 = True
+if run_31:
+    def plotGroupedRFPerformanceBar(
+        base_ls: list[str],
+        base_plus_ls: list[str],
+        base_label: str,
+        base_plus_label: str,
+        metric_path: tuple[str, str, str] = ("external", "mean", "r2"),
+        save_path: str | Path = "grouped_rf_performance_bar.png",
+        y_label: str = "External R2",
+        title: str = None,
+    ):
+        import json
+        from pathlib import Path
+
+        import pandas as pd
+        import seaborn as sns
+        import matplotlib.pyplot as plt
+
+        def get_property_from_path(path: str | Path) -> str:
+            path = Path(path)
+            pred_dir = next(
+                part for part in path.parts
+                if part.endswith("_predictions_rf")
+            )
+            return pred_dir.replace("_predictions_rf", "")
+
+        def read_metric(perf: dict, keys: tuple[str, ...]):
+            value = perf
+            for key in keys:
+                value = value[key]
+            return value
+
+        rows = []
+
+        for label, paths in {
+            base_label: base_ls,
+            base_plus_label: base_plus_ls,
+        }.items():
+            for p in paths:
+                p = Path(p)
+                prop = get_property_from_path(p)
+
+                with open(p) as f:
+                    perf = json.load(f)
+
+                rows.append({
+                    "property": prop,
+                    "feature_set": label,
+                    "metric": read_metric(perf, metric_path),
+                })
+
+        plot_df = pd.DataFrame(rows)
+
+        summary_df = plot_df.pivot_table(
+            index="property",
+            columns="feature_set",
+            values="metric",
+            aggfunc="first",
+        ).sort_index()
+
+        print(summary_df)
+        print("\nMissing paired results:")
+        print(summary_df[summary_df.isna().any(axis=1)])
+
+        property_order = summary_df.index.tolist()
+        hue_order = [base_label, base_plus_label]
+
+        save_path = Path(save_path)
+        save_path.parent.mkdir(parents=True, exist_ok=True)
+
+        plt.figure(figsize=(14, 6))
+        sns.barplot(
+            data=plot_df,
+            x="property",
+            y="metric",
+            hue="feature_set",
+            order=property_order,
+            hue_order=hue_order,
+        )
+
+        plt.ylim(0, 1)
+        plt.xlabel("Property")
+        plt.ylabel(y_label)
+        plt.title(title or f"{base_label} vs {base_plus_label}")
+        plt.xticks(rotation=45, ha="right")
+        plt.tight_layout()
+        plt.savefig(save_path, dpi=400, bbox_inches="tight")
+        plt.show()
+
+        print(f"Saved to: {save_path}")
+
+        return plot_df, summary_df
+
+    base_feature = "ft-molformer-c3-1b"
+
+    base_ls = glob(
+        f"/users/yhb18174/TL_project/results/*_predictions_rf/"
+        f"{base_feature}/rf_performance.json"
+    )
+
+    base_plus_mordred_ls = glob(
+        f"/users/yhb18174/TL_project/results/*_predictions_rf/"
+        f"{base_feature}/additional_features/mordred/rf_performance.json"
+    )
+
+    plotGroupedRFPerformanceBar(
+        base_ls=base_ls,
+        base_plus_ls=base_plus_mordred_ls,
+        base_label="ft-molformer-c3-1b",
+        base_plus_label="ft-molformer-c3-1b + Mordred",
+        save_path=(
+            "/users/yhb18174/TL_project/results/pp_analysis/"
+            "ft_molformer_c3_1b_mordred_grouped_bar.png"
+        ),
+        y_label="External R2",
+        title="ft-molformer-c3-1b vs ft-molformer-c3-1b + Mordred",
+    )
+
+
+
+import pandas as pd
+import seaborn as sns
+import matplotlib.pyplot as plt
+from glob import glob
+from pathlib import Path
+
+run_32 = False
+
+if run_32:
+    pka_targ = pd.read_csv(
+        "/users/yhb18174/TL_project/datasets/pka/cleaned_pka.csv",
+        index_col=0,
+    )
+
+    pka_preds_ls = glob(
+        "/users/yhb18174/TL_project/results/PKA_predictions_rf/*/last_20pct_pred.csv.gz"
+    )
+
+    def bin_pka(pka: float) -> str:
+        if pka < 0:
+            return "strong_acid"
+        elif pka < 5:
+            return "moderate_acid"
+        elif pka < 7:
+            return "weak_acid"
+        elif pka < 9:
+            return "weak_base"
+        elif pka < 12:
+            return "moderate_base"
+        else:
+            return "strong_base"
+
+    pka_targ["pKa"] = pd.to_numeric(pka_targ["pKa"], errors="coerce")
+    pka_targ = pka_targ.dropna(subset=["pKa"]).copy()
+    pka_targ["pka_bin"] = pka_targ["pKa"].apply(bin_pka)
+
+    bin_order = [
+        "strong_acid",
+        "moderate_acid",
+        "weak_acid",
+        "weak_base",
+        "moderate_base",
+        "strong_base",
+    ]
+
+    bin_rows = []
+    min_max_rows = []
+    hist_rows = []
+
+    for pred_path in pka_preds_ls:
+        pred_path = Path(pred_path)
+        feature_set = pred_path.parts[-2]
+
+        pred_df = pd.read_csv(pred_path, index_col=0)
+
+        pred_col = "pKa" if "pKa" in pred_df.columns else pred_df.columns[0]
+        pred_df = pred_df[[pred_col]].rename(columns={pred_col: "pred_pKa"})
+
+        joined_df = pred_df.join(
+            pka_targ[["pKa", "pka_bin"]].rename(columns={"pKa": "true_pKa"}),
+            how="inner",
+        )
+
+        min_max_rows.append({
+            "feature_set": feature_set,
+            "n_matched": len(joined_df),
+            "true_min_pKa": joined_df["true_pKa"].min(),
+            "true_max_pKa": joined_df["true_pKa"].max(),
+        })
+
+        hist_rows.append(
+            joined_df[["true_pKa"]]
+            .rename(columns={"true_pKa": "pKa"})
+            .assign(feature_set=feature_set)
+        )
+
+        for pka_bin, bin_df in joined_df.groupby("pka_bin"):
+            bin_rows.append({
+                "feature_set": feature_set,
+                "pka_bin": pka_bin,
+                "mean_prediction": bin_df["pred_pKa"].mean(),
+                "n": len(bin_df),
+                "true_min_pKa": bin_df["true_pKa"].min(),
+                "true_max_pKa": bin_df["true_pKa"].max(),
+            })
+
+    plot_df = pd.DataFrame(bin_rows)
+    min_max_df = pd.DataFrame(min_max_rows).sort_values("feature_set")
+    hist_df = pd.concat(hist_rows, axis=0).reset_index(drop=True)
+
+    print(min_max_df.to_string(index=False))
+
+    plt.figure(figsize=(14, 6))
+    sns.barplot(
+        data=plot_df,
+        x="pka_bin",
+        y="mean_prediction",
+        hue="feature_set",
+        order=bin_order,
+    )
+    plt.xlabel("True pKa bin")
+    plt.ylabel("Mean predicted pKa")
+    plt.title("Mean PKA Predictions by True pKa Bin")
+    plt.xticks(rotation=45, ha="right")
+    plt.tight_layout()
+    plt.savefig("pka_anal_test.png", dpi=400, bbox_inches="tight")
+    plt.close()
+
+    plt.figure(figsize=(12, 6))
+    sns.histplot(
+        data=hist_df,
+        x="pKa",
+        hue="feature_set",
+        bins=30,
+        element="step",
+        stat="count",
+        common_norm=False,
+    )
+    plt.xlabel("True pKa")
+    plt.ylabel("Count")
+    plt.title("True pKa Distribution for IDs in last_20pct_pred")
+    plt.tight_layout()
+    plt.savefig("pka_hist_test.png", dpi=400, bbox_inches="tight")
+    plt.close()
+
+run_33=False
+if run_33:
+    from pathlib import Path
+    import shutil
+
+    results_root = Path("/users/yhb18174/TL_project/results")
+
+    nested_dirs = sorted(
+        results_root.glob("*_predictions_rf/*/*_pred_*")
+    )
+
+    for nested_dir in nested_dirs:
+        if not nested_dir.is_dir():
+            continue
+
+        feature_dir = nested_dir.parent
+
+        print(f"Unpacking: {nested_dir} -> {feature_dir}")
+
+        for item in nested_dir.iterdir():
+            dest = feature_dir / item.name
+
+            if dest.exists():
+                print(f"  SKIP exists: {dest}")
+                continue
+
+            if item.is_dir():
+                shutil.copytree(item, dest)
+            else:
+                shutil.copy2(item, dest)
+
+    print("Done.")
+
+
+run_35 = False
+if run_35:
+    paths = getPaths()
+    from rdkit.Chem import rdFingerprintGenerator
+
+    tanimoto_dir = SANDBOX / "tanimoto_dataset_similarity"
+    tanimoto_dir.mkdir(parents=True, exist_ok=True)
+
+    morgan_gen = rdFingerprintGenerator.GetMorganGenerator(
+        radius=2,
+        fpSize=2048,
+    )
+
+    def smilesToMorganFP(smiles: str):
+        mol = Chem.MolFromSmiles(str(smiles))
+        if mol is None:
+            return None
+        return morgan_gen.GetFingerprint(mol)
+
+    def getSmilesColumn(df: pd.DataFrame) -> str | None:
+        for col in ["SMILES", "smiles", "Smiles"]:
+            if col in df.columns:
+                return col
+        return None
+
+    def pairwiseTanimotoSummary(
+        df: pd.DataFrame,
+        dataset_name: str,
+        bins: int = 50,
+    ) -> tuple[dict, pd.DataFrame, pd.DataFrame]:
+        smiles_col = getSmilesColumn(df)
+        if smiles_col is None:
+            raise ValueError(f"No SMILES column found for {dataset_name}")
+
+        smiles_df = df[[smiles_col]].dropna().copy()
+        smiles_df.index = smiles_df.index.astype(str)
+
+        fps = []
+        ids = []
+        for mol_id, smiles in smiles_df[smiles_col].items():
+            fp = smilesToMorganFP(smiles)
+            if fp is None:
+                continue
+            ids.append(mol_id)
+            fps.append(fp)
+
+        n_mols = len(fps)
+        if n_mols < 2:
+            raise ValueError(f"Need at least 2 valid molecules for {dataset_name}")
+
+        hist_edges = np.linspace(0, 1, bins + 1)
+        hist_counts = np.zeros(bins, dtype=np.int64)
+        nearest = np.zeros(n_mols, dtype=float)
+
+        n_pairs = 0
+        sim_sum = 0.0
+        sim_min = 1.0
+        sim_max = 0.0
+
+        for i, fp in enumerate(fps[:-1]):
+            sims = np.asarray(
+                DataStructs.BulkTanimotoSimilarity(fp, fps[i + 1:]),
+                dtype=float,
+            )
+            if sims.size == 0:
+                continue
+
+            n_pairs += sims.size
+            sim_sum += float(sims.sum())
+            sim_min = min(sim_min, float(sims.min()))
+            sim_max = max(sim_max, float(sims.max()))
+            hist_counts += np.histogram(sims, bins=hist_edges)[0]
+
+            nearest[i] = max(nearest[i], float(sims.max()))
+            nearest[i + 1:] = np.maximum(nearest[i + 1:], sims)
+
+        hist_df = pd.DataFrame(
+            {
+                "dataset": dataset_name,
+                "bin_left": hist_edges[:-1],
+                "bin_right": hist_edges[1:],
+                "count": hist_counts,
+            }
+        )
+        hist_df["proportion"] = hist_df["count"] / hist_df["count"].sum()
+        hist_df["bin_mid"] = (hist_df["bin_left"] + hist_df["bin_right"]) / 2
+
+        approx_median = hist_df.loc[
+            hist_df["count"].cumsum().ge(n_pairs / 2),
+            "bin_mid",
+        ].iloc[0]
+
+        summary = {
+            "dataset": dataset_name,
+            "n_molecules": n_mols,
+            "n_pairs": n_pairs,
+            "mean_pairwise_tanimoto": sim_sum / n_pairs,
+            "approx_median_pairwise_tanimoto": approx_median,
+            "min_pairwise_tanimoto": sim_min,
+            "max_pairwise_tanimoto": sim_max,
+            "mean_nearest_neighbour_tanimoto": float(nearest.mean()),
+            "min_nearest_neighbour_tanimoto": float(nearest.min()),
+            "max_nearest_neighbour_tanimoto": float(nearest.max()),
+        }
+
+        nearest_df = pd.DataFrame(
+            {
+                "dataset": dataset_name,
+                "ID": ids,
+                "nearest_neighbour_tanimoto": nearest,
+            }
+        )
+
+        return summary, hist_df, nearest_df
+
+    summary_rows = []
+    hist_dfs = []
+    nearest_dfs = []
+
+    for dataset_name, target_path in paths["targets"].items():
+        try:
+            print(f"Processing Tanimoto similarity for {dataset_name}")
+            target_df = pd.read_csv(target_path, index_col=0)
+            summary, hist_df, nearest_df = pairwiseTanimotoSummary(
+                df=target_df,
+                dataset_name=dataset_name,
+            )
+            summary_rows.append(summary)
+            hist_dfs.append(hist_df)
+            nearest_dfs.append(nearest_df)
+            print(summary)
+        except Exception as e:
+            print(f"Skipping {dataset_name}: {e}")
+
+    summary_df = pd.DataFrame(summary_rows).sort_values("dataset")
+    hist_df = pd.concat(hist_dfs, ignore_index=True)
+    nearest_df = pd.concat(nearest_dfs, ignore_index=True)
+
+    summary_df.to_csv(tanimoto_dir / "dataset_tanimoto_summary.csv", index=False)
+    hist_df.to_csv(tanimoto_dir / "dataset_tanimoto_histograms.csv", index=False)
+    nearest_df.to_csv(tanimoto_dir / "dataset_nearest_neighbour_tanimoto.csv", index=False)
+
+    plt.figure(figsize=(14, 7))
+    sns.lineplot(
+        data=hist_df,
+        x="bin_mid",
+        y="proportion",
+        hue="dataset",
+    )
+    plt.xlabel("Pairwise Tanimoto similarity")
+    plt.ylabel("Proportion of molecule pairs")
+    plt.title("Pairwise Morgan Tanimoto Similarity Across Datasets")
+    plt.tight_layout()
+    plt.savefig(
+        tanimoto_dir / "dataset_pairwise_tanimoto_histograms.png",
+        dpi=400,
+        bbox_inches="tight",
+    )
+    plt.close()
+
+    plt.figure(figsize=(14, 6))
+    sns.barplot(
+        data=summary_df,
+        x="dataset",
+        y="mean_nearest_neighbour_tanimoto",
+        hue="dataset",
+        legend=False,
+    )
+    plt.ylim(0, 1)
+    plt.xlabel("Dataset")
+    plt.ylabel("Mean nearest-neighbour Tanimoto")
+    plt.title("Mean Nearest-Neighbour Tanimoto Similarity by Dataset")
+    plt.xticks(rotation=45, ha="right")
+    plt.tight_layout()
+    plt.savefig(
+        tanimoto_dir / "dataset_mean_nearest_neighbour_tanimoto.png",
+        dpi=400,
+        bbox_inches="tight",
+    )
+    plt.close()
+
+    plt.figure(figsize=(14, 7))
+    sns.histplot(
+        data=nearest_df,
+        x="nearest_neighbour_tanimoto",
+        hue="dataset",
+        bins=50,
+        element="step",
+        stat="count",
+        common_norm=False,
+    )
+    plt.xlabel("Nearest-neighbour Tanimoto similarity")
+    plt.ylabel("Number of molecules")
+    plt.title("Nearest-neighbour Tanimoto Similarity Distribution")
+    plt.tight_layout()
+    plt.savefig(
+        tanimoto_dir / "dataset_nearest_neighbour_tanimoto_histogram_counts.png",
+        dpi=400,
+        bbox_inches="tight",
+    )
+    plt.close()
+
+    for dataset_name, dataset_nearest_df in nearest_df.groupby("dataset"):
+        plt.figure(figsize=(10, 6))
+        sns.histplot(
+            data=dataset_nearest_df,
+            x="nearest_neighbour_tanimoto",
+            bins=50,
+            stat="count",
+        )
+        plt.xlabel("Nearest-neighbour Tanimoto similarity")
+        plt.ylabel("Number of molecules")
+        plt.title(f"{dataset_name} nearest-neighbour Tanimoto distribution")
+        plt.tight_layout()
+        plt.savefig(
+            tanimoto_dir / f"{dataset_name}_nearest_neighbour_tanimoto_histogram_counts.png",
+            dpi=400,
+            bbox_inches="tight",
+        )
+        plt.close()
+
+    def averageTanimotoWithin(fps: list) -> tuple[float, int]:
+        if len(fps) < 2:
+            return np.nan, 0
+
+        sim_sum = 0.0
+        n_pairs = 0
+
+        for i, fp in enumerate(fps[:-1]):
+            sims = DataStructs.BulkTanimotoSimilarity(fp, fps[i + 1:])
+            sim_sum += float(np.sum(sims))
+            n_pairs += len(sims)
+
+        return sim_sum / n_pairs, n_pairs
+
+    def averageTanimotoBetween(fps_a: list, fps_b: list) -> tuple[float, int]:
+        if not fps_a or not fps_b:
+            return np.nan, 0
+
+        sim_sum = 0.0
+        n_pairs = 0
+
+        for fp in fps_a:
+            sims = DataStructs.BulkTanimotoSimilarity(fp, fps_b)
+            sim_sum += float(np.sum(sims))
+            n_pairs += len(sims)
+
+        return sim_sum / n_pairs, n_pairs
+
+    def buildFingerprintMap(df: pd.DataFrame, dataset_name: str) -> dict[str, object]:
+        smiles_col = getSmilesColumn(df)
+        if smiles_col is None:
+            raise ValueError(f"No SMILES column found for {dataset_name}")
+
+        fp_map = {}
+        for mol_id, smiles in df[smiles_col].dropna().items():
+            fp = smilesToMorganFP(smiles)
+            if fp is not None:
+                fp_map[str(mol_id)] = fp
+
+        return fp_map
+
+    def readSplitIDs(split_path: Path) -> list[str]:
+        split_df = pd.read_csv(split_path)
+        id_col = "ID" if "ID" in split_df.columns else split_df.columns[0]
+        return split_df[id_col].astype(str).tolist()
+
+    def getRepresentativeSplitDirs() -> list[tuple[str, str, Path]]:
+        feature_priority = [
+            "rdkit",
+            "mordred",
+            "chemberta",
+            "molformer",
+            "molformer-c3-1b",
+            "selformer",
+        ]
+
+        split_dirs = []
+        rf_paths = paths["prediction_output_dirs"]["rf"]
+
+        for dataset_name in paths["targets"]:
+            if dataset_name not in rf_paths:
+                continue
+
+            for feature_name in feature_priority:
+                result_dir = Path(rf_paths[dataset_name].get(feature_name, ""))
+                if (result_dir / "repeats").exists():
+                    split_dirs.append((dataset_name, feature_name, result_dir))
+                    break
+
+        return split_dirs
+
+    split_rows = []
+    split_dirs = getRepresentativeSplitDirs()
+
+    for dataset_name, feature_name, result_dir in split_dirs:
+        try:
+            print(
+                "Processing split Tanimoto similarity for "
+                f"{dataset_name} / {feature_name}"
+            )
+            target_df = pd.read_csv(paths["targets"][dataset_name], index_col=0)
+            fp_map = buildFingerprintMap(target_df, dataset_name)
+
+            repeat_dirs = sorted((result_dir / "repeats").glob("repeat_*"))
+            for repeat_dir in repeat_dirs:
+                train_path = repeat_dir / "training_data" / "split_train_ids.csv"
+                validation_path = (
+                    repeat_dir / "training_data" / "split_validation_ids.csv"
+                )
+
+                if not train_path.exists() or not validation_path.exists():
+                    continue
+
+                train_ids = readSplitIDs(train_path)
+                validation_ids = readSplitIDs(validation_path)
+
+                train_fps = [fp_map[mol_id] for mol_id in train_ids if mol_id in fp_map]
+                validation_fps = [
+                    fp_map[mol_id] for mol_id in validation_ids if mol_id in fp_map
+                ]
+
+                train_avg, train_pairs = averageTanimotoWithin(train_fps)
+                validation_avg, validation_pairs = averageTanimotoWithin(validation_fps)
+                between_avg, between_pairs = averageTanimotoBetween(
+                    train_fps,
+                    validation_fps,
+                )
+
+                repeat_name = repeat_dir.name
+                split_rows.extend(
+                    [
+                        {
+                            "dataset": dataset_name,
+                            "feature_set": feature_name,
+                            "repeat": repeat_name,
+                            "comparison": "train_train",
+                            "avg_tanimoto": train_avg,
+                            "n_molecules_a": len(train_fps),
+                            "n_molecules_b": len(train_fps),
+                            "n_pairs": train_pairs,
+                            "result_dir": str(result_dir),
+                        },
+                        {
+                            "dataset": dataset_name,
+                            "feature_set": feature_name,
+                            "repeat": repeat_name,
+                            "comparison": "validation_validation",
+                            "avg_tanimoto": validation_avg,
+                            "n_molecules_a": len(validation_fps),
+                            "n_molecules_b": len(validation_fps),
+                            "n_pairs": validation_pairs,
+                            "result_dir": str(result_dir),
+                        },
+                        {
+                            "dataset": dataset_name,
+                            "feature_set": feature_name,
+                            "repeat": repeat_name,
+                            "comparison": "train_validation",
+                            "avg_tanimoto": between_avg,
+                            "n_molecules_a": len(train_fps),
+                            "n_molecules_b": len(validation_fps),
+                            "n_pairs": between_pairs,
+                            "result_dir": str(result_dir),
+                        },
+                    ]
+                )
+
+        except Exception as e:
+            print(f"Skipping split Tanimoto for {dataset_name} / {feature_name}: {e}")
+
+    if split_rows:
+        split_tanimoto_df = pd.DataFrame(split_rows)
+        split_tanimoto_df["dataset_repeat"] = (
+            split_tanimoto_df["dataset"] + " " + split_tanimoto_df["repeat"]
+        )
+        split_tanimoto_df.to_csv(
+            tanimoto_dir / "train_validation_split_tanimoto_summary.csv",
+            index=False,
+        )
+
+        comparison_order = [
+            "train_train",
+            "validation_validation",
+            "train_validation",
+        ]
+        titles = {
+            "train_train": "Training molecules",
+            "validation_validation": "Validation molecules",
+            "train_validation": "Training vs validation molecules",
+        }
+
+        fig, axes = plt.subplots(1, 3, figsize=(22, 6), sharey=True)
+        for ax, comparison in zip(axes, comparison_order):
+            plot_df = split_tanimoto_df[
+                split_tanimoto_df["comparison"] == comparison
+            ].copy()
+            sns.barplot(
+                data=plot_df,
+                x="dataset",
+                y="avg_tanimoto",
+                hue="repeat",
+                ax=ax,
+            )
+            ax.set_ylim(0, 1)
+            ax.set_title(titles[comparison])
+            ax.set_xlabel("Dataset")
+            ax.set_ylabel("Average Tanimoto" if ax is axes[0] else "")
+            ax.tick_params(axis="x", labelrotation=45)
+
+        handles, labels = axes[-1].get_legend_handles_labels()
+        for ax in axes:
+            legend = ax.get_legend()
+            if legend is not None:
+                legend.remove()
+
+        fig.legend(
+            handles,
+            labels,
+            title="Repeat",
+            bbox_to_anchor=(1.01, 0.98),
+            loc="upper left",
+        )
+        fig.suptitle("Average Tanimoto Similarity Across Train/Validation Splits")
+        fig.tight_layout()
+        fig.savefig(
+            tanimoto_dir / "train_validation_split_tanimoto_3panel.png",
+            dpi=400,
+            bbox_inches="tight",
+        )
+        plt.close(fig)
+
+    print(summary_df.to_string(index=False))
+    print(f"Saved Tanimoto outputs to: {tanimoto_dir}")
+
+
+run_36 = False
+if run_36:
+    from glob import glob
+

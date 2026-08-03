@@ -96,7 +96,10 @@ def getLowVarianceColumns(
 
     exclude_columns = set(exclude_columns or [])
 
-    df = pd.read_csv(input_df, index_col=index_col)
+    if isinstance(input_df, (str, Path)):
+        df = pd.read_csv(input_df, index_col=index_col)
+    else:
+        df = input_df
 
     low_variance_cols = []
 
@@ -1172,6 +1175,90 @@ def checkLipinskiCriteria(
 
 
     return trimmed_df.index
+
+
+def filterIDsByMordredLipinski(
+    mordred_df: str | Path | pd.DataFrame,
+    mw: float = 500,
+    logp: float = 5,
+    n_hbd: int = 5,
+    n_hba: int = 10,
+    columns: dict[str, str] | None = None,
+    allow_equal: bool = True,
+    return_df: bool = False,
+) -> pd.Index | pd.DataFrame:
+    """
+    Filter molecule IDs using Lipinski rule-of-five criteria from Mordred features.
+
+    Parameters
+    ----------
+    mordred_df:
+        Mordred descriptor dataframe or CSV path. The index should contain molecule IDs.
+    mw, logp, n_hbd, n_hba:
+        Thresholds for molecular weight, SLogP, hydrogen-bond donors, and
+        hydrogen-bond acceptors.
+    columns:
+        Optional mapping with keys "mw", "logp", "n_hbd", "n_hba" to override
+        the default Mordred column names.
+    allow_equal:
+        If True, use <= thresholds. If False, use < thresholds.
+    return_df:
+        If True, return the filtered dataframe. Otherwise return the filtered IDs.
+    """
+
+    if isinstance(mordred_df, (str, Path)):
+        mordred_df = pd.read_csv(mordred_df, index_col=0, low_memory=False)
+    else:
+        mordred_df = mordred_df.copy()
+
+    columns = columns or {
+        "mw": "MW_mordred",
+        "logp": "SLogP_mordred",
+        "n_hbd": "nHBDon_mordred",
+        "n_hba": "nHBAcc_mordred",
+    }
+
+    thresholds = {
+        "mw": mw,
+        "logp": logp,
+        "n_hbd": n_hbd,
+        "n_hba": n_hba,
+    }
+
+    missing_cols = [
+        col for col in columns.values()
+        if col not in mordred_df.columns
+    ]
+    if missing_cols:
+        raise ValueError(f"Missing Mordred Lipinski columns: {missing_cols}")
+
+    lipinski_df = mordred_df[list(columns.values())].apply(
+        pd.to_numeric,
+        errors="coerce",
+    )
+
+    keep_mask = pd.Series(True, index=lipinski_df.index)
+    for criterion, col in columns.items():
+        threshold = thresholds[criterion]
+        if allow_equal:
+            keep_mask &= lipinski_df[col] <= threshold
+        else:
+            keep_mask &= lipinski_df[col] < threshold
+
+    keep_mask &= lipinski_df.notna().all(axis=1)
+    filtered_df = mordred_df.loc[keep_mask].copy()
+
+    n_total = len(mordred_df)
+    n_keep = len(filtered_df)
+    print(
+        "Mordred Lipinski filter kept "
+        f"{n_keep}/{n_total} IDs ({(100 * n_keep / n_total) if n_total else 0:.2f}%)."
+    )
+
+    if return_df:
+        return filtered_df
+
+    return filtered_df.index
 
 def featNetworkCorrelation(df, threshold=0.3, save_path="/users/yhb18174/TL_project/results/test_network.png"):
     corr_matrix = df.corr(numeric_only=True)

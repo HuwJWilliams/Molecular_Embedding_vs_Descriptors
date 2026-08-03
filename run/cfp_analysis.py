@@ -7,9 +7,10 @@ import sys
 import pandas as pd
 from pathlib import Path
 import argparse
+from glob import glob
 
 # %% ===== Project Imports & Pathing Setup=====
-from config import SRC_DIR, PATHING_JSON_PATH, CFP_ANALYSIS_METRICS
+from config import SRC_DIR, PATHING_JSON_PATH
 from cfp_analysis_fns import *
 
 sys.path.insert(0, str(SRC_DIR / "pathing"))
@@ -19,8 +20,6 @@ FULL_PATHING = getPaths(PATHING_JSON_PATH)
 RESULTS_DIR = FULL_PATHING["imp_dirs"]["results_dir"]
 
 sys.path.insert(0, str(SRC_DIR / "datasets"))
-from group_descriptors import getGroups
-from analyse_datasets import getLowVarianceColumns
 
 # %% ===== Setting Up The Visualisation Class  =====
 cfp = list(FULL_PATHING["prediction_output_dirs"]["cross_feature_predictions"].keys())
@@ -48,8 +47,7 @@ parser.add_argument(
 parser.add_argument(
     "--run-experiment",
     nargs="+",
-    choices=unique_exp_names,
-    help=f"Name of the experiments ran.",
+    help="Name of the experiments ran.",
 )
 
 parser.add_argument(
@@ -99,12 +97,26 @@ parser.add_argument(
     help="Performance threshold used with --plot-poor-distributions",
 )
 
+parser.add_argument(
+    "--property",
+    default=None,
+    choices=[
+        key for key in FULL_PATHING["prediction_output_dirs"]["rf"].keys()
+    ],
+    help="Property-specific CFP results to analyse.",
+)
+
 args = parser.parse_args()
 
 
 # %% ===== Running Analysis =====
+
+
 cfp_dir = FULL_PATHING["prediction_output_dirs"][args.result_dir]
 
+if args.property is not None:
+    cfp_dir = cfp_dir[args.property]
+    
 if args.run_all:
     exp_list = list(cfp_dir.keys())
 else:
@@ -121,9 +133,13 @@ if args.run_avg:
         )
     )
 
-    pred_ft_df_path = Path(FULL_PATHING["full_features"]["all"][pred])
-    pred_ft_df = pd.read_csv(pred_ft_df_path, index_col=0)
+    feature_source = args.property or "all"
+    pred_ft_df_path = Path(FULL_PATHING["full_features"][feature_source][pred])
+    path_ls = glob(str(pred_ft_df_path))
 
+    pred_ft_df_ls = [pd.read_csv(f, index_col=0) for f in path_ls]
+    pred_ft_df = pd.concat(pred_ft_df_ls, axis=0)
+    
     runCFPAnalysisForPerformanceDF(
         exp_perf_df=exp_perf_df,
         pred_ft_df=pred_ft_df,
@@ -138,13 +154,21 @@ else:
         split_name = exp.split("_")
         pred = split_name[1]
 
-        exp_dir = Path(cfp_dir[exp])
-
+        exp_dir = getCFPAnalysisDir(
+            full_pathing=FULL_PATHING,
+            result_dir=args.result_dir,
+            exp=exp,
+            property_name=args.property,
+        )
         exp_perf_df_path = exp_dir / f"{exp}.csv"
         exp_perf_df = pd.read_csv(exp_perf_df_path, index_col=0)
 
-        pred_ft_df_path = Path(FULL_PATHING["full_features"]["all"][pred])
-        pred_ft_df = pd.read_csv(pred_ft_df_path, index_col=0)
+        feature_source = args.property or "all"
+        pred_ft_df_path = Path(FULL_PATHING["full_features"][feature_source][pred])
+        path_ls = glob(str(pred_ft_df_path))
+    
+        pred_ft_df_ls = [pd.read_csv(f, index_col=0) for f in path_ls]
+        pred_ft_df = pd.concat(pred_ft_df_ls, axis=0)
 
         runCFPAnalysisForPerformanceDF(
             exp_perf_df=exp_perf_df,

@@ -3,7 +3,7 @@ import pandas as pd
 
 METADATA_COLS = ["SMILES", "SELFIES", "Mols"]
 
-def clean_feature_df(
+def cleanFeatureDF(
     df: pd.DataFrame,
     metadata_cols: tuple[str, ...] = ("SMILES", "SELFIES", "Mols"),
     max_nan_fraction: float = 0.10,
