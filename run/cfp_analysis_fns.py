@@ -153,13 +153,35 @@ def getTaskGroupPerf(
             continue
 
         task_df[metrics] = task_df[metrics].apply(pd.to_numeric, errors="coerce")
+        valid_group_map = {
+            group: [
+                desc
+                for desc in descs
+                if desc in task_df.index and desc not in excl_cols
+            ]
+            for group, descs in group_map.items()
+        }
+        valid_group_map = {
+            group: descs for group, descs in valid_group_map.items() if descs
+        }
+
+        if not valid_group_map:
+            print(
+                f"Skipping grouped performance for {task_name}: "
+                "no descriptor groups matched task rows."
+            )
+            continue
 
         gp_df = v.computeGroupPerf(
             data=task_df,
-            descriptor_groups=group_map,
+            descriptor_groups=valid_group_map,
             metrics=metrics,
             exclude=excl_cols,
         )
+
+        if gp_df.empty:
+            print(f"Skipping grouped performance for {task_name}: empty result.")
+            continue
 
         gp_df.to_csv(save_dir / f"{task_name}_group_perf.csv")
         group_perf_by_task[task_name] = gp_df
