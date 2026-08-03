@@ -42,6 +42,8 @@ def resolveCFPDir(prediction_output_dirs: dict, result_dir: str, property_datase
         return result_block[property_dataset]
 
     return result_block
+
+
 def listCFPExperiments(result_block: dict):
     is_nested = any(isinstance(v, dict) for v in result_block.values())
 
@@ -64,6 +66,7 @@ lcfp = listCFPExperiments(
     FULL_PATHING["prediction_output_dirs"]["lipinski_cross_feature_predictions"]
 )
 unique_exp_names = sorted(set(cfp + lcfp))
+
 
 def plotGroupRadar(
     group_perf_by_task: dict[str, pd.DataFrame],
@@ -573,12 +576,12 @@ def runCFPAnalysisForPerformanceDF(
     )
 
     plotGroupTaskFractionSummary(
-        avg_df=exp_perf_df,
+        df=exp_perf_df,
         group_map=group_map,
+        exp_name=exp_name,
         plot_dir=exp_dir,
         threshold=0.7,
-        exclude_cols=excl_cols,
-        fname_prefix=f"{exp_name}_group_task_fraction",
+        excl_cols=excl_cols,
     )
 
     return excl_cols
