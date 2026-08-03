@@ -432,11 +432,12 @@ def plotGroupTaskFractionSummary(
 
         values = pd.to_numeric(task_df[metric], errors="coerce")
         values = values.replace([float("inf"), float("-inf")], pd.NA)
+        values = values.groupby(values.index).mean()
 
         valid_descriptors = [
             idx
-            for idx in task_df.index
-            if str(idx) not in excl_cols and pd.notna(values.loc[idx])
+            for idx, val in values.items()
+            if str(idx) not in excl_cols and pd.notna(val)
         ]
 
         total_task_descriptors = len(valid_descriptors)
