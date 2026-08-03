@@ -37,8 +37,6 @@ PROPERTY_CHOICES = [
     if prop not in {"all", "fit_lipinski"}
 ]
 
-from cfp_analysis_fns import getCFPSavePath
-
 # %% ===== Argument Parsing =====
 parser = argparse.ArgumentParser(description="Generating cross-feature predictions")
 
@@ -158,26 +156,19 @@ parser.add_argument(
 )
 
 args = parser.parse_args()
-
-if args.property is not None:
-    mols = args.property
-    if args.lipinski_mols:
-        print("--property was supplied, so --lipinski-mols is ignored.")
-else:
-    mols = "fit_lipinski" if args.lipinski_mols else "all"
-
 train = args.train.lower()
 target = args.target.lower()
 identifier = f"pred_{target}_tr_{train}"
-save_dir = args.save_dir
-full_feats = FULL_PATHING["full_features"][mols]
 
-save_path = getCFPSavePath(
-    full_pathing=FULL_PATHING,
-    save_dir=save_dir,
-    identifier=identifier,
-    property_name=args.property,
-)
+if args.lipinski_mols and args.property != "all":
+    raise ValueError("--lipinski-mols cannot be used with a property-specific dataset.")
+property_dataset = args.property.lower()
+mols = "fit_lipinski" if args.lipinski_mols else property_dataset
+full_feats = FULL_PATHING["full_features"][mols]
+save_dir = args.save_dir
+save_path = FULL_PATHING["prediction_output_dirs"][save_dir][property_dataset][
+    identifier
+]
 
 
 # %% ===== Helper Functions =====

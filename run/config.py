@@ -4,6 +4,7 @@ File to hold all of the configuration of the run
 
 # %% ===== Python Imports =====
 from pathlib import Path
+import sys
 
 # %% ===== Project Imports & Pathing Setup=====
 SCRIPTS_DIR = Path(__file__).resolve().parents[1] / "scripts"
@@ -17,6 +18,11 @@ print(f"Scripts dir: {SCRIPTS_DIR}")
 PATHING_PATH = Path(SCRIPTS_DIR / "src" / "pathing")
 PATHING_JSON_NAME = "paths.json"
 PATHING_JSON_PATH = PATHING_PATH / PATHING_JSON_NAME
+
+sys.path.insert(0, str(PATHING_PATH))
+from get_paths import getPaths
+
+FULL_PATHING = getPaths(PATHING_JSON_PATH)
 
 # --- Target Columns
 TARGET_COLUMNS = {
@@ -32,7 +38,7 @@ TARGET_COLUMNS = {
     "elec_re": "Electron_Reorganisation_Energy",
     "aq_sol": "Solubility",
     "homo_lumo_gap": "homolumogap",
-    "egfr_pic50": "pIC50"
+    "egfr_pic50": "pIC50",
 }
 
 
@@ -53,6 +59,9 @@ SUPPORTED_FEATURE_SETS = (
     "ft-molformer-c3-1b",
     "ft-selformer",
 )
+
+# --- Supported Target Sets
+SUPPORTED_TARGET_SETS = tuple(FULL_PATHING_JSON["targets"].keys()) + ("all",)
 
 # --- Transformer Specifications
 TRANSFORMER_FEATURE_SPECS: dict[str, dict[str, str]] = {

@@ -28,38 +28,42 @@ v = Visualise(save_all=False)
 
 
 # %% ===== Function Definitions =====
-def getCFPSavePath(
-    full_pathing: dict,
-    save_dir: str,
-    identifier: str,
-    property_name: str | None = None,
-) -> Path:
-    if property_name is None:
-        return Path(full_pathing["prediction_output_dirs"][save_dir][identifier])
+def resolveCFPDir(prediction_output_dirs: dict, result_dir: str, property_dataset: str):
+    result_block = prediction_output_dirs[result_dir]
 
-    property_rf_paths = full_pathing["prediction_output_dirs"]["rf"][property_name]
-    first_feature_path = Path(next(iter(property_rf_paths.values())))
+    is_nested = any(isinstance(v, dict) for v in result_block.values())
 
-    # Walk up to the *_predictions_rf directory.
-    prediction_root = next(
-        parent for parent in [first_feature_path, *first_feature_path.parents]
-        if parent.name.endswith("_predictions_rf")
-    )
+    if is_nested:
+        if property_dataset not in result_block:
+            raise KeyError(
+                f"Property '{property_dataset}' not found under "
+                f"prediction_output_dirs['{result_dir}']"
+            )
+        return result_block[property_dataset]
 
-    return prediction_root / save_dir / identifier
+    return result_block
+def listCFPExperiments(result_block: dict):
+    is_nested = any(isinstance(v, dict) for v in result_block.values())
 
-def getCFPAnalysisDir(
-    full_pathing: dict,
-    result_dir: str,
-    exp: str,
-    property_name: str | None = None,
-) -> Path:
-    results_dir = Path(full_pathing["imp_dirs"]["results_dir"])
+    if is_nested:
+        return sorted(
+            {
+                exp
+                for dataset_block in result_block.values()
+                for exp in dataset_block.keys()
+            }
+        )
 
-    if property_name is None:
-        return Path(full_pathing["prediction_output_dirs"][result_dir][exp])
+    return sorted(result_block.keys())
 
-    return results_dir / result_dir / property_name / exp
+
+cfp = listCFPExperiments(
+    FULL_PATHING["prediction_output_dirs"]["cross_feature_predictions"]
+)
+lcfp = listCFPExperiments(
+    FULL_PATHING["prediction_output_dirs"]["lipinski_cross_feature_predictions"]
+)
+unique_exp_names = sorted(set(cfp + lcfp))
 
 def plotGroupRadar(
     group_perf_by_task: dict[str, pd.DataFrame],

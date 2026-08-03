@@ -105,23 +105,17 @@ parser.add_argument(
     help="Performance threshold used with --plot-poor-distributions",
 )
 
-parser.add_argument(
-    "--property",
-    default=None,
-    choices=[key for key in FULL_PATHING["prediction_output_dirs"]["rf"].keys()],
-    help="Property-specific CFP results to analyse.",
-)
-
 args = parser.parse_args()
 
 
 # %% ===== Running Analysis =====
+property_dataset = args.property.lower()
 
-
-cfp_dir = FULL_PATHING["prediction_output_dirs"][args.result_dir]
-
-if args.property is not None:
-    cfp_dir = cfp_dir[args.property]
+cfp_dir = resolveCFPDir(
+    prediction_output_dirs=FULL_PATHING["prediction_output_dirs"],
+    result_dir=args.result_dir,
+    property_dataset=property_dataset,
+)
 
 if args.run_all:
     exp_list = list(cfp_dir.keys())
@@ -160,12 +154,7 @@ else:
         split_name = exp.split("_")
         pred = split_name[1]
 
-        exp_dir = getCFPAnalysisDir(
-            full_pathing=FULL_PATHING,
-            result_dir=args.result_dir,
-            exp=exp,
-            property_name=args.property,
-        )
+        exp_dir = Path(cfp_dir[exp])
         exp_perf_df_path = exp_dir / f"{exp}.csv"
         exp_perf_df = pd.read_csv(exp_perf_df_path, index_col=0)
 

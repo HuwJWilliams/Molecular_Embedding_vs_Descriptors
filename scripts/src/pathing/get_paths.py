@@ -99,6 +99,28 @@ def _dataset_feature_prefix(dataset_key: str, for_results: bool = False) -> str:
     return feature_prefix_map.get(dataset_key, dataset_key.upper())
 
 
+def _add_dataset_cross_prediction_paths(
+    prediction_output_dirs: dict,
+    dataset_key: str,
+    identifiers: list[str],
+):
+    cross_block = prediction_output_dirs.setdefault("cross_feature_predictions", {})
+    lipinski_cross_block = prediction_output_dirs.setdefault(
+        "lipinski_cross_feature_predictions", {}
+    )
+
+    cross_block.setdefault(dataset_key, {})
+    lipinski_cross_block.setdefault(dataset_key, {})
+
+    for identifier in identifiers:
+        cross_block[dataset_key][identifier] = (
+            f"${{RESULTS_DIR}}/cross_feature_predictions/{dataset_key}/{identifier}"
+        )
+        lipinski_cross_block[dataset_key][identifier] = (
+            f"${{RESULTS_DIR}}/lipinski_cross_feature_predictions/{dataset_key}/{identifier}"
+        )
+
+
 def addNewDatasetPaths(
     dataset_key: str,
     target_file: str,
@@ -147,6 +169,21 @@ def addNewDatasetPaths(
                 feature
             ] = f"${{RESULTS_DIR}}/{result_prefix}_predictions_{model}/{feature}/{feature}_pred_{dataset_key}"
 
+    existing_features = list(
+        json_contents["dataset_analysis"]["descriptor_analysis"].keys()
+    )
+    identifiers = [
+        f"pred_{target_feature}_tr_{train_feature}"
+        for train_feature in existing_features
+        for target_feature in existing_features
+        if train_feature != target_feature
+    ]
+    _add_dataset_cross_prediction_paths(
+        prediction_output_dirs=json_contents["prediction_output_dirs"],
+        dataset_key=dataset_key,
+        identifiers=identifiers,
+    )
+
     saveJSON(json_contents, json_path)
 
 
@@ -193,13 +230,6 @@ def addFeatureSetPaths(
 
     # cross predictions
     if add_cross_predictions:
-        cross_block = json_contents["prediction_output_dirs"].setdefault(
-            "cross_feature_predictions", {}
-        )
-        lipinski_cross_block = json_contents["prediction_output_dirs"].setdefault(
-            "lipinski_cross_feature_predictions", {}
-        )
-
         existing_features = list(
             json_contents["dataset_analysis"]["descriptor_analysis"].keys()
         )
@@ -213,18 +243,17 @@ def addFeatureSetPaths(
                 if feature_name not in allowed or other_feature not in allowed:
                     continue
 
-            cross_block[f"pred_{other_feature}_tr_{feature_name}"] = (
-                f"${{RESULTS_DIR}}/embeddings_and_descriptor_predictions/pred_{other_feature}_tr_{feature_name}"
-            )
-            cross_block[f"pred_{feature_name}_tr_{other_feature}"] = (
-                f"${{RESULTS_DIR}}/embeddings_and_descriptor_predictions/pred_{feature_name}_tr_{other_feature}"
-            )
-            lipinski_cross_block[f"pred_{other_feature}_tr_{feature_name}"] = (
-                f"${{RESULTS_DIR}}/lipinski_embeddings_and_descriptor_predictions/pred_{other_feature}_tr_{feature_name}"
-            )
-            lipinski_cross_block[f"pred_{feature_name}_tr_{other_feature}"] = (
-                f"${{RESULTS_DIR}}/lipinski_embeddings_and_descriptor_predictions/pred_{feature_name}_tr_{other_feature}"
-            )
+            identifiers = [
+                f"pred_{other_feature}_tr_{feature_name}",
+                f"pred_{feature_name}_tr_{other_feature}",
+            ]
+
+            for dataset in json_contents["full_features"].keys():
+                _add_dataset_cross_prediction_paths(
+                    prediction_output_dirs=json_contents["prediction_output_dirs"],
+                    dataset_key=dataset,
+                    identifiers=identifiers,
+                )
 
     saveJSON(json_contents, json_path)
 
