@@ -16,7 +16,7 @@ def createPathingJSON(json_name="test_paths.json"):
             "scripts_dir": "${SCRIPTS_DIR}",
             "src_dir": "${SRC_DIR}",
             "datasets_dir": "${DATASETS_DIR}",
-            "results_dir": "${RESULTS_DIR}"
+            "results_dir": "${RESULTS_DIR}",
         },
         "train_test_splits": {},
         "raw_data": {},
@@ -25,12 +25,12 @@ def createPathingJSON(json_name="test_paths.json"):
         "prediction_output_dirs": {
             "rf": {},
             "cross_feature_predictions": {},
-            "lipinski_cross_feature_predictions": {}
+            "lipinski_cross_feature_predictions": {},
         },
         "dataset_analysis": {},
-        "config": {}
+        "config": {},
     }
-    
+
     with open(str(FILE_DIR / json_name), "w", encoding="utf=8") as f:
         json.dump(pathing_json, f, indent=2)
 
@@ -111,9 +111,9 @@ def addNewDatasetPaths(
     dataset_prefix = dataset_prefix.strip()
 
     # targets
-    json_contents["targets"][dataset_key] = (
-        f"${{DATASETS_DIR}}/{dataset_folder_name}/{target_file}"
-    )
+    json_contents["targets"][
+        dataset_key
+    ] = f"${{DATASETS_DIR}}/{dataset_folder_name}/{target_file}"
 
     # full_features
     json_contents["full_features"][dataset_key] = {}
@@ -132,9 +132,9 @@ def addNewDatasetPaths(
         else:
             raise ValueError(f"Cannot infer family for feature '{feature}'")
 
-        json_contents["full_features"][dataset_key][feature] = (
-            f"${{DATASETS_DIR}}/{family}/{dataset_prefix}_{suffix}/{dataset_key}_{feature}_*.csv"
-        )
+        json_contents["full_features"][dataset_key][
+            feature
+        ] = f"${{DATASETS_DIR}}/{family}/{dataset_prefix}_{suffix}/{dataset_key}_{feature}_*.csv"
 
     # prediction_output_dirs rf/lr
     result_prefix = dataset_prefix.upper()
@@ -143,9 +143,9 @@ def addNewDatasetPaths(
         json_contents["prediction_output_dirs"][model][dataset_key] = {}
 
         for feature in template_full.keys():
-            json_contents["prediction_output_dirs"][model][dataset_key][feature] = (
-                f"${{RESULTS_DIR}}/{result_prefix}_predictions_{model}/{feature}/{feature}_pred_{dataset_key}"
-            )
+            json_contents["prediction_output_dirs"][model][dataset_key][
+                feature
+            ] = f"${{RESULTS_DIR}}/{result_prefix}_predictions_{model}/{feature}/{feature}_pred_{dataset_key}"
 
     saveJSON(json_contents, json_path)
 
@@ -156,8 +156,8 @@ def addFeatureSetPaths(
     all_filename: str | None = None,
     add_cross_predictions: bool = True,
     json_path: str | Path = FILE_DIR / "paths.json",
-    full_cross_embedding_pathing: bool=False,
-    limited_cross_embedding_pathing: list[str]=["rdkit", "mordred"],
+    full_cross_embedding_pathing: bool = False,
+    limited_cross_embedding_pathing: list[str] = ["rdkit", "mordred"],
 ):
     json_contents = loadJSON(json_path)
     feature_name = feature_name.lower()
@@ -187,9 +187,9 @@ def addFeatureSetPaths(
             )
 
     # dataset_analysis
-    json_contents["dataset_analysis"]["descriptor_analysis"][feature_name] = (
-        f"${{DATASETS_DIR}}/all/descriptor_analysis/{feature_name}.csv"
-    )
+    json_contents["dataset_analysis"]["descriptor_analysis"][
+        feature_name
+    ] = f"${{DATASETS_DIR}}/all/descriptor_analysis/{feature_name}.csv"
 
     # cross predictions
     if add_cross_predictions:
@@ -200,7 +200,9 @@ def addFeatureSetPaths(
             "lipinski_cross_feature_predictions", {}
         )
 
-        existing_features = list(json_contents["dataset_analysis"]["descriptor_analysis"].keys())
+        existing_features = list(
+            json_contents["dataset_analysis"]["descriptor_analysis"].keys()
+        )
 
         for other_feature in existing_features:
             if other_feature == feature_name:
@@ -228,13 +230,14 @@ def addFeatureSetPaths(
 
 
 def addRawDataPaths(
-        raw_data_paths: list[str],
-        set_names: list[str],
-        json_name: str="./test_paths.json"
+    raw_data_paths: list[str],
+    set_names: list[str],
+    json_name: str = "./test_paths.json",
 ):
     if len(set_names) != len(raw_data_paths):
-        raise ValueError("Make sure that the length of the set " \
-        "names and data paths are the same")
+        raise ValueError(
+            "Make sure that the length of the set " "names and data paths are the same"
+        )
 
     json_path = FILE_DIR / json_name
     with open(str(json_path), "r", encoding="utf-8") as f:

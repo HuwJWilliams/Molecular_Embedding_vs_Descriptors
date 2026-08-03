@@ -108,9 +108,7 @@ parser.add_argument(
 parser.add_argument(
     "--property",
     default=None,
-    choices=[
-        key for key in FULL_PATHING["prediction_output_dirs"]["rf"].keys()
-    ],
+    choices=[key for key in FULL_PATHING["prediction_output_dirs"]["rf"].keys()],
     help="Property-specific CFP results to analyse.",
 )
 
@@ -124,7 +122,7 @@ cfp_dir = FULL_PATHING["prediction_output_dirs"][args.result_dir]
 
 if args.property is not None:
     cfp_dir = cfp_dir[args.property]
-    
+
 if args.run_all:
     exp_list = list(cfp_dir.keys())
 else:
@@ -147,7 +145,7 @@ if args.run_avg:
 
     pred_ft_df_ls = [pd.read_csv(f, index_col=0) for f in path_ls]
     pred_ft_df = pd.concat(pred_ft_df_ls, axis=0)
-    
+
     runCFPAnalysisForPerformanceDF(
         exp_perf_df=exp_perf_df,
         pred_ft_df=pred_ft_df,
@@ -174,7 +172,7 @@ else:
         feature_source = args.property or "all"
         pred_ft_df_path = Path(FULL_PATHING["full_features"][feature_source][pred])
         path_ls = glob(str(pred_ft_df_path))
-    
+
         pred_ft_df_ls = [pd.read_csv(f, index_col=0) for f in path_ls]
         pred_ft_df = pd.concat(pred_ft_df_ls, axis=0)
 
