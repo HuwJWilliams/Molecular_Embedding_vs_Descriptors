@@ -22,11 +22,13 @@ RESULTS_DIR = FULL_PATHING["imp_dirs"]["results_dir"]
 sys.path.insert(0, str(SRC_DIR / "datasets"))
 
 # %% ===== Setting Up The Visualisation Class  =====
-cfp = list(FULL_PATHING["prediction_output_dirs"]["cross_feature_predictions"].keys())
-lcfp = list(
-    FULL_PATHING["prediction_output_dirs"]["lipinski_cross_feature_predictions"].keys()
+cfp = listCFPExperiments(
+    FULL_PATHING["prediction_output_dirs"]["cross_feature_predictions"]
 )
-unique_exp_names = list(set(cfp + lcfp))
+lcfp = listCFPExperiments(
+    FULL_PATHING["prediction_output_dirs"]["lipinski_cross_feature_predictions"]
+)
+unique_exp_names = sorted(set(cfp + lcfp))
 
 
 # %% ===== Argument Parsing =====
@@ -42,6 +44,12 @@ parser.add_argument(
     "--run-all",
     action="store_true",
     help="Flag to run all available cross-prediction analysis",
+)
+
+parser.add_argument(
+    "--property",
+    default="all",
+    help="Dataset/property key to analyse, e.g. bp, logd, pka, all.",
 )
 
 parser.add_argument(

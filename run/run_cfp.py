@@ -11,13 +11,20 @@ import sys
 from glob import glob
 
 # %% ===== Project Imports & Pathing Setup =====
-from config import SRC_DIR, SUPPORTED_FEATURE_SETS, PATHING_JSON_PATH
+from config import (
+    SRC_DIR,
+    SUPPORTED_FEATURE_SETS,
+    PATHING_JSON_PATH,
+    SUPPORTED_TARGET_SETS,
+)
 
 sys.path.insert(0, str(SRC_DIR / "models"))
 from transfer_model import TL
 
 sys.path.insert(0, str(SRC_DIR / "pathing"))
 from get_paths import getPaths
+
+FULL_PATHING = getPaths(PATHING_JSON_PATH)
 
 sys.path.insert(0, str(SRC_DIR / "datasets"))
 from feature_cleaning import cleanFeatureDF
@@ -49,9 +56,11 @@ parser.add_argument(
     help="Features to test RF models on. Choices are:\n" f"{SUPPORTED_FEATURE_SETS}",
 )
 
+parser.add_argument("--property", default="all", choices=SUPPORTED_TARGET_SETS)
+
 parser.add_argument(
     "--save-dir",
-    default="cross_feature_predictions",
+    default="lipinski_cross_feature_predictions",
     help="Directory to save the results to",
 )
 
