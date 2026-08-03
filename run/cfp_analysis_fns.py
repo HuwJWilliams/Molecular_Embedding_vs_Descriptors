@@ -137,10 +137,25 @@ def getTaskGroupPerf(
     group_perf_by_task = {}
 
     for task_name, task_cfg in CFP_ANALYSIS_METRICS.items():
-        metrics = task_cfg["group_metrics"]
+        metrics = [metric for metric in task_cfg["group_metrics"] if metric in df.columns]
+
+        if not metrics:
+            print(f"Skipping grouped performance for {task_name}: no metric columns.")
+            continue
+
+        if "task_type" in df.columns:
+            task_df = df.loc[df["task_type"] == task_name].copy()
+        else:
+            task_df = df.copy()
+
+        if task_df.empty:
+            print(f"Skipping grouped performance for {task_name}: no rows.")
+            continue
+
+        task_df[metrics] = task_df[metrics].apply(pd.to_numeric, errors="coerce")
 
         gp_df = v.computeGroupPerf(
-            data=df,
+            data=task_df,
             descriptor_groups=group_map,
             metrics=metrics,
             exclude=excl_cols,
@@ -295,6 +310,73 @@ def plotFullTaskBar(
         print(f"Saved full task bar to: {save_path}")
 
 
+def plotGroupTaskFractionBars(
+    summary_df: pd.DataFrame,
+    plot_dir: str | Path,
+    exp_name: str,
+    threshold: float = 0.7,
+):
+    plot_dir = Path(plot_dir)
+    plot_dir.mkdir(parents=True, exist_ok=True)
+
+    threshold_label = str(threshold).replace(".", "p")
+
+    for task_name, task_df in summary_df.groupby("task"):
+        if task_df.empty:
+            continue
+
+        metric = task_df["metric"].iloc[0]
+        plot_df = task_df.sort_values(
+            ["n_group_low", "n_group_task_descriptors"],
+            ascending=[False, False],
+        )
+
+        y_pos = range(len(plot_df))
+        fig_height = max(4, 0.4 * len(plot_df) + 1.5)
+        fig, ax = plt.subplots(figsize=(10, fig_height))
+
+        ax.barh(
+            y_pos,
+            plot_df["n_group_low"],
+            color="#b94a48",
+            label=f"{metric} <= {threshold}",
+        )
+        ax.barh(
+            y_pos,
+            plot_df["n_group_high"],
+            left=plot_df["n_group_low"],
+            color="#4f8a8b",
+            label=f"{metric} > {threshold}",
+        )
+
+        ax.set_yticks(list(y_pos))
+        ax.set_yticklabels(plot_df["descriptor_group"])
+        ax.invert_yaxis()
+        ax.set_xlabel("Number of descriptors")
+        ax.set_ylabel("Feature group")
+        ax.set_title(f"{exp_name}: {task_name} feature groups split by {metric}")
+        ax.legend(loc="lower right")
+
+        for i, (_, row) in enumerate(plot_df.iterrows()):
+            total = int(row["n_group_task_descriptors"])
+            low = int(row["n_group_low"])
+            if total > 0:
+                ax.text(total + 0.1, i, f"{low}/{total}", va="center", fontsize=8)
+
+        max_total = plot_df["n_group_task_descriptors"].max()
+        ax.set_xlim(0, max_total * 1.15 if max_total else 1)
+        plt.tight_layout()
+
+        save_path = (
+            plot_dir
+            / f"{exp_name}_group_task_fraction_{task_name}_lt{threshold_label}.png"
+        )
+        plt.savefig(save_path, dpi=300, bbox_inches="tight")
+        plt.close(fig)
+
+        print(f"Saved group-task fraction bar plot to: {save_path}")
+
+
 def plotGroupTaskFractionSummary(
     df: pd.DataFrame,
     group_map: dict[str, list[str]],
@@ -396,13 +478,11 @@ def plotGroupTaskFractionSummary(
 
     print(f"Saved group-task fraction summary to: {summary_path}")
 
-    v.plotGroupTaskFractionBars(
+    plotGroupTaskFractionBars(
         summary_df=summary_df,
-        save_path=plot_dir,
+        plot_dir=plot_dir,
+        exp_name=exp_name,
         threshold=threshold,
-        save_plot=True,
-        show_plot=False,
-        fname_prefix=f"{exp_name}_group_task_fraction",
     )
 
     return summary_df

@@ -5491,3 +5491,4 @@ class Visualise:
             group_perf_by_task[task_name] = gp_df
 
         return group_perf_by_task
+
