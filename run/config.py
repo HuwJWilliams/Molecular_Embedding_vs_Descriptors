@@ -61,7 +61,7 @@ SUPPORTED_FEATURE_SETS = (
 )
 
 # --- Supported Target Sets
-SUPPORTED_TARGET_SETS = tuple(FULL_PATHING_JSON["targets"].keys()) + ("all",)
+SUPPORTED_TARGET_SETS = tuple(FULL_PATHING["targets"].keys()) + ("all",)
 
 # --- Transformer Specifications
 TRANSFORMER_FEATURE_SPECS: dict[str, dict[str, str]] = {
