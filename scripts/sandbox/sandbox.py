@@ -3862,50 +3862,79 @@ if run_35:
 
 run_36 = True
 if run_36:
-    import pandas as pd
-    import matplotlib.pyplot as plt
-    from pathlib import Path
+import pandas as pd
+import matplotlib.pyplot as plt
+from pathlib import Path
 
-    base_dir = Path(
-        "/users/yhb18174/TL_project/results/cross_feature_predictions/hole_re/pred_mordred_tr_molformer-c3-1b"
-    )
-    ft_dir = Path(
-        "/users/yhb18174/TL_project/results/cross_feature_predictions/hole_re/pred_mordred_tr_ft-molformer-c3-1b"
-    )
+root = Path("/users/yhb18174/TL_project/results/cross_feature_predictions")
 
-    plots = [
-        {
-            "task": "regression",
-            "metric": "avg_r2",
-            "label": "Delta R2",
-        },
-        {
-            "task": "binary_classification",
-            "metric": "avg_Balanced_Accuracy",
-            "label": "Delta Balanced Accuracy",
-        },
-        {
-            "task": "multiclass_classification",
-            "metric": "avg_Balanced_Accuracy",
-            "label": "Delta Balanced Accuracy",
-        },
-    ]
+targets = [
+    "bp",
+    "logd",
+    "pka",
+    "ld50",
+    "log_ld50",
+    "pic50",
+    "hole_re",
+    "elec_re",
+    "aq_sol",
+    "homo_lumo_gap",
+    "egfr_pic50",
+]
+
+base_exp = "pred_mordred_tr_molformer-c3-1b"
+ft_exp = "pred_mordred_tr_ft-molformer-c3-1b"
+
+plots = [
+    {
+        "task": "regression",
+        "metric": "r2",
+        "label": "Delta R2",
+    },
+    {
+        "task": "binary_classification",
+        "metric": "Balanced_Accuracy",
+        "label": "Delta Balanced Accuracy",
+    },
+    {
+        "task": "multiclass_classification",
+        "metric": "Balanced_Accuracy",
+        "label": "Delta Balanced Accuracy",
+    },
+]
+
+for target in targets:
+    base_dir = root / target / base_exp
+    ft_dir = root / target / ft_exp
+
+    if not base_dir.exists() or not ft_dir.exists():
+        print(f"Skipping {target}: missing base or ft dir")
+        continue
 
     for p in plots:
         base_csv = base_dir / f"{p['task']}_group_perf.csv"
         ft_csv = ft_dir / f"{p['task']}_group_perf.csv"
 
-        base = pd.read_csv(base_csv, index_col=0)[p["metric"]]
-        fine_tuned = pd.read_csv(ft_csv, index_col=0)[p["metric"]]
+        if not base_csv.exists() or not ft_csv.exists():
+            print(f"Skipping {target} / {p['task']}: missing csv")
+            continue
 
-        delta = (
-            (
-                pd.to_numeric(fine_tuned, errors="coerce")
-                - pd.to_numeric(base, errors="coerce")
-            )
-            .dropna()
-            .sort_values()
-        )
+        base_df = pd.read_csv(base_csv, index_col=0)
+        ft_df = pd.read_csv(ft_csv, index_col=0)
+
+        if p["metric"] not in base_df.columns or p["metric"] not in ft_df.columns:
+            print(f"Skipping {target} / {p['task']}: missing {p['metric']}")
+            continue
+
+        base = pd.to_numeric(base_df[p["metric"]], errors="coerce")
+        fine_tuned = pd.to_numeric(ft_df[p["metric"]], errors="coerce")
+
+        common = base.index.intersection(fine_tuned.index)
+        delta = (fine_tuned.loc[common] - base.loc[common]).dropna().sort_values()
+
+        if delta.empty:
+            print(f"Skipping {target} / {p['task']}: no valid delta values")
+            continue
 
         plt.figure(figsize=(8, max(4, 0.35 * len(delta))))
         plt.barh(
@@ -3917,11 +3946,11 @@ if run_36:
 
         plt.xlabel(f"{p['label']} (fine-tuned - base)")
         plt.ylabel("Feature group")
-        plt.title(f"{p['label']} by Feature Group: {p['task']}")
+        plt.title(f"{target}: {p['label']} by Feature Group")
         plt.tight_layout()
 
-        out = ft_dir / f"delta_{p['metric']}_ft_vs_base_{p['task']}.png"
+        out = ft_dir / f"{target}_delta_{p['metric']}_ft_vs_base_{p['task']}.png"
         plt.savefig(out, dpi=300)
-        plt.show()
+        plt.close()
 
-        print(out)
+        print(f"Saved: {out}")
