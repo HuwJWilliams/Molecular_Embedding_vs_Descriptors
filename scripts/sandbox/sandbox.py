@@ -3862,95 +3862,174 @@ if run_35:
 
 run_36 = True
 if run_36:
-import pandas as pd
-import matplotlib.pyplot as plt
-from pathlib import Path
+    import pandas as pd
+    import matplotlib.pyplot as plt
+    from pathlib import Path
 
-root = Path("/users/yhb18174/TL_project/results/cross_feature_predictions")
+    results_root = Path("/users/yhb18174/TL_project/results")
+    cfp_root = results_root / "cross_feature_predictions"
 
-targets = [
-    "bp",
-    "logd",
-    "pka",
-    "ld50",
-    "log_ld50",
-    "pic50",
-    "hole_re",
-    "elec_re",
-    "aq_sol",
-    "homo_lumo_gap",
-    "egfr_pic50",
-]
+    base_exp = "pred_mordred_tr_molformer-c3-1b"
+    ft_exp = "pred_mordred_tr_ft-molformer-c3-1b"
 
-base_exp = "pred_mordred_tr_molformer-c3-1b"
-ft_exp = "pred_mordred_tr_ft-molformer-c3-1b"
+    targets = {
+        "bp": {
+            "rf_dir": "BP_predictions_rf",
+            "target_col": "Boiling_Point",
+        },
+        "logd": {
+            "rf_dir": "LOGD_predictions_rf",
+            "target_col": "LogD",
+        },
+        "pka": {
+            "rf_dir": "PKA_predictions_rf",
+            "target_col": "pKa",
+        },
+        "hole_re": {
+            "rf_dir": "HOLE_RE_predictions_rf",
+            "target_col": "Hole_Reorganisation_Energy",
+        },
+        "elec_re": {
+            "rf_dir": "ELEC_RE_predictions_rf",
+            "target_col": "Electron_Reorganisation_Energy",
+        },
+        "aq_sol": {
+            "rf_dir": "AQ_SOL_predictions_rf",
+            "target_col": "Solubility",
+        },
+        "egfr_pic50": {
+            "rf_dir": "EGFR_PIC50_predictions_rf",
+            "target_col": "pIC50",
+        },
+    }
 
-plots = [
-    {
-        "task": "regression",
-        "metric": "r2",
-        "label": "Delta R2",
-    },
-    {
-        "task": "binary_classification",
-        "metric": "Balanced_Accuracy",
-        "label": "Delta Balanced Accuracy",
-    },
-    {
-        "task": "multiclass_classification",
-        "metric": "Balanced_Accuracy",
-        "label": "Delta Balanced Accuracy",
-    },
-]
+    tasks = [
+        {
+            "task": "regression",
+            "metric": "r2",
+            "label": "Delta R2",
+        },
+        {
+            "task": "binary_classification",
+            "metric": "Balanced_Accuracy",
+            "label": "Delta Balanced Accuracy",
+        },
+        {
+            "task": "multiclass_classification",
+            "metric": "Balanced_Accuracy",
+            "label": "Delta Balanced Accuracy",
+        },
+    ]
 
-for target in targets:
-    base_dir = root / target / base_exp
-    ft_dir = root / target / ft_exp
-
-    if not base_dir.exists() or not ft_dir.exists():
-        print(f"Skipping {target}: missing base or ft dir")
-        continue
-
-    for p in plots:
-        base_csv = base_dir / f"{p['task']}_group_perf.csv"
-        ft_csv = ft_dir / f"{p['task']}_group_perf.csv"
-
-        if not base_csv.exists() or not ft_csv.exists():
-            print(f"Skipping {target} / {p['task']}: missing csv")
-            continue
-
-        base_df = pd.read_csv(base_csv, index_col=0)
-        ft_df = pd.read_csv(ft_csv, index_col=0)
-
-        if p["metric"] not in base_df.columns or p["metric"] not in ft_df.columns:
-            print(f"Skipping {target} / {p['task']}: missing {p['metric']}")
-            continue
-
-        base = pd.to_numeric(base_df[p["metric"]], errors="coerce")
-        fine_tuned = pd.to_numeric(ft_df[p["metric"]], errors="coerce")
-
-        common = base.index.intersection(fine_tuned.index)
-        delta = (fine_tuned.loc[common] - base.loc[common]).dropna().sort_values()
-
-        if delta.empty:
-            print(f"Skipping {target} / {p['task']}: no valid delta values")
-            continue
-
-        plt.figure(figsize=(8, max(4, 0.35 * len(delta))))
-        plt.barh(
-            delta.index,
-            delta.values,
-            color=["#c44e52" if x < 0 else "#55a868" for x in delta],
+    def load_avg_importance(rf_root, target_col):
+        files = sorted(
+            rf_root.glob(f"repeats/repeat_*/{target_col}_feature_importance.csv")
         )
-        plt.axvline(0, color="black", linewidth=1)
 
-        plt.xlabel(f"{p['label']} (fine-tuned - base)")
-        plt.ylabel("Feature group")
-        plt.title(f"{target}: {p['label']} by Feature Group")
-        plt.tight_layout()
+        if not files:
+            print(f"No feature importance files found in: {rf_root}")
+            return None
 
-        out = ft_dir / f"{target}_delta_{p['metric']}_ft_vs_base_{p['task']}.png"
-        plt.savefig(out, dpi=300)
-        plt.close()
+        series = []
 
-        print(f"Saved: {out}")
+        for f in files:
+            df = pd.read_csv(f)
+
+            feature_col = "Feature" if "Feature" in df.columns else df.columns[0]
+            importance_cols = [
+                c for c in df.columns if c.lower().startswith("importance")
+            ]
+
+            if not importance_cols:
+                print(f"Skipping {f}: no importance column")
+                continue
+
+            importance_col = importance_cols[0]
+
+            s = pd.Series(
+                pd.to_numeric(df[importance_col], errors="coerce").values,
+                index=df[feature_col].astype(str),
+            )
+            series.append(s)
+
+        if not series:
+            return None
+
+        return pd.concat(series, axis=1).mean(axis=1).sort_values(ascending=False)
+
+    for target, cfg in targets.items():
+        rf_root = results_root / cfg["rf_dir"] / "mordred"
+        avg_imp = load_avg_importance(rf_root, cfg["target_col"])
+
+        if avg_imp is None or avg_imp.empty:
+            print(f"Skipping {target}: no valid feature importance")
+            continue
+
+        top_features = avg_imp.head(25).index.astype(str).tolist()
+
+        base_dir = cfp_root / target / base_exp
+        ft_dir = cfp_root / target / ft_exp
+
+        for p in tasks:
+            base_csv = base_dir / f"{base_exp}.csv"
+            ft_csv = ft_dir / f"{ft_exp}.csv"
+
+            if not base_csv.exists() or not ft_csv.exists():
+                print(f"Skipping {target} / {p['task']}: missing CFP csv")
+                continue
+
+            base_df = pd.read_csv(base_csv, index_col=0)
+            ft_df = pd.read_csv(ft_csv, index_col=0)
+
+            if "task_type" in base_df.columns:
+                base_df = base_df.loc[base_df["task_type"] == p["task"]]
+
+            if "task_type" in ft_df.columns:
+                ft_df = ft_df.loc[ft_df["task_type"] == p["task"]]
+
+            if p["metric"] not in base_df.columns or p["metric"] not in ft_df.columns:
+                print(f"Skipping {target} / {p['task']}: missing {p['metric']}")
+                continue
+
+            common = [
+                feat
+                for feat in top_features
+                if feat in base_df.index and feat in ft_df.index
+            ]
+
+            if not common:
+                print(f"Skipping {target} / {p['task']}: no top features found in CFP")
+                continue
+
+            base = pd.to_numeric(base_df.loc[common, p["metric"]], errors="coerce")
+            ft = pd.to_numeric(ft_df.loc[common, p["metric"]], errors="coerce")
+
+            delta = (ft - base).dropna().sort_values()
+
+            if delta.empty:
+                print(f"Skipping {target} / {p['task']}: no valid deltas")
+                continue
+
+            plt.figure(figsize=(8, max(5, 0.35 * len(delta))))
+            plt.barh(
+                delta.index,
+                delta.values,
+                color=["#c44e52" if x < 0 else "#55a868" for x in delta],
+            )
+            plt.axvline(0, color="black", linewidth=1)
+
+            plt.xlabel(f"{p['label']} (fine-tuned - base)")
+            plt.ylabel("Top RF-important Mordred feature")
+            plt.title(
+                f"{target}: {p['label']} over top 25 RF-important Mordred features"
+            )
+            plt.tight_layout()
+
+            out = (
+                ft_dir
+                / f"{target}_top25_rf_importance_delta_{p['metric']}_{p['task']}.png"
+            )
+            plt.savefig(out, dpi=300)
+            plt.close()
+
+            print(f"Saved: {out}")
