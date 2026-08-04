@@ -3876,17 +3876,17 @@ if run_36:
     plots = [
         {
             "task": "regression",
-            "metric": "r2",
+            "metric": "avg_r2",
             "label": "Delta R2",
         },
         {
             "task": "binary_classification",
-            "metric": "Balanced_Accuracy",
+            "metric": "avg_Balanced_Accuracy",
             "label": "Delta Balanced Accuracy",
         },
         {
             "task": "multiclass_classification",
-            "metric": "Balanced_Accuracy",
+            "metric": "avg_Balanced_Accuracy",
             "label": "Delta Balanced Accuracy",
         },
     ]
