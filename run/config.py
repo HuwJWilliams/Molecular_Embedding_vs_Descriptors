@@ -58,6 +58,16 @@ SUPPORTED_FEATURE_SETS = (
     "ft-molformer",
     "ft-molformer-c3-1b",
     "ft-selformer",
+    "ft-scaffold-chemberta",
+    "ft-scaffold-chembertasey",
+    "ft-scaffold-molformer",
+    "ft-scaffold-molformer-c3-1b",
+    "ft-scaffold-selformer",
+    "ft-random-chemberta",
+    "ft-random-chembertasey",
+    "ft-random-molformer",
+    "ft-random-molformer-c3-1b",
+    "ft-random-selformer",
 )
 
 # --- Supported Target Sets

@@ -6,6 +6,7 @@ Run this to generate features for datasets
 import argparse
 import pandas as pd
 from pathlib import Path
+import random
 import shutil
 import sys
 
@@ -130,6 +131,13 @@ parser.add_argument(
     help="Number of molecules to fine-tune on.",
 )
 
+parser.add_argument(
+    "--fine-tune-random-state",
+    type=int,
+    default=42,
+    help="Random seed used when selecting molecules for fine-tuning.",
+)
+
 args = parser.parse_args()
 task = args.task.lower()
 feature_set = args.feature_set.lower()
@@ -137,6 +145,8 @@ target_col = args.target_col
 
 if args.max_token_len == 0:
     max_token_len = 202 if "molformer" in feature_set else 512
+else:
+    max_token_len = args.max_token_len
 
 in_path = FULL_PATHING["targets"][task]
 out_path = FULL_PATHING["full_features"][task][feature_set]
@@ -152,9 +162,49 @@ generator = FeatureGenerator(
 
 fine_tune_output_dir = None
 
+
+def resolveFineTunedFeaturePath(
+    full_feature_paths: dict,
+    base_feature_set: str,
+    split_by: str,
+) -> tuple[str | Path, str]:
+    split_pathing_key = f"ft-{split_by}-{base_feature_set}"
+    legacy_pathing_key = f"ft-{base_feature_set}"
+
+    if split_pathing_key in full_feature_paths:
+        return full_feature_paths[split_pathing_key], split_pathing_key
+
+    if legacy_pathing_key not in full_feature_paths:
+        available = list(full_feature_paths.keys())
+        raise KeyError(
+            f"Could not find '{split_pathing_key}' or '{legacy_pathing_key}' "
+            f"in full_features[{task}]. Available feature sets: {available}"
+        )
+
+    legacy_path = full_feature_paths[legacy_pathing_key]
+    split_path = str(legacy_path).replace(legacy_pathing_key, split_pathing_key)
+
+    if split_path == str(legacy_path):
+        legacy_path_obj = Path(legacy_path)
+        split_path = str(
+            legacy_path_obj.with_name(
+                legacy_path_obj.name.replace(
+                    f"ft-{base_feature_set}",
+                    split_pathing_key,
+                    1,
+                )
+            )
+        )
+
+    return Path(split_path), split_pathing_key
+
+
 if args.fine_tune:
-    pathing_key = f"ft-{feature_set}"
-    out_path = FULL_PATHING["full_features"][task][pathing_key]
+    out_path, pathing_key = resolveFineTunedFeaturePath(
+        full_feature_paths=FULL_PATHING["full_features"][task],
+        base_feature_set=feature_set,
+        split_by=args.split_by,
+    )
     fine_tune_output_dir = Path(
         str(out_path).replace("*", "fine_tuned_model")
     ).with_suffix("")
@@ -171,9 +221,11 @@ if args.fine_tune:
 
     if args.split_by == "random":
         fine_tune_df = fine_tune_df.sample(
-            n=min(args.n_mols_fine_tune, len(fine_tune_df))
+            n=min(args.n_mols_fine_tune, len(fine_tune_df)),
+            random_state=args.fine_tune_random_state,
         )
     else:
+        random.seed(args.fine_tune_random_state)
         fine_tune_df = splitByMurckoScaffold(
             fine_tune_df, n_cmpds=args.n_mols_fine_tune, max_scaff_diversity_pass=5
         )

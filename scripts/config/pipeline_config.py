@@ -35,7 +35,17 @@ SUPPORTED_FEATURE_SETS = (
     "ft-chembertasey",
     "ft-molformer",
     "ft-molformer-c3-1b",
-    "ft-selformer"
+    "ft-selformer",
+    "ft-scaffold-chemberta",
+    "ft-scaffold-chembertasey",
+    "ft-scaffold-molformer",
+    "ft-scaffold-molformer-c3-1b",
+    "ft-scaffold-selformer",
+    "ft-random-chemberta",
+    "ft-random-chembertasey",
+    "ft-random-molformer",
+    "ft-random-molformer-c3-1b",
+    "ft-random-selformer",
 )
 
 TRANSFORMER_FEATURE_SPECS: dict[str, dict[str, Any]] = {

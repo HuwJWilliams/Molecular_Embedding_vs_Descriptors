@@ -113,6 +113,8 @@ def getFeatureColourConfig(
         if feature.startswith("ft-"):
             hatch = "//"
             stripped_feature_name = feature.removeprefix("ft-")
+            stripped_feature_name = stripped_feature_name.removeprefix("random-")
+            stripped_feature_name = stripped_feature_name.removeprefix("scaffold-")
         else:
             hatch = None
             stripped_feature_name = feature
@@ -129,6 +131,16 @@ FT_FEATURE_PAIRS = {
     "ft-molformer": "molformer",
     "ft-molformer-c3-1b": "molformer-c3-1b",
     "ft-selformer": "selformer",
+    "ft-scaffold-chemberta": "chemberta",
+    "ft-scaffold-chembertasey": "chembertasey",
+    "ft-scaffold-molformer": "molformer",
+    "ft-scaffold-molformer-c3-1b": "molformer-c3-1b",
+    "ft-scaffold-selformer": "selformer",
+    "ft-random-chemberta": "chemberta",
+    "ft-random-chembertasey": "chembertasey",
+    "ft-random-molformer": "molformer",
+    "ft-random-molformer-c3-1b": "molformer-c3-1b",
+    "ft-random-selformer": "selformer",
 }
 
 METRIC_ALIASES = {
