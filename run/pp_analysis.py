@@ -182,7 +182,7 @@ for prop, int_ext_perfs in full_performance_dict.items():
             ascending = metric_col.lower() in ["rmse", "mse", "mae", "bias", "sdep"]
             plot_df = plot_df.sort_values(metric_col, ascending=ascending)
 
-            if metric_col.lower() == "bias":
+            if metric_col.lower() == "bias" or metric_col.lower() == "rmse":
                 y_lim = None
             else:
                 y_lim = (0, 1)
