@@ -113,12 +113,12 @@ def _add_dataset_cross_prediction_paths(
     lipinski_cross_block.setdefault(dataset_key, {})
 
     for identifier in identifiers:
-        cross_block[dataset_key][identifier] = (
-            f"${{RESULTS_DIR}}/cross_feature_predictions/{dataset_key}/{identifier}"
-        )
-        lipinski_cross_block[dataset_key][identifier] = (
-            f"${{RESULTS_DIR}}/lipinski_cross_feature_predictions/{dataset_key}/{identifier}"
-        )
+        cross_block[dataset_key][
+            identifier
+        ] = f"${{RESULTS_DIR}}/cross_feature_predictions/{dataset_key}/{identifier}"
+        lipinski_cross_block[dataset_key][
+            identifier
+        ] = f"${{RESULTS_DIR}}/lipinski_cross_feature_predictions/{dataset_key}/{identifier}"
 
 
 def addNewDatasetPaths(
@@ -167,7 +167,7 @@ def addNewDatasetPaths(
         for feature in template_full.keys():
             json_contents["prediction_output_dirs"][model][dataset_key][
                 feature
-            ] = f"${{RESULTS_DIR}}/{result_prefix}_predictions_{model}/{feature}/{feature}_pred_{dataset_key}"
+            ] = f"${{RESULTS_DIR}}/{result_prefix}_predictions_{model}/{feature}"
 
     existing_features = list(
         json_contents["dataset_analysis"]["descriptor_analysis"].keys()
@@ -220,7 +220,7 @@ def addFeatureSetPaths(
         for dataset, block in json_contents["prediction_output_dirs"][model].items():
             result_prefix = _dataset_feature_prefix(dataset, for_results=True)
             block[feature_name] = (
-                f"${{RESULTS_DIR}}/{result_prefix}_predictions_{model}/{feature_name}/{feature_name}_pred_{dataset}"
+                f"${{RESULTS_DIR}}/{result_prefix}_predictions_{model}/{feature_name}"
             )
 
     # dataset_analysis

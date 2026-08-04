@@ -170,7 +170,10 @@ def getFTDifferenceDf(
 
     rows = []
     for ft_feature, base_feature in FT_FEATURE_PAIRS.items():
-        if ft_feature not in mean_by_feature.index or base_feature not in mean_by_feature.index:
+        if (
+            ft_feature not in mean_by_feature.index
+            or base_feature not in mean_by_feature.index
+        ):
             continue
 
         rows.append(
@@ -228,9 +231,11 @@ def plotFTDifferenceBar(
 
     diff_df = diff_df.sort_values("difference", ascending=False)
     bar_colours = [
-        colour_map.get(row["base_feature"], "#808080")
-        if not isinstance(colour_map.get(row["base_feature"]), tuple)
-        else colour_map[row["base_feature"]][0]
+        (
+            colour_map.get(row["base_feature"], "#808080")
+            if not isinstance(colour_map.get(row["base_feature"]), tuple)
+            else colour_map[row["base_feature"]][0]
+        )
         for _, row in diff_df.iterrows()
     ]
 
@@ -417,7 +422,9 @@ def plotGroupedPropertyFeatureBar(
         feature_order = plot_df["feature_set"].drop_duplicates().tolist()
 
     feature_order = [
-        feature for feature in feature_order if feature in plot_df["feature_set"].unique()
+        feature
+        for feature in feature_order
+        if feature in plot_df["feature_set"].unique()
     ]
     property_order = plot_df["property"].drop_duplicates().tolist()
 
@@ -508,14 +515,11 @@ def plotFTDifferenceSummaryBars(
     plot_dir.mkdir(parents=True, exist_ok=True)
 
     metric_alias_lookup = {
-        metric: METRIC_ALIASES.get(metric, []) + [metric]
-        for metric in metrics
+        metric: METRIC_ALIASES.get(metric, []) + [metric] for metric in metrics
     }
 
     for split_name in sorted(ft_difference_df["split"].dropna().unique()):
-        split_df = ft_difference_df.loc[
-            ft_difference_df["split"] == split_name
-        ].copy()
+        split_df = ft_difference_df.loc[ft_difference_df["split"] == split_name].copy()
 
         for metric, aliases in metric_alias_lookup.items():
             metric_df = split_df.loc[split_df["metric"].isin(aliases)].copy()
@@ -640,20 +644,22 @@ def getLipinskiFilteredExternalPerformanceDf(
 
             pred_path = Path(preds_dir[prop][feature_set]) / "last_20pct_pred.csv.gz"
             if not pred_path.exists():
-                print(f"Missing last_20pct predictions for {prop} / {feature_set}: {pred_path}")
+                print(
+                    f"Missing last_20pct predictions for {prop} / {feature_set}: {pred_path}"
+                )
                 continue
 
             try:
                 pred_df = pd.read_csv(pred_path, index_col=0)
                 pred_df.index = pred_df.index.astype(str)
 
-                pred_col = target_col if target_col in pred_df.columns else pred_df.columns[0]
+                pred_col = (
+                    target_col if target_col in pred_df.columns else pred_df.columns[0]
+                )
                 pred_df = pred_df[[pred_col]].rename(columns={pred_col: "pred"})
 
-                keep_ids = (
-                    pred_df.index
-                    .intersection(target_df.index)
-                    .intersection(lipinski_ids)
+                keep_ids = pred_df.index.intersection(target_df.index).intersection(
+                    lipinski_ids
                 )
 
                 eval_df = pred_df.loc[keep_ids].join(
@@ -678,6 +684,8 @@ def getLipinskiFilteredExternalPerformanceDf(
                 )
 
             except Exception as e:
-                print(f"Could not calculate Lipinski performance for {prop} / {feature_set}: {e}")
+                print(
+                    f"Could not calculate Lipinski performance for {prop} / {feature_set}: {e}"
+                )
 
     return pd.DataFrame(rows)
