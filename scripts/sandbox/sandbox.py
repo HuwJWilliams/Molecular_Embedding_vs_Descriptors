@@ -3860,7 +3860,7 @@ if run_35:
     print(f"Saved Tanimoto outputs to: {tanimoto_dir}")
 
 
-run_36 = False
+run_36 = True
 if run_36:
     import pandas as pd
     import matplotlib.pyplot as plt
@@ -4035,7 +4035,7 @@ if run_36:
             print(f"Saved: {out}")
 
 
-run_37 = True
+run_37 = False
 if run_37:
     targ = "/users/yhb18174/TL_project/datasets/boiling_point/cleaned_boiling_point.csv"
     o = "/users/yhb18174/TL_project/results/BP_predictions_rf/molformer-c3-1b/last_20pct_pred.csv.gz"
