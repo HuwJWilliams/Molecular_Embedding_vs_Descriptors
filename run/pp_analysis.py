@@ -93,7 +93,7 @@ for prop in args.properties:
 internal_summary_rows = []
 external_summary_rows = []
 ft_difference_rows = []
-summary_metrics = ["r2", "pearson_r", "bias", "sdep"]
+summary_metrics = ["r2", "pearson_r", "bias", "sdep", "rmse"]
 
 # %% ===== Running Analysis =====
 # Creating a bar plots for each property & performance metric
@@ -289,6 +289,7 @@ if not lipinski_external_df.empty:
         colour_map=colour_map,
     )
 
+
 iqr_external_df = get3xIQRFilteredExternalPerformanceDf(
     properties=args.properties,
     feature_sets=feature_sets,
@@ -302,7 +303,40 @@ if not iqr_external_df.empty:
         save_path / "external_3xIQR_average_performances.csv",
         index=False,
     )
+
     for metric in ["r2", "pearson_r", "RMSE", "Bias", "SDEP"]:
+        for prop in args.properties:
+            prop_df = iqr_external_df.loc[iqr_external_df["property"] == prop].copy()
+
+            if prop_df.empty or metric not in prop_df.columns:
+                continue
+
+            prop_df[metric] = pd.to_numeric(prop_df[metric], errors="coerce")
+            prop_df = prop_df.dropna(subset=[metric])
+
+            if prop_df.empty:
+                continue
+
+            ascending = metric.lower() in ["rmse", "mse", "mae", "bias", "sdep"]
+            prop_df = prop_df.sort_values(metric, ascending=ascending)
+
+            if metric.lower() in ["bias", "rmse", "sdep"]:
+                y_lim = None
+            else:
+                y_lim = (0, 1)
+
+            v.plotBar(
+                data=prop_df,
+                x_label="feature_set",
+                y_label=metric,
+                title=f"{prop}: external_3xIQR {metric}",
+                save_plot=True,
+                save_path=save_path / prop / "external_3xIQR",
+                save_fname=f"{prop}_external_3xIQR_{metric}_bar",
+                colour_map=colour_map,
+                y_lims=y_lim,
+            )
+
         plotGroupedPropertyFeatureBar(
             summary_df=iqr_external_df,
             split_name="external_3xIQR",
