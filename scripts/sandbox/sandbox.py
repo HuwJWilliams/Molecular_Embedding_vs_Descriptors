@@ -4034,7 +4034,7 @@ if run_36:
 
             print(f"Saved: {out}")
 
-run_37 = False
+run_37 = True
 if run_37:
     targ = "/users/yhb18174/TL_project/datasets/boiling_point/cleaned_boiling_point.csv"
     o = "/users/yhb18174/TL_project/results/BP_predictions_rf/molformer-c3-1b/last_20pct_pred.csv.gz"
@@ -4064,8 +4064,7 @@ if run_37:
     lim_max = plot_df_3iqr[[target_col, "base_pred", "ft_pred"]].max().max()
 
     plot_df_3iqr_no_high_pred = plot_df_3iqr.loc[
-        (plot_df_3iqr["base_pred"] <= 1000)
-        & (plot_df_3iqr["ft_pred"] <= 1000)
+        (plot_df_3iqr["base_pred"] <= 1000) & (plot_df_3iqr["ft_pred"] <= 1000)
     ].copy()
 
     print(f"3xIQR bounds: {lower:.3f} to {upper:.3f}")
