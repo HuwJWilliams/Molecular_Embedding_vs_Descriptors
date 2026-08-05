@@ -4093,4 +4093,4 @@ if run_37:
     axes[1].set_ylabel("Predicted Boiling Point")
 
     plt.tight_layout()
-    plt.savefig("o_vs_ft_scatterplot_3xIQR.png", dpi=300)
+    plt.savefig("/users/yhb18174/TL_project/run/o_vs_ft_scatterplot_3xIQR.png", dpi=300)
