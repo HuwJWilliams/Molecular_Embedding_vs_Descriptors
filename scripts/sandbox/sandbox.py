@@ -4035,10 +4035,9 @@ if run_36:
             print(f"Saved: {out}")
 
 
-
 run_37 = True
 if run_37:
-    targ = "/users/yhb18174/TL_project/data/processed/targets/bp.csv"
+    targ = "/users/yhb18174/TL_project/datasets/boiling_point/cleaned_boiling_point.csv"
     o = "/users/yhb18174/TL_project/results/BP_predictions_rf/molformer-c3-1b/last_20pct_pred.csv.gz"
     ft = "/users/yhb18174/TL_project/results/BP_predictions_rf/ft-molformer-c3-1b/last_20pct_pred.csv.gz"
 
@@ -4074,4 +4073,3 @@ if run_37:
 
     plt.tight_layout()
     plt.savefig("o_vs_ft_scatterplot.png")
-
