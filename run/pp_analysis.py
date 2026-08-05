@@ -304,7 +304,15 @@ if not iqr_external_df.empty:
         index=False,
     )
 
-    for metric in ["r2", "pearson_r", "RMSE", "Bias", "SDEP"]:
+    plotSummaryHeatmaps(
+        summary_df=iqr_external_df,
+        split_name="external_3xIQR",
+        save_path=save_path,
+        metrics=summary_metrics,
+        feature_order=feature_sets,
+    )
+
+    for metric in summary_metrics:
         for prop in args.properties:
             prop_df = iqr_external_df.loc[iqr_external_df["property"] == prop].copy()
 

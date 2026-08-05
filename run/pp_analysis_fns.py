@@ -758,9 +758,9 @@ def get3xIQRFilteredExternalPerformanceDf(
                     "pearson_r": eval_df["true"].corr(
                         eval_df["pred"], method="pearson"
                     ),
-                    "RMSE": (err.pow(2).mean()) ** 0.5,
-                    "Bias": err.mean(),
-                    "SDEP": (err - err.mean()).pow(2).mean() ** 0.5,
+                    "rmse": (err.pow(2).mean()) ** 0.5,
+                    "bias": err.mean(),
+                    "sdep": (err - err.mean()).pow(2).mean() ** 0.5,
                     "n": len(eval_df),
                     "lower_3xIQR": lower,
                     "upper_3xIQR": upper,
