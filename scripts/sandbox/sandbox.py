@@ -4043,33 +4043,33 @@ if run_37:
 
     target_col = "Boiling_Point"
 
-    targ_df = pd.read_csv(targ, index_col="ID")
+    targ_df = pd.read_csv(targ, index_col="ID")[[target_col]]
     o_df = pd.read_csv(o, index_col="ID")
     ft_df = pd.read_csv(ft, index_col="ID")
 
-    o_plot = targ_df[[target_col]].join(o_df, how="inner")
-    ft_plot = targ_df[[target_col]].join(ft_df, how="inner")
+    # Prediction files often use the target column name for predictions.
+    o_pred = o_df[target_col].rename("base_pred")
+    ft_pred = ft_df[target_col].rename("ft_pred")
 
-    o_pred_col = [c for c in o_plot.columns if c != target_col][0]
-    ft_pred_col = [c for c in ft_plot.columns if c != target_col][0]
+    plot_df = targ_df.join(o_pred, how="inner").join(ft_pred, how="inner")
+    plot_df = plot_df.apply(pd.to_numeric, errors="coerce").dropna()
+
+    lim_min = plot_df[[target_col, "base_pred", "ft_pred"]].min().min()
+    lim_max = plot_df[[target_col, "base_pred", "ft_pred"]].max().max()
 
     fig, axes = plt.subplots(1, 2, figsize=(12, 5), sharex=True, sharey=True)
 
-    for ax, df, pred_col, title in [
-        (axes[0], o_plot, o_pred_col, "Original"),
-        (axes[1], ft_plot, ft_pred_col, "Fine-tuned"),
-    ]:
-        df = df[[target_col, pred_col]].apply(pd.to_numeric, errors="coerce").dropna()
+    axes[0].scatter(plot_df[target_col], plot_df["base_pred"], s=18, alpha=0.65)
+    axes[0].plot([lim_min, lim_max], [lim_min, lim_max], color="black", linewidth=1)
+    axes[0].set_title("Original")
+    axes[0].set_xlabel("True Boiling Point")
+    axes[0].set_ylabel("Predicted Boiling Point")
 
-        ax.scatter(df[target_col], df[pred_col], s=18, alpha=0.65)
-
-        lim_min = min(df[target_col].min(), df[pred_col].min())
-        lim_max = max(df[target_col].max(), df[pred_col].max())
-        ax.plot([lim_min, lim_max], [lim_min, lim_max], color="black", linewidth=1)
-
-        ax.set_title(title)
-        ax.set_xlabel("True Boiling Point")
-        ax.set_ylabel("Predicted Boiling Point")
+    axes[1].scatter(plot_df[target_col], plot_df["ft_pred"], s=18, alpha=0.65)
+    axes[1].plot([lim_min, lim_max], [lim_min, lim_max], color="black", linewidth=1)
+    axes[1].set_title("Fine-tuned")
+    axes[1].set_xlabel("True Boiling Point")
+    axes[1].set_ylabel("Predicted Boiling Point")
 
     plt.tight_layout()
     plt.savefig("o_vs_ft_scatterplot.png")
