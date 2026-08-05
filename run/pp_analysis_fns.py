@@ -126,11 +126,6 @@ def getFeatureColourConfig(
 
 
 FT_FEATURE_PAIRS = {
-    "ft-chemberta": "chemberta",
-    "ft-chembertasey": "chembertasey",
-    "ft-molformer": "molformer",
-    "ft-molformer-c3-1b": "molformer-c3-1b",
-    "ft-selformer": "selformer",
     "ft-scaffold-chemberta": "chemberta",
     "ft-scaffold-chembertasey": "chembertasey",
     "ft-scaffold-molformer": "molformer",
@@ -734,6 +729,10 @@ def get3xIQRFilteredExternalPerformanceDf(
         keep_target = true.loc[true.between(lower, upper)].rename("true")
 
         for feature_set in feature_sets:
+            if feature_set not in preds_dir[prop]:
+                print(f"{feature_set} not in prediction output paths for {prop}")
+                continue
+
             pred_path = Path(preds_dir[prop][feature_set]) / "last_20pct_pred.csv.gz"
 
             if not pred_path.exists():
