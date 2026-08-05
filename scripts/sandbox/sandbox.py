@@ -3860,7 +3860,7 @@ if run_35:
     print(f"Saved Tanimoto outputs to: {tanimoto_dir}")
 
 
-run_36 = True
+run_36 = False
 if run_36:
     import pandas as pd
     import matplotlib.pyplot as plt
@@ -4033,3 +4033,45 @@ if run_36:
             plt.close()
 
             print(f"Saved: {out}")
+
+
+
+run_37 = True
+if run_37:
+    targ = "/users/yhb18174/TL_project/data/processed/targets/bp.csv"
+    o = "/users/yhb18174/TL_project/results/BP_predictions_rf/molformer-c3-1b/last_20pct_pred.csv.gz"
+    ft = "/users/yhb18174/TL_project/results/BP_predictions_rf/ft-molformer-c3-1b/last_20pct_pred.csv.gz"
+
+    target_col = "Boiling_Point"
+
+    targ_df = pd.read_csv(targ, index_col="ID")
+    o_df = pd.read_csv(o, index_col="ID")
+    ft_df = pd.read_csv(ft, index_col="ID")
+
+    o_plot = targ_df[[target_col]].join(o_df, how="inner")
+    ft_plot = targ_df[[target_col]].join(ft_df, how="inner")
+
+    o_pred_col = [c for c in o_plot.columns if c != target_col][0]
+    ft_pred_col = [c for c in ft_plot.columns if c != target_col][0]
+
+    fig, axes = plt.subplots(1, 2, figsize=(12, 5), sharex=True, sharey=True)
+
+    for ax, df, pred_col, title in [
+        (axes[0], o_plot, o_pred_col, "Original"),
+        (axes[1], ft_plot, ft_pred_col, "Fine-tuned"),
+    ]:
+        df = df[[target_col, pred_col]].apply(pd.to_numeric, errors="coerce").dropna()
+
+        ax.scatter(df[target_col], df[pred_col], s=18, alpha=0.65)
+
+        lim_min = min(df[target_col].min(), df[pred_col].min())
+        lim_max = max(df[target_col].max(), df[pred_col].max())
+        ax.plot([lim_min, lim_max], [lim_min, lim_max], color="black", linewidth=1)
+
+        ax.set_title(title)
+        ax.set_xlabel("True Boiling Point")
+        ax.set_ylabel("Predicted Boiling Point")
+
+    plt.tight_layout()
+    plt.savefig("o_vs_ft_scatterplot.png")
+
