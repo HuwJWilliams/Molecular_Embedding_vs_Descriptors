@@ -4034,7 +4034,7 @@ if run_36:
 
             print(f"Saved: {out}")
 
-run_37 = False
+run_37 = True
 if run_37:
     targ = "/users/yhb18174/TL_project/datasets/boiling_point/cleaned_boiling_point.csv"
     o = "/users/yhb18174/TL_project/results/BP_predictions_rf/molformer-c3-1b/last_20pct_pred.csv.gz"
@@ -4060,37 +4060,76 @@ if run_37:
 
     plot_df_3iqr = plot_df.loc[plot_df[target_col].between(lower, upper)].copy()
 
-    print(f"3xIQR bounds: {lower:.3f} to {upper:.3f}")
-    print(f"Original rows: {len(plot_df)}")
-    print(f"Rows after 3xIQR trim: {len(plot_df_3iqr)}")
-    print(f"Rows removed: {len(plot_df) - len(plot_df_3iqr)}")
-
+    # Keep the original 3xIQR axis limits, then remove extreme predicted points.
     lim_min = plot_df_3iqr[[target_col, "base_pred", "ft_pred"]].min().min()
     lim_max = plot_df_3iqr[[target_col, "base_pred", "ft_pred"]].max().max()
 
+    plot_df_3iqr = plot_df_3iqr.loc[
+        (plot_df_3iqr["base_pred"] <= 1000) & (plot_df_3iqr["ft_pred"] <= 1000)
+    ].copy()
+
+    print(f"3xIQR bounds: {lower:.3f} to {upper:.3f}")
+    print(f"Rows before 3xIQR trim: {len(plot_df)}")
+    print(f"Rows after 3xIQR trim: {len(plot_df_3iqr)}")
+
+    def calc_metrics(df, pred_col):
+        y_true = df[target_col]
+        y_pred = df[pred_col]
+
+        ss_res = ((y_true - y_pred) ** 2).sum()
+        ss_tot = ((y_true - y_true.mean()) ** 2).sum()
+
+        r2 = 1 - (ss_res / ss_tot)
+        pearson_r = y_true.corr(y_pred, method="pearson")
+        rmse = ((y_true - y_pred) ** 2).mean() ** 0.5
+
+        return r2, pearson_r, rmse
+
+    base_r2, base_pearson, base_rmse = calc_metrics(plot_df_3iqr, "base_pred")
+    ft_r2, ft_pearson, ft_rmse = calc_metrics(plot_df_3iqr, "ft_pred")
+
     fig, axes = plt.subplots(1, 2, figsize=(12, 5), sharex=True, sharey=True)
 
-    axes[0].scatter(
-        plot_df_3iqr[target_col],
-        plot_df_3iqr["base_pred"],
-        s=18,
-        alpha=0.65,
-    )
-    axes[0].plot([lim_min, lim_max], [lim_min, lim_max], color="black", linewidth=1)
-    axes[0].set_title("Original, 3xIQR trimmed")
-    axes[0].set_xlabel("True Boiling Point")
-    axes[0].set_ylabel("Predicted Boiling Point")
+    for ax, pred_col, title, metrics in [
+        (
+            axes[0],
+            "base_pred",
+            "Original, 3xIQR trimmed",
+            (base_r2, base_pearson, base_rmse),
+        ),
+        (
+            axes[1],
+            "ft_pred",
+            "Fine-tuned, 3xIQR trimmed",
+            (ft_r2, ft_pearson, ft_rmse),
+        ),
+    ]:
+        r2, pearson_r, rmse = metrics
 
-    axes[1].scatter(
-        plot_df_3iqr[target_col],
-        plot_df_3iqr["ft_pred"],
-        s=18,
-        alpha=0.65,
-    )
-    axes[1].plot([lim_min, lim_max], [lim_min, lim_max], color="black", linewidth=1)
-    axes[1].set_title("Fine-tuned, 3xIQR trimmed")
-    axes[1].set_xlabel("True Boiling Point")
-    axes[1].set_ylabel("Predicted Boiling Point")
+        ax.scatter(
+            plot_df_3iqr[target_col],
+            plot_df_3iqr[pred_col],
+            s=18,
+            alpha=0.65,
+        )
+        ax.plot([lim_min, lim_max], [lim_min, lim_max], color="black", linewidth=1)
+
+        ax.text(
+            0.97,
+            0.97,
+            f"R2 = {r2:.3f}\nPearson r = {pearson_r:.3f}\nRMSE = {rmse:.3f}",
+            transform=ax.transAxes,
+            ha="right",
+            va="top",
+            fontsize=10,
+            bbox=dict(facecolor="white", edgecolor="black", alpha=0.8),
+        )
+
+        ax.set_title(title)
+        ax.set_xlabel("True Boiling Point")
+        ax.set_ylabel("Predicted Boiling Point")
+        ax.set_xlim(lim_min, lim_max)
+        ax.set_ylim(lim_min, lim_max)
 
     plt.tight_layout()
-    plt.savefig("/users/yhb18174/TL_project/run/o_vs_ft_scatterplot_3xIQR.png", dpi=300)
+    plt.savefig("o_vs_ft_scatterplot_3xIQR.png", dpi=300)
