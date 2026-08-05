@@ -4042,12 +4042,12 @@ if run_37:
     # ft = "/users/yhb18174/TL_project/results/BP_predictions_rf/ft-scaffold-molformer-c3-1b/last_20pct_pred.csv.gz"
 
     targ = "/users/yhb18174/TL_project/datasets/pka/cleaned_pka_paper1_basic.csv"
-    o = "/users/yhb18174/TL_project/results/PKA_P1B_predictions_rf/molformer-c3-1b/last_20pct_pred.csv.gz"
-    ft = "/users/yhb18174/TL_project/results/PKA_P1B_predictions_rf/ft-scaffold-molformer-c3-1b/last_20pct_pred.csv.gz"
+    o = "/users/yhb18174/TL_project/results/PKA_P1B_predictions_rf/chembertasey/last_20pct_pred.csv.gz"
+    ft = "/users/yhb18174/TL_project/results/PKA_P1B_predictions_rf/ft-scaffold-chembertasey/last_20pct_pred.csv.gz"
 
     # targ = "/users/yhb18174/TL_project/datasets/pka/cleaned_pka_paper1_acidic.csv"
-    # o = "/users/yhb18174/TL_project/results/PKA_P1A_predictions_rf/molformer-c3-1b/last_20pct_pred.csv.gz"
-    # ft = "/users/yhb18174/TL_project/results/PKA_P1A_predictions_rf/ft-scaffold-molformer-c3-1b/last_20pct_pred.csv.gz"
+    # o = "/users/yhb18174/TL_project/results/PKA_P1A_predictions_rf/chembertasey/last_20pct_pred.csv.gz"
+    # ft = "/users/yhb18174/TL_project/results/PKA_P1A_predictions_rf/ft-scaffold-chembertasey/last_20pct_pred.csv.gz"
 
     target_col = "pKa"
 
