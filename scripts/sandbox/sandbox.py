@@ -3860,7 +3860,7 @@ if run_35:
     print(f"Saved Tanimoto outputs to: {tanimoto_dir}")
 
 
-run_36 = True
+run_36 = False
 if run_36:
     import pandas as pd
     import matplotlib.pyplot as plt
@@ -4034,12 +4034,11 @@ if run_36:
 
             print(f"Saved: {out}")
 
-
 run_37 = False
 if run_37:
     targ = "/users/yhb18174/TL_project/datasets/boiling_point/cleaned_boiling_point.csv"
     o = "/users/yhb18174/TL_project/results/BP_predictions_rf/molformer-c3-1b/last_20pct_pred.csv.gz"
-    ft = "/users/yhb18174/TL_project/results/BP_predictions_rf/ft-molformer-c3-1b/last_20pct_pred.csv.gz"
+    ft = "/users/yhb18174/TL_project/results/BP_predictions_rf/ft-scaffold-molformer-c3-1b/last_20pct_pred.csv.gz"
 
     target_col = "Boiling_Point"
 
@@ -4047,29 +4046,51 @@ if run_37:
     o_df = pd.read_csv(o, index_col="ID")
     ft_df = pd.read_csv(ft, index_col="ID")
 
-    # Prediction files often use the target column name for predictions.
     o_pred = o_df[target_col].rename("base_pred")
     ft_pred = ft_df[target_col].rename("ft_pred")
 
     plot_df = targ_df.join(o_pred, how="inner").join(ft_pred, how="inner")
     plot_df = plot_df.apply(pd.to_numeric, errors="coerce").dropna()
 
-    lim_min = plot_df[[target_col, "base_pred", "ft_pred"]].min().min()
-    lim_max = plot_df[[target_col, "base_pred", "ft_pred"]].max().max()
+    q1 = plot_df[target_col].quantile(0.25)
+    q3 = plot_df[target_col].quantile(0.75)
+    iqr = q3 - q1
+    lower = q1 - (3 * iqr)
+    upper = q3 + (3 * iqr)
+
+    plot_df_3iqr = plot_df.loc[plot_df[target_col].between(lower, upper)].copy()
+
+    print(f"3xIQR bounds: {lower:.3f} to {upper:.3f}")
+    print(f"Original rows: {len(plot_df)}")
+    print(f"Rows after 3xIQR trim: {len(plot_df_3iqr)}")
+    print(f"Rows removed: {len(plot_df) - len(plot_df_3iqr)}")
+
+    lim_min = plot_df_3iqr[[target_col, "base_pred", "ft_pred"]].min().min()
+    lim_max = plot_df_3iqr[[target_col, "base_pred", "ft_pred"]].max().max()
 
     fig, axes = plt.subplots(1, 2, figsize=(12, 5), sharex=True, sharey=True)
 
-    axes[0].scatter(plot_df[target_col], plot_df["base_pred"], s=18, alpha=0.65)
+    axes[0].scatter(
+        plot_df_3iqr[target_col],
+        plot_df_3iqr["base_pred"],
+        s=18,
+        alpha=0.65,
+    )
     axes[0].plot([lim_min, lim_max], [lim_min, lim_max], color="black", linewidth=1)
-    axes[0].set_title("Original")
+    axes[0].set_title("Original, 3xIQR trimmed")
     axes[0].set_xlabel("True Boiling Point")
     axes[0].set_ylabel("Predicted Boiling Point")
 
-    axes[1].scatter(plot_df[target_col], plot_df["ft_pred"], s=18, alpha=0.65)
+    axes[1].scatter(
+        plot_df_3iqr[target_col],
+        plot_df_3iqr["ft_pred"],
+        s=18,
+        alpha=0.65,
+    )
     axes[1].plot([lim_min, lim_max], [lim_min, lim_max], color="black", linewidth=1)
-    axes[1].set_title("Fine-tuned")
+    axes[1].set_title("Fine-tuned, 3xIQR trimmed")
     axes[1].set_xlabel("True Boiling Point")
     axes[1].set_ylabel("Predicted Boiling Point")
 
     plt.tight_layout()
-    plt.savefig("o_vs_ft_scatterplot.png")
+    plt.savefig("o_vs_ft_scatterplot_3xIQR.png", dpi=300)
