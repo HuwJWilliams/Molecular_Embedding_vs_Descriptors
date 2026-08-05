@@ -7,7 +7,6 @@ SCRIPTS_DIR = PROJ_DIR / "scripts"
 SRC_DIR = SCRIPTS_DIR / "src"
 DATASETS_DIR = PROJ_DIR / "datasets"
 RESULTS_DIR = PROJ_DIR / "results"
-FINE_TUNE_SPLIT_METHODS = ("scaffold", "random")
 
 
 def createPathingJSON(json_name="test_paths.json"):
@@ -48,61 +47,8 @@ def saveJSON(json_content: dict, json_path: str | Path = FILE_DIR / "paths.json"
         json.dump(json_content, f, indent=2)
 
 
-def _is_legacy_fine_tuned_feature(feature_name: str) -> bool:
-    return feature_name.startswith("ft-") and not feature_name.startswith(
-        ("ft-scaffold-", "ft-random-")
-    )
-
-
-def _split_fine_tuned_feature_name(feature_name: str, split_method: str) -> str:
-    return f"ft-{split_method}-{feature_name.removeprefix('ft-')}"
-
-
-def _replace_feature_name_in_path(path: str | Path, old: str, new: str) -> str:
-    return str(path).replace(old, new)
-
-
-def addFineTuneSplitPathVariants(paths: dict) -> dict:
-    for _, feature_block in paths.get("full_features", {}).items():
-        for feature_name, path in list(feature_block.items()):
-            if not _is_legacy_fine_tuned_feature(feature_name):
-                continue
-
-            for split_method in FINE_TUNE_SPLIT_METHODS:
-                split_feature_name = _split_fine_tuned_feature_name(
-                    feature_name, split_method
-                )
-                feature_block.setdefault(
-                    split_feature_name,
-                    _replace_feature_name_in_path(
-                        path, feature_name, split_feature_name
-                    ),
-                )
-
-    prediction_dirs = paths.get("prediction_output_dirs", {})
-    for model in ("rf", "lr"):
-        for _, feature_block in prediction_dirs.get(model, {}).items():
-            for feature_name, path in list(feature_block.items()):
-                if not _is_legacy_fine_tuned_feature(feature_name):
-                    continue
-
-                for split_method in FINE_TUNE_SPLIT_METHODS:
-                    split_feature_name = _split_fine_tuned_feature_name(
-                        feature_name, split_method
-                    )
-                    feature_block.setdefault(
-                        split_feature_name,
-                        _replace_feature_name_in_path(
-                            path, feature_name, split_feature_name
-                        ),
-                    )
-
-    return paths
-
-
 def getPaths(json_path: str | Path = FILE_DIR / "paths.json"):
     paths = loadJSON(json_path)
-    paths = addFineTuneSplitPathVariants(paths)
 
     replacements = {
         "${PROJ_DIR}": str(PROJ_DIR),

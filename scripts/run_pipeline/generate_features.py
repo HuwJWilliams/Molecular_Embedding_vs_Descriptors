@@ -195,7 +195,7 @@ if __name__ == "__main__":
     fine_tune_output_dir = None
 
     if args.fine_tune:
-        pathing_key = f"ft-{feature_set}"
+        pathing_key = f"ft-{args.split_by}-{feature_set}"
         out_path = paths["full_features"][task][pathing_key]
         fine_tune_output_dir = Path(str(out_path).replace("*", "fine_tuned_model")).with_suffix("")
 

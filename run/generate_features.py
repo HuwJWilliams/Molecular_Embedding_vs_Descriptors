@@ -169,34 +169,15 @@ def resolveFineTunedFeaturePath(
     split_by: str,
 ) -> tuple[str | Path, str]:
     split_pathing_key = f"ft-{split_by}-{base_feature_set}"
-    legacy_pathing_key = f"ft-{base_feature_set}"
 
     if split_pathing_key in full_feature_paths:
         return full_feature_paths[split_pathing_key], split_pathing_key
 
-    if legacy_pathing_key not in full_feature_paths:
-        available = list(full_feature_paths.keys())
-        raise KeyError(
-            f"Could not find '{split_pathing_key}' or '{legacy_pathing_key}' "
-            f"in full_features[{task}]. Available feature sets: {available}"
-        )
-
-    legacy_path = full_feature_paths[legacy_pathing_key]
-    split_path = str(legacy_path).replace(legacy_pathing_key, split_pathing_key)
-
-    if split_path == str(legacy_path):
-        legacy_path_obj = Path(legacy_path)
-        split_path = str(
-            legacy_path_obj.with_name(
-                legacy_path_obj.name.replace(
-                    f"ft-{base_feature_set}",
-                    split_pathing_key,
-                    1,
-                )
-            )
-        )
-
-    return Path(split_path), split_pathing_key
+    available = list(full_feature_paths.keys())
+    raise KeyError(
+        f"Could not find '{split_pathing_key}' in full_features[{task}]. "
+        f"Available feature sets: {available}"
+    )
 
 
 if args.fine_tune:
