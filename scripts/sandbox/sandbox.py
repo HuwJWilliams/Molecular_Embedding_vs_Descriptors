@@ -4049,7 +4049,7 @@ if run_37:
     o = "/users/yhb18174/TL_project/results/PKA_P1A_predictions_rf/molformer-c3-1b/last_20pct_pred.csv.gz"
     ft = "/users/yhb18174/TL_project/results/PKA_P1A_predictions_rf/ft-scaffold-molformer-c3-1b/last_20pct_pred.csv.gz"
 
-    target_col = "pka"
+    target_col = "pKa"
 
     targ_df = pd.read_csv(targ, index_col="ID")[[target_col]]
     o_df = pd.read_csv(o, index_col="ID")
@@ -4134,7 +4134,7 @@ if run_37:
 
     make_plot(
         plot_df_3iqr,
-        "o_vs_ft_scatterplot_3xIQR_with_high_preds.png",
+        "o_vs_ft_scatterplot_3xIQR_with_high_preds_pka_a.png",
         "3xIQR trimmed",
     )
 
