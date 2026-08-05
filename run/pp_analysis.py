@@ -288,3 +288,26 @@ if not lipinski_external_df.empty:
         feature_order=feature_sets,
         colour_map=colour_map,
     )
+
+iqr_external_df = get3xIQRFilteredExternalPerformanceDf(
+    properties=args.properties,
+    feature_sets=feature_sets,
+    full_pathing=FULL_PATHING,
+    preds_dir=PREDS_DIR,
+    target_columns=TARGET_COLUMNS,
+)
+
+if not iqr_external_df.empty:
+    iqr_external_df.to_csv(
+        save_path / "external_3xIQR_average_performances.csv",
+        index=False,
+    )
+    for metric in ["r2", "pearson_r", "RMSE", "Bias", "SDEP"]:
+        plotGroupedPropertyFeatureBar(
+            summary_df=iqr_external_df,
+            split_name="external_3xIQR",
+            save_path=save_path,
+            metric=metric,
+            feature_order=feature_sets,
+            colour_map=colour_map,
+        )

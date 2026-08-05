@@ -701,3 +701,70 @@ def getLipinskiFilteredExternalPerformanceDf(
                 )
 
     return pd.DataFrame(rows)
+
+
+def get3xIQRFilteredExternalPerformanceDf(
+    properties,
+    feature_sets,
+    full_pathing,
+    preds_dir,
+    target_columns,
+):
+    rows = []
+
+    for prop in properties:
+        target_col = target_columns[prop]
+
+        target_df = pd.read_csv(full_pathing["targets"][prop], index_col="ID")
+        target_df.index = target_df.index.astype(str)
+        true = pd.to_numeric(target_df[target_col], errors="coerce")
+
+        q1 = true.quantile(0.25)
+        q3 = true.quantile(0.75)
+        iqr = q3 - q1
+        lower = q1 - (3 * iqr)
+        upper = q3 + (3 * iqr)
+
+        keep_target = true.loc[true.between(lower, upper)].rename("true")
+
+        for feature_set in feature_sets:
+            pred_path = Path(preds_dir[prop][feature_set]) / "last_20pct_pred.csv.gz"
+
+            if not pred_path.exists():
+                print(f"Missing predictions for {prop} / {feature_set}: {pred_path}")
+                continue
+
+            pred_df = pd.read_csv(pred_path, index_col=0)
+            pred_df.index = pred_df.index.astype(str)
+
+            pred_col = (
+                target_col if target_col in pred_df.columns else pred_df.columns[0]
+            )
+            pred = pd.to_numeric(pred_df[pred_col], errors="coerce").rename("pred")
+
+            eval_df = pd.concat([keep_target, pred], axis=1, join="inner").dropna()
+
+            if len(eval_df) < 2:
+                continue
+
+            err = eval_df["pred"] - eval_df["true"]
+
+            rows.append(
+                {
+                    "property": prop,
+                    "split": "external_3xIQR",
+                    "feature_set": feature_set,
+                    "r2": calculateR2(eval_df["true"], eval_df["pred"]),
+                    "pearson_r": eval_df["true"].corr(
+                        eval_df["pred"], method="pearson"
+                    ),
+                    "RMSE": (err.pow(2).mean()) ** 0.5,
+                    "Bias": err.mean(),
+                    "SDEP": (err - err.mean()).pow(2).mean() ** 0.5,
+                    "n": len(eval_df),
+                    "lower_3xIQR": lower,
+                    "upper_3xIQR": upper,
+                }
+            )
+
+    return pd.DataFrame(rows)
