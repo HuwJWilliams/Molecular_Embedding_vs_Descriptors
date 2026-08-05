@@ -255,18 +255,6 @@ if external_summary_rows:
         colour_map=colour_map,
     )
 
-if ft_difference_rows:
-    ft_difference_df = pd.concat(ft_difference_rows, ignore_index=True)
-    ft_difference_df.to_csv(
-        save_path / "ft_differences.csv",
-        index=False,
-    )
-    plotFTDifferenceSummaryBars(
-        ft_difference_df=ft_difference_df,
-        save_path=save_path,
-        metrics=["r2", "pearson_r"],
-    )
-
 lipinski_external_df = getLipinskiFilteredExternalPerformanceDf(
     properties=args.properties,
     feature_sets=feature_sets,
@@ -313,22 +301,28 @@ if not iqr_external_df.empty:
     )
 
     for metric in summary_metrics:
+        metric_col = getMetricColumn(metric=metric, data=iqr_external_df)
+
+        if metric_col is None:
+            print(f"{metric} not in external_3xIQR df columns")
+            continue
+
         for prop in args.properties:
             prop_df = iqr_external_df.loc[iqr_external_df["property"] == prop].copy()
-
-            if prop_df.empty or metric not in prop_df.columns:
-                continue
-
-            prop_df[metric] = pd.to_numeric(prop_df[metric], errors="coerce")
-            prop_df = prop_df.dropna(subset=[metric])
 
             if prop_df.empty:
                 continue
 
-            ascending = metric.lower() in ["rmse", "mse", "mae", "bias", "sdep"]
-            prop_df = prop_df.sort_values(metric, ascending=ascending)
+            prop_df[metric_col] = pd.to_numeric(prop_df[metric_col], errors="coerce")
+            prop_df = prop_df.dropna(subset=[metric_col])
 
-            if metric.lower() in ["bias", "rmse", "sdep"]:
+            if prop_df.empty:
+                continue
+
+            ascending = metric_col.lower() in ["rmse", "mse", "mae", "bias", "sdep"]
+            prop_df = prop_df.sort_values(metric_col, ascending=ascending)
+
+            if metric_col.lower() in ["bias", "rmse", "sdep"]:
                 y_lim = None
             else:
                 y_lim = (0, 1)
@@ -336,20 +330,43 @@ if not iqr_external_df.empty:
             v.plotBar(
                 data=prop_df,
                 x_label="feature_set",
-                y_label=metric,
-                title=f"{prop}: external_3xIQR {metric}",
+                y_label=metric_col,
+                title=f"{prop}: external_3xIQR {metric_col}",
                 save_plot=True,
                 save_path=save_path / prop / "external_3xIQR",
-                save_fname=f"{prop}_external_3xIQR_{metric}_bar",
+                save_fname=f"{prop}_external_3xIQR_{metric_col}_bar",
                 colour_map=colour_map,
                 y_lims=y_lim,
             )
+
+            ft_diff_df = plotFTDifferenceBar(
+                data=prop_df,
+                prop=prop,
+                split_name="external_3xIQR",
+                metric_col=metric_col,
+                save_path=save_path,
+                colour_map=colour_map,
+            )
+            if not ft_diff_df.empty:
+                ft_difference_rows.append(ft_diff_df)
 
         plotGroupedPropertyFeatureBar(
             summary_df=iqr_external_df,
             split_name="external_3xIQR",
             save_path=save_path,
-            metric=metric,
+            metric=metric_col,
             feature_order=feature_sets,
             colour_map=colour_map,
         )
+
+if ft_difference_rows:
+    ft_difference_df = pd.concat(ft_difference_rows, ignore_index=True)
+    ft_difference_df.to_csv(
+        save_path / "ft_differences.csv",
+        index=False,
+    )
+    plotFTDifferenceSummaryBars(
+        ft_difference_df=ft_difference_df,
+        save_path=save_path,
+        metrics=summary_metrics,
+    )

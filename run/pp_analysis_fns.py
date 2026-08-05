@@ -147,6 +147,12 @@ METRIC_ALIASES = {
     "pearson_r": ["pearson_r", "r_pearson", "Pearson_r"],
     "Pearson_r": ["Pearson_r", "pearson_r", "r_pearson"],
     "r_pearson": ["r_pearson", "pearson_r", "Pearson_r"],
+    "rmse": ["rmse", "RMSE"],
+    "RMSE": ["RMSE", "rmse"],
+    "bias": ["bias", "Bias"],
+    "Bias": ["Bias", "bias"],
+    "sdep": ["sdep", "SDEP"],
+    "SDEP": ["SDEP", "sdep"],
 }
 
 
@@ -754,6 +760,7 @@ def get3xIQRFilteredExternalPerformanceDf(
                     "property": prop,
                     "split": "external_3xIQR",
                     "feature_set": feature_set,
+                    "stat": "mean",
                     "r2": calculateR2(eval_df["true"], eval_df["pred"]),
                     "pearson_r": eval_df["true"].corr(
                         eval_df["pred"], method="pearson"
