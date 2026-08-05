@@ -4036,11 +4036,20 @@ if run_36:
 
 run_37 = True
 if run_37:
-    targ = "/users/yhb18174/TL_project/datasets/boiling_point/cleaned_boiling_point.csv"
-    o = "/users/yhb18174/TL_project/results/BP_predictions_rf/molformer-c3-1b/last_20pct_pred.csv.gz"
-    ft = "/users/yhb18174/TL_project/results/BP_predictions_rf/ft-scaffold-molformer-c3-1b/last_20pct_pred.csv.gz"
 
-    target_col = "Boiling_Point"
+    # targ = "/users/yhb18174/TL_project/datasets/boiling_point/cleaned_boiling_point.csv"
+    # o = "/users/yhb18174/TL_project/results/BP_predictions_rf/molformer-c3-1b/last_20pct_pred.csv.gz"
+    # ft = "/users/yhb18174/TL_project/results/BP_predictions_rf/ft-scaffold-molformer-c3-1b/last_20pct_pred.csv.gz"
+
+    # targ = "/users/yhb18174/TL_project/datasets/pka/cleaned_pka_paper1_basic.csv"
+    # o = "/users/yhb18174/TL_project/results/PKA_P1B_predictions_rf/molformer-c3-1b/last_20pct_pred.csv.gz"
+    # ft = "/users/yhb18174/TL_project/results/PKA_P1B_predictions_rf/ft-scaffold-molformer-c3-1b/last_20pct_pred.csv.gz"
+
+    targ = "/users/yhb18174/TL_project/datasets/pka/cleaned_pka_paper1_acidic.csv"
+    o = "/users/yhb18174/TL_project/results/PKA_P1A_predictions_rf/molformer-c3-1b/last_20pct_pred.csv.gz"
+    ft = "/users/yhb18174/TL_project/results/PKA_P1A_predictions_rf/ft-scaffold-molformer-c3-1b/last_20pct_pred.csv.gz"
+
+    target_col = "pka"
 
     targ_df = pd.read_csv(targ, index_col="ID")[[target_col]]
     o_df = pd.read_csv(o, index_col="ID")
@@ -4063,14 +4072,14 @@ if run_37:
     lim_min = plot_df_3iqr[[target_col, "base_pred", "ft_pred"]].min().min()
     lim_max = plot_df_3iqr[[target_col, "base_pred", "ft_pred"]].max().max()
 
-    plot_df_3iqr_no_high_pred = plot_df_3iqr.loc[
-        (plot_df_3iqr["base_pred"] <= 1000) & (plot_df_3iqr["ft_pred"] <= 1000)
-    ].copy()
+    # plot_df_3iqr_no_high_pred = plot_df_3iqr.loc[
+    #     (plot_df_3iqr["base_pred"] <= 1000) & (plot_df_3iqr["ft_pred"] <= 1000)
+    # ].copy()
 
     print(f"3xIQR bounds: {lower:.3f} to {upper:.3f}")
     print(f"Rows before 3xIQR trim: {len(plot_df)}")
     print(f"Rows after 3xIQR trim: {len(plot_df_3iqr)}")
-    print(f"Rows after removing predictions > 1000: {len(plot_df_3iqr_no_high_pred)}")
+    # print(f"Rows after removing predictions > 1000: {len(plot_df_3iqr_no_high_pred)}")
 
     def calc_metrics(df, pred_col):
         y_true = df[target_col]
@@ -4114,8 +4123,8 @@ if run_37:
             )
 
             ax.set_title(f"{title}, {title_suffix}")
-            ax.set_xlabel("True Boiling Point")
-            ax.set_ylabel("Predicted Boiling Point")
+            ax.set_xlabel("True pKa")
+            ax.set_ylabel("Predicted pKa")
             ax.set_xlim(lim_min, lim_max)
             ax.set_ylim(lim_min, lim_max)
 
@@ -4129,8 +4138,8 @@ if run_37:
         "3xIQR trimmed",
     )
 
-    make_plot(
-        plot_df_3iqr_no_high_pred,
-        "o_vs_ft_scatterplot_3xIQR_no_preds_above_1000.png",
-        "3xIQR trimmed, preds <= 1000",
-    )
+    # make_plot(
+    #     plot_df_3iqr_no_high_pred,
+    #     "o_vs_ft_scatterplot_3xIQR_no_preds_above_1000.png",
+    #     "3xIQR trimmed, preds <= 1000",
+    # )
