@@ -4034,7 +4034,7 @@ if run_36:
 
             print(f"Saved: {out}")
 
-run_37 = True
+run_37 = False
 if run_37:
     targ = "/users/yhb18174/TL_project/datasets/boiling_point/cleaned_boiling_point.csv"
     o = "/users/yhb18174/TL_project/results/BP_predictions_rf/molformer-c3-1b/last_20pct_pred.csv.gz"
@@ -4060,17 +4060,18 @@ if run_37:
 
     plot_df_3iqr = plot_df.loc[plot_df[target_col].between(lower, upper)].copy()
 
-    # Keep the original 3xIQR axis limits, then remove extreme predicted points.
     lim_min = plot_df_3iqr[[target_col, "base_pred", "ft_pred"]].min().min()
     lim_max = plot_df_3iqr[[target_col, "base_pred", "ft_pred"]].max().max()
 
-    plot_df_3iqr = plot_df_3iqr.loc[
-        (plot_df_3iqr["base_pred"] <= 1000) & (plot_df_3iqr["ft_pred"] <= 1000)
+    plot_df_3iqr_no_high_pred = plot_df_3iqr.loc[
+        (plot_df_3iqr["base_pred"] <= 1000)
+        & (plot_df_3iqr["ft_pred"] <= 1000)
     ].copy()
 
     print(f"3xIQR bounds: {lower:.3f} to {upper:.3f}")
     print(f"Rows before 3xIQR trim: {len(plot_df)}")
     print(f"Rows after 3xIQR trim: {len(plot_df_3iqr)}")
+    print(f"Rows after removing predictions > 1000: {len(plot_df_3iqr_no_high_pred)}")
 
     def calc_metrics(df, pred_col):
         y_true = df[target_col]
@@ -4085,51 +4086,52 @@ if run_37:
 
         return r2, pearson_r, rmse
 
-    base_r2, base_pearson, base_rmse = calc_metrics(plot_df_3iqr, "base_pred")
-    ft_r2, ft_pearson, ft_rmse = calc_metrics(plot_df_3iqr, "ft_pred")
+    def make_plot(df, save_name, title_suffix):
+        fig, axes = plt.subplots(1, 2, figsize=(12, 5), sharex=True, sharey=True)
 
-    fig, axes = plt.subplots(1, 2, figsize=(12, 5), sharex=True, sharey=True)
+        for ax, pred_col, title in [
+            (axes[0], "base_pred", "Original"),
+            (axes[1], "ft_pred", "Fine-tuned"),
+        ]:
+            r2, pearson_r, rmse = calc_metrics(df, pred_col)
 
-    for ax, pred_col, title, metrics in [
-        (
-            axes[0],
-            "base_pred",
-            "Original, 3xIQR trimmed",
-            (base_r2, base_pearson, base_rmse),
-        ),
-        (
-            axes[1],
-            "ft_pred",
-            "Fine-tuned, 3xIQR trimmed",
-            (ft_r2, ft_pearson, ft_rmse),
-        ),
-    ]:
-        r2, pearson_r, rmse = metrics
+            ax.scatter(
+                df[target_col],
+                df[pred_col],
+                s=18,
+                alpha=0.65,
+            )
+            ax.plot([lim_min, lim_max], [lim_min, lim_max], color="black", linewidth=1)
 
-        ax.scatter(
-            plot_df_3iqr[target_col],
-            plot_df_3iqr[pred_col],
-            s=18,
-            alpha=0.65,
-        )
-        ax.plot([lim_min, lim_max], [lim_min, lim_max], color="black", linewidth=1)
+            ax.text(
+                0.97,
+                0.97,
+                f"R2 = {r2:.3f}\nPearson r = {pearson_r:.3f}\nRMSE = {rmse:.3f}",
+                transform=ax.transAxes,
+                ha="right",
+                va="top",
+                fontsize=10,
+                bbox=dict(facecolor="white", edgecolor="black", alpha=0.8),
+            )
 
-        ax.text(
-            0.97,
-            0.97,
-            f"R2 = {r2:.3f}\nPearson r = {pearson_r:.3f}\nRMSE = {rmse:.3f}",
-            transform=ax.transAxes,
-            ha="right",
-            va="top",
-            fontsize=10,
-            bbox=dict(facecolor="white", edgecolor="black", alpha=0.8),
-        )
+            ax.set_title(f"{title}, {title_suffix}")
+            ax.set_xlabel("True Boiling Point")
+            ax.set_ylabel("Predicted Boiling Point")
+            ax.set_xlim(lim_min, lim_max)
+            ax.set_ylim(lim_min, lim_max)
 
-        ax.set_title(title)
-        ax.set_xlabel("True Boiling Point")
-        ax.set_ylabel("Predicted Boiling Point")
-        ax.set_xlim(lim_min, lim_max)
-        ax.set_ylim(lim_min, lim_max)
+        plt.tight_layout()
+        plt.savefig(save_name, dpi=300)
+        plt.close()
 
-    plt.tight_layout()
-    plt.savefig("o_vs_ft_scatterplot_3xIQR.png", dpi=300)
+    make_plot(
+        plot_df_3iqr,
+        "o_vs_ft_scatterplot_3xIQR_with_high_preds.png",
+        "3xIQR trimmed",
+    )
+
+    make_plot(
+        plot_df_3iqr_no_high_pred,
+        "o_vs_ft_scatterplot_3xIQR_no_preds_above_1000.png",
+        "3xIQR trimmed, preds <= 1000",
+    )
