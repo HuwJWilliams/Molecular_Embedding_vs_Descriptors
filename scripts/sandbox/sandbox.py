@@ -4041,13 +4041,13 @@ if run_37:
     # o = "/users/yhb18174/TL_project/results/BP_predictions_rf/molformer-c3-1b/last_20pct_pred.csv.gz"
     # ft = "/users/yhb18174/TL_project/results/BP_predictions_rf/ft-scaffold-molformer-c3-1b/last_20pct_pred.csv.gz"
 
-    # targ = "/users/yhb18174/TL_project/datasets/pka/cleaned_pka_paper1_basic.csv"
-    # o = "/users/yhb18174/TL_project/results/PKA_P1B_predictions_rf/molformer-c3-1b/last_20pct_pred.csv.gz"
-    # ft = "/users/yhb18174/TL_project/results/PKA_P1B_predictions_rf/ft-scaffold-molformer-c3-1b/last_20pct_pred.csv.gz"
+    targ = "/users/yhb18174/TL_project/datasets/pka/cleaned_pka_paper1_basic.csv"
+    o = "/users/yhb18174/TL_project/results/PKA_P1B_predictions_rf/molformer-c3-1b/last_20pct_pred.csv.gz"
+    ft = "/users/yhb18174/TL_project/results/PKA_P1B_predictions_rf/ft-scaffold-molformer-c3-1b/last_20pct_pred.csv.gz"
 
-    targ = "/users/yhb18174/TL_project/datasets/pka/cleaned_pka_paper1_acidic.csv"
-    o = "/users/yhb18174/TL_project/results/PKA_P1A_predictions_rf/molformer-c3-1b/last_20pct_pred.csv.gz"
-    ft = "/users/yhb18174/TL_project/results/PKA_P1A_predictions_rf/ft-scaffold-molformer-c3-1b/last_20pct_pred.csv.gz"
+    # targ = "/users/yhb18174/TL_project/datasets/pka/cleaned_pka_paper1_acidic.csv"
+    # o = "/users/yhb18174/TL_project/results/PKA_P1A_predictions_rf/molformer-c3-1b/last_20pct_pred.csv.gz"
+    # ft = "/users/yhb18174/TL_project/results/PKA_P1A_predictions_rf/ft-scaffold-molformer-c3-1b/last_20pct_pred.csv.gz"
 
     target_col = "pKa"
 
@@ -4134,7 +4134,7 @@ if run_37:
 
     make_plot(
         plot_df_3iqr,
-        "o_vs_ft_scatterplot_3xIQR_with_high_preds_pka_a.png",
+        "o_vs_ft_scatterplot_3xIQR_with_high_preds_pka_b.png",
         "3xIQR trimmed",
     )
 
