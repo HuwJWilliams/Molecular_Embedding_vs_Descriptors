@@ -3138,7 +3138,7 @@ if run_30:
     print(corrs.sort_values(ascending=False))
     print(f"Average SLogP-group correlation: {avg_corr}")
 
-run_31 = False
+run_31 = True
 if run_31:
 
     def plotGroupedRFPerformanceBar(
@@ -4034,7 +4034,7 @@ if run_36:
 
             print(f"Saved: {out}")
 
-run_37 = True
+run_37 = False
 if run_37:
 
     # targ = "/users/yhb18174/TL_project/datasets/boiling_point/cleaned_boiling_point.csv"
