@@ -3184,15 +3184,31 @@ if run_31:
                 with open(p) as f:
                     perf = json.load(f)
 
+                try:
+                    metric_value = read_metric(perf, metric_path)
+                except KeyError:
+                    print(f"Skipping {p}: missing metric path {metric_path}")
+                    continue
+
                 rows.append(
                     {
                         "property": prop,
                         "feature_set": label,
-                        "metric": read_metric(perf, metric_path),
+                        "metric": metric_value,
                     }
                 )
 
-        plot_df = pd.DataFrame(rows)
+        plot_df = pd.DataFrame(
+            rows,
+            columns=["property", "feature_set", "metric"],
+        )
+
+        if plot_df.empty:
+            print(
+                "No RF performance rows found for grouped bar plot. "
+                f"base_ls={len(base_ls)}, base_plus_ls={len(base_plus_ls)}"
+            )
+            return plot_df, pd.DataFrame()
 
         summary_df = plot_df.pivot_table(
             index="property",
@@ -3294,9 +3310,11 @@ if run_31:
             ss_total = ((y_true - y_true.mean()) ** 2).sum()
 
             return {
-                "r2": 1 - (((y_true - y_pred) ** 2).sum() / ss_total)
-                if ss_total != 0
-                else float("nan"),
+                "r2": (
+                    1 - (((y_true - y_pred) ** 2).sum() / ss_total)
+                    if ss_total != 0
+                    else float("nan")
+                ),
                 "pearson_r": y_true.corr(y_pred, method="pearson"),
                 "rmse": (residual.pow(2).mean()) ** 0.5,
                 "bias": residual.mean(),
