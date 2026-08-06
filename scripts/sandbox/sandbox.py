@@ -3525,13 +3525,11 @@ if run_31:
     base_feature = "ft-molformer-c3-1b"
 
     base_ls = glob(
-        f"/users/yhb18174/TL_project/results/*_predictions_rf/"
-        f"{base_feature}/rf_performance.json"
+        f"/users/yhb18174/TL_project/results/*_predictions_rf/rf_performance.json"
     )
 
     base_plus_mordred_ls = glob(
-        f"/users/yhb18174/TL_project/results/*_predictions_rf/"
-        f"{base_feature}/additional_features/mordred/rf_performance.json"
+        f"/users/yhb18174/TL_project/results/*_predictions_rf/additional_features/mordred/rf_performance.json"
     )
 
     plotGroupedRFPerformanceBar(
@@ -3559,7 +3557,6 @@ if run_31:
         "hole_re": "Hole_Reorganisation_Energy",
         "elec_re": "Electron_Reorganisation_Energy",
         "aq_sol": "Solubility",
-        "homo_lumo_gap": "homolumogap",
         "egfr_pic50": "pIC50",
     }
 
