@@ -3258,6 +3258,199 @@ if run_31:
 
         return plot_df, summary_df
 
+    def plotGroupedRFPerformance3IQRBar(
+        path_groups: dict[str, list[str]],
+        target_paths: dict[str, str | Path],
+        target_columns: dict[str, str],
+        save_path: str | Path = "grouped_rf_performance_3xIQR_bar.png",
+        y_label: str = "External 3xIQR R2",
+        title: str | None = None,
+        iqr_multiplier: float = 3,
+        dpi: int = 400,
+    ):
+        from pathlib import Path
+
+        import pandas as pd
+        import seaborn as sns
+        import matplotlib.pyplot as plt
+
+        property_label_to_target_key = {
+            "BP": "bp",
+            "LOGD": "logd",
+            "PKA": "pka",
+            "PKA_P1B": "pka_paper1_basic",
+            "PKA_P1A": "pka_paper1_acidic",
+            "LD50": "ld50",
+            "LOG_LD50": "log_ld50",
+            "PIC50": "pic50",
+            "HOLE_RE": "hole_re",
+            "ELEC_RE": "elec_re",
+            "AQ_SOL": "aq_sol",
+            "HOMO_LUMO_GAP": "homo_lumo_gap",
+            "EGFR_PIC50": "egfr_pic50",
+        }
+
+        def get_property_from_path(path: str | Path) -> str:
+            path = Path(path)
+            pred_dir = next(
+                part for part in path.parts if part.endswith("_predictions_rf")
+            )
+            return pred_dir.replace("_predictions_rf", "")
+
+        def pred_path_from_perf_path(path: str | Path) -> Path:
+            return Path(path).parent / "last_20pct_pred.csv.gz"
+
+        def calculate_r2(eval_df: pd.DataFrame) -> float:
+            ss_total = ((eval_df["true"] - eval_df["true"].mean()) ** 2).sum()
+
+            if ss_total == 0:
+                return float("nan")
+
+            ss_res = ((eval_df["true"] - eval_df["pred"]) ** 2).sum()
+            return float(1 - (ss_res / ss_total))
+
+        rows = []
+
+        for label, perf_paths in path_groups.items():
+            for perf_path in perf_paths:
+                prop = get_property_from_path(perf_path)
+                target_key = property_label_to_target_key.get(prop, prop.lower())
+
+                if target_key not in target_paths:
+                    print(f"Skipping {prop} / {label}: no target path for {target_key}")
+                    continue
+
+                if target_key not in target_columns:
+                    print(
+                        f"Skipping {prop} / {label}: no target column for {target_key}"
+                    )
+                    continue
+
+                pred_path = pred_path_from_perf_path(perf_path)
+
+                if not pred_path.exists():
+                    print(f"Skipping {prop} / {label}: missing {pred_path}")
+                    continue
+
+                target_col = target_columns[target_key]
+                target_df = pd.read_csv(target_paths[target_key], index_col=0)
+                target_df.index = target_df.index.astype(str)
+
+                if target_col not in target_df.columns:
+                    print(
+                        f"Skipping {prop} / {label}: {target_col} not in target file"
+                    )
+                    continue
+
+                true = pd.to_numeric(target_df[target_col], errors="coerce").dropna()
+                q1 = true.quantile(0.25)
+                q3 = true.quantile(0.75)
+                iqr = q3 - q1
+                lower = q1 - (iqr_multiplier * iqr)
+                upper = q3 + (iqr_multiplier * iqr)
+                keep_true = true.loc[true.between(lower, upper)].rename("true")
+
+                pred_df = pd.read_csv(pred_path, index_col=0)
+                pred_df.index = pred_df.index.astype(str)
+                pred_col = target_col if target_col in pred_df.columns else None
+
+                if pred_col is None:
+                    pred_cols = [
+                        col
+                        for col in pred_df.columns
+                        if col != "n_repeats_predicted"
+                    ]
+
+                    if not pred_cols:
+                        print(f"Skipping {prop} / {label}: no prediction column")
+                        continue
+
+                    pred_col = pred_cols[0]
+
+                pred = pd.to_numeric(pred_df[pred_col], errors="coerce").rename("pred")
+                eval_df = pd.concat([keep_true, pred], axis=1, join="inner").dropna()
+
+                if len(eval_df) < 2:
+                    print(f"Skipping {prop} / {label}: fewer than 2 rows after 3xIQR")
+                    continue
+
+                rows.append(
+                    {
+                        "property": prop,
+                        "feature_set": label,
+                        "metric": calculate_r2(eval_df),
+                        "n_before_3xIQR": int(true.index.intersection(pred.index).size),
+                        "n_after_3xIQR": int(len(eval_df)),
+                        "lower_3xIQR": lower,
+                        "upper_3xIQR": upper,
+                    }
+                )
+
+        plot_df = pd.DataFrame(
+            rows,
+            columns=[
+                "property",
+                "feature_set",
+                "metric",
+                "n_before_3xIQR",
+                "n_after_3xIQR",
+                "lower_3xIQR",
+                "upper_3xIQR",
+            ],
+        )
+
+        if plot_df.empty:
+            path_count_summary = ", ".join(
+                f"{label}: {len(paths)}" for label, paths in path_groups.items()
+            )
+            print(
+                "No 3xIQR RF performance rows found for grouped bar plot. "
+                f"path counts={{{path_count_summary}}}"
+            )
+            return plot_df, pd.DataFrame()
+
+        summary_df = plot_df.pivot_table(
+            index="property",
+            columns="feature_set",
+            values="metric",
+            aggfunc="first",
+        ).sort_index()
+
+        print(summary_df)
+        print("\nMissing paired 3xIQR results:")
+        print(summary_df[summary_df.isna().any(axis=1)])
+
+        property_order = summary_df.index.tolist()
+        hue_order = list(path_groups.keys())
+
+        save_path = Path(save_path)
+        save_path.parent.mkdir(parents=True, exist_ok=True)
+
+        plot_df.to_csv(save_path.with_suffix(".csv"), index=False)
+
+        plt.figure(figsize=(14, 6))
+        sns.barplot(
+            data=plot_df,
+            x="property",
+            y="metric",
+            hue="feature_set",
+            order=property_order,
+            hue_order=hue_order,
+        )
+
+        plt.ylim(0, 1)
+        plt.xlabel("Property")
+        plt.ylabel(y_label)
+        plt.title(title or " vs ".join(hue_order))
+        plt.xticks(rotation=45, ha="right")
+        plt.tight_layout()
+        plt.savefig(save_path, dpi=dpi, bbox_inches="tight")
+        plt.show()
+
+        print(f"Saved to: {save_path}")
+
+        return plot_df, summary_df
+
     def plotEmbeddingMordredScatterPlots(
         base_ls: list[str],
         base_plus_ls: list[str],
