@@ -361,6 +361,7 @@ if not iqr_external_df.empty:
 
 if ft_difference_rows:
     ft_difference_df = pd.concat(ft_difference_rows, ignore_index=True)
+    ft_difference_df = ft_difference_df.loc[~ft_difference_df["ft_feature"].str.contains("-random", na=False)].copy()
     ft_difference_df.to_csv(
         save_path / "ft_differences.csv",
         index=False,

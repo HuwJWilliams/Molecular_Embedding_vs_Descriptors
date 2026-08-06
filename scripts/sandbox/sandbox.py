@@ -3280,7 +3280,6 @@ if run_31:
             "PKA": "pka",
             "PKA_P1B": "pka_paper1_basic",
             "PKA_P1A": "pka_paper1_acidic",
-            "LD50": "ld50",
             "LOG_LD50": "log_ld50",
             "PIC50": "pic50",
             "HOLE_RE": "hole_re",
