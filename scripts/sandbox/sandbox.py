@@ -3234,6 +3234,276 @@ if run_31:
 
         return plot_df, summary_df
 
+    def plotEmbeddingMordredScatterPlots(
+        base_ls: list[str],
+        base_plus_ls: list[str],
+        base_label: str,
+        base_plus_label: str,
+        target_paths: dict[str, str | Path],
+        target_columns: dict[str, str],
+        save_dir: str | Path = "embedding_mordred_scatters",
+        target_iqr_multiplier: float | None = None,
+        show_plots: bool = False,
+        dpi: int = 400,
+    ):
+        from pathlib import Path
+
+        import pandas as pd
+        import seaborn as sns
+        import matplotlib.pyplot as plt
+
+        property_label_to_target_key = {
+            "BP": "bp",
+            "LOGD": "logd",
+            "PKA": "pka",
+            "PKA_P1B": "pka_paper1_basic",
+            "PKA_P1A": "pka_paper1_acidic",
+            "LD50": "ld50",
+            "LOG_LD50": "log_ld50",
+            "PIC50": "pic50",
+            "HOLE_RE": "hole_re",
+            "ELEC_RE": "elec_re",
+            "AQ_SOL": "aq_sol",
+            "HOMO_LUMO_GAP": "homo_lumo_gap",
+            "EGFR_PIC50": "egfr_pic50",
+        }
+
+        def get_property_from_path(path: str | Path) -> str:
+            path = Path(path)
+            pred_dir = next(
+                part for part in path.parts if part.endswith("_predictions_rf")
+            )
+            return pred_dir.replace("_predictions_rf", "")
+
+        def pred_path_from_perf_path(path: str | Path) -> Path:
+            return Path(path).parent / "last_20pct_pred.csv.gz"
+
+        def get_pred_series(path: str | Path, target_col: str, name: str) -> pd.Series:
+            pred_df = pd.read_csv(path, index_col=0)
+            pred_df.index = pred_df.index.astype(str)
+
+            pred_col = (
+                target_col if target_col in pred_df.columns else pred_df.columns[0]
+            )
+            return pd.to_numeric(pred_df[pred_col], errors="coerce").rename(name)
+
+        def calculate_metrics(df: pd.DataFrame, pred_col: str, target_col: str):
+            y_true = df[target_col]
+            y_pred = df[pred_col]
+            residual = y_pred - y_true
+            ss_total = ((y_true - y_true.mean()) ** 2).sum()
+
+            return {
+                "r2": 1 - (((y_true - y_pred) ** 2).sum() / ss_total)
+                if ss_total != 0
+                else float("nan"),
+                "pearson_r": y_true.corr(y_pred, method="pearson"),
+                "rmse": (residual.pow(2).mean()) ** 0.5,
+                "bias": residual.mean(),
+            }
+
+        def add_identity_line(ax, df: pd.DataFrame, cols: list[str]):
+            lim_min = df[cols].min().min()
+            lim_max = df[cols].max().max()
+            padding = (lim_max - lim_min) * 0.05
+
+            if pd.notna(padding) and padding > 0:
+                lim_min -= padding
+                lim_max += padding
+
+            ax.plot([lim_min, lim_max], [lim_min, lim_max], color="black", linewidth=1)
+            ax.set_xlim(lim_min, lim_max)
+            ax.set_ylim(lim_min, lim_max)
+
+        base_by_property = {get_property_from_path(p): p for p in base_ls}
+        base_plus_by_property = {get_property_from_path(p): p for p in base_plus_ls}
+        paired_properties = sorted(
+            set(base_by_property).intersection(base_plus_by_property)
+        )
+
+        save_dir = Path(save_dir)
+        save_dir.mkdir(parents=True, exist_ok=True)
+
+        summary_rows = []
+
+        for prop in paired_properties:
+            target_key = property_label_to_target_key.get(prop, prop.lower())
+
+            if target_key not in target_paths:
+                print(f"Skipping {prop}: no target path for {target_key}")
+                continue
+
+            if target_key not in target_columns:
+                print(f"Skipping {prop}: no target column for {target_key}")
+                continue
+
+            target_col = target_columns[target_key]
+            base_pred_path = pred_path_from_perf_path(base_by_property[prop])
+            base_plus_pred_path = pred_path_from_perf_path(base_plus_by_property[prop])
+
+            if not base_pred_path.exists():
+                print(f"Skipping {prop}: missing {base_pred_path}")
+                continue
+
+            if not base_plus_pred_path.exists():
+                print(f"Skipping {prop}: missing {base_plus_pred_path}")
+                continue
+
+            target_df = pd.read_csv(target_paths[target_key], index_col=0)
+            target_df.index = target_df.index.astype(str)
+
+            plot_df = (
+                target_df[[target_col]]
+                .join(
+                    get_pred_series(base_pred_path, target_col, "emb_pred"),
+                    how="inner",
+                )
+                .join(
+                    get_pred_series(
+                        base_plus_pred_path,
+                        target_col,
+                        "emb_plus_mordred_pred",
+                    ),
+                    how="inner",
+                )
+            )
+            plot_df = plot_df.apply(pd.to_numeric, errors="coerce").dropna()
+            n_before_trim = len(plot_df)
+
+            if target_iqr_multiplier is not None and not plot_df.empty:
+                q1 = plot_df[target_col].quantile(0.25)
+                q3 = plot_df[target_col].quantile(0.75)
+                iqr = q3 - q1
+                lower = q1 - (target_iqr_multiplier * iqr)
+                upper = q3 + (target_iqr_multiplier * iqr)
+                plot_df = plot_df.loc[plot_df[target_col].between(lower, upper)].copy()
+
+            if plot_df.empty:
+                print(f"Skipping {prop}: no common numeric rows after filtering")
+                continue
+
+            pred_corr = plot_df["emb_pred"].corr(
+                plot_df["emb_plus_mordred_pred"],
+                method="pearson",
+            )
+            pred_delta = plot_df["emb_plus_mordred_pred"] - plot_df["emb_pred"]
+            target_metrics = calculate_metrics(
+                df=plot_df,
+                pred_col="emb_plus_mordred_pred",
+                target_col=target_col,
+            )
+
+            summary_rows.append(
+                {
+                    "property": prop,
+                    "target_key": target_key,
+                    "target_col": target_col,
+                    "n_before_trim": n_before_trim,
+                    "n": len(plot_df),
+                    "emb_vs_emb_plus_mordred_pearson_r": pred_corr,
+                    "mean_prediction_delta": pred_delta.mean(),
+                    "mean_abs_prediction_delta": pred_delta.abs().mean(),
+                    **{
+                        f"emb_plus_mordred_vs_target_{k}": v
+                        for k, v in target_metrics.items()
+                    },
+                }
+            )
+
+            fig, ax = plt.subplots(figsize=(6.5, 6))
+            sns.scatterplot(
+                data=plot_df,
+                x="emb_pred",
+                y="emb_plus_mordred_pred",
+                s=34,
+                alpha=0.7,
+                edgecolor="black",
+                linewidth=0.3,
+                ax=ax,
+            )
+            add_identity_line(ax, plot_df, ["emb_pred", "emb_plus_mordred_pred"])
+            ax.text(
+                0.03,
+                0.97,
+                (
+                    f"n = {len(plot_df)}\n"
+                    f"Pearson r = {pred_corr:.3f}\n"
+                    f"Mean delta = {pred_delta.mean():.3f}\n"
+                    f"Mean abs delta = {pred_delta.abs().mean():.3f}"
+                ),
+                transform=ax.transAxes,
+                ha="left",
+                va="top",
+                fontsize=10,
+                bbox=dict(facecolor="white", edgecolor="black", alpha=0.85),
+            )
+            ax.set_xlabel(base_label)
+            ax.set_ylabel(base_plus_label)
+            ax.set_title(f"{prop}: {base_label} vs {base_plus_label}")
+            plt.tight_layout()
+            plt.savefig(
+                save_dir / f"{prop}_emb_vs_emb_plus_mordred_scatter.png",
+                dpi=dpi,
+                bbox_inches="tight",
+            )
+            if show_plots:
+                plt.show()
+            else:
+                plt.close(fig)
+
+            fig, ax = plt.subplots(figsize=(6.5, 6))
+            sns.scatterplot(
+                data=plot_df,
+                x=target_col,
+                y="emb_plus_mordred_pred",
+                s=34,
+                alpha=0.7,
+                edgecolor="black",
+                linewidth=0.3,
+                ax=ax,
+            )
+            add_identity_line(ax, plot_df, [target_col, "emb_plus_mordred_pred"])
+            ax.text(
+                0.03,
+                0.97,
+                (
+                    f"n = {len(plot_df)}\n"
+                    f"R2 = {target_metrics['r2']:.3f}\n"
+                    f"Pearson r = {target_metrics['pearson_r']:.3f}\n"
+                    f"RMSE = {target_metrics['rmse']:.3f}\n"
+                    f"Bias = {target_metrics['bias']:.3f}"
+                ),
+                transform=ax.transAxes,
+                ha="left",
+                va="top",
+                fontsize=10,
+                bbox=dict(facecolor="white", edgecolor="black", alpha=0.85),
+            )
+            ax.set_xlabel(f"Target {target_col}")
+            ax.set_ylabel(base_plus_label)
+            ax.set_title(f"{prop}: {base_plus_label} vs target")
+            plt.tight_layout()
+            plt.savefig(
+                save_dir / f"{prop}_emb_plus_mordred_vs_target_scatter.png",
+                dpi=dpi,
+                bbox_inches="tight",
+            )
+            if show_plots:
+                plt.show()
+            else:
+                plt.close(fig)
+
+        summary_df = pd.DataFrame(summary_rows)
+
+        if not summary_df.empty:
+            summary_df.to_csv(
+                save_dir / "embedding_mordred_scatter_summary.csv",
+                index=False,
+            )
+
+        print(f"Saved scatter plots to: {save_dir}")
+        return summary_df
+
     base_feature = "ft-molformer-c3-1b"
 
     base_ls = glob(
@@ -3257,6 +3527,35 @@ if run_31:
         ),
         y_label="External R2",
         title="ft-molformer-c3-1b vs ft-molformer-c3-1b + Mordred",
+    )
+
+    target_columns = {
+        "bp": "Boiling_Point",
+        "logd": "LogD",
+        "pka": "pKa",
+        "pka_paper1_basic": "pKa",
+        "pka_paper1_acidic": "pKa",
+        "ld50": "LD50",
+        "log_ld50": "LOG_LD50",
+        "pic50": "pIC50",
+        "hole_re": "Hole_Reorganisation_Energy",
+        "elec_re": "Electron_Reorganisation_Energy",
+        "aq_sol": "Solubility",
+        "homo_lumo_gap": "homolumogap",
+        "egfr_pic50": "pIC50",
+    }
+
+    plotEmbeddingMordredScatterPlots(
+        base_ls=base_ls,
+        base_plus_ls=base_plus_mordred_ls,
+        base_label="ft-molformer-c3-1b",
+        base_plus_label="ft-molformer-c3-1b + Mordred",
+        target_paths=paths["targets"],
+        target_columns=target_columns,
+        save_dir=(
+            "/users/yhb18174/TL_project/results/pp_analysis/"
+            "ft_molformer_c3_1b_mordred_scatters"
+        ),
     )
 
 
