@@ -66,6 +66,7 @@ full_performance_dict = {}
 save_path = Path(args.save_dir)
 save_path.mkdir(parents=True, exist_ok=True)
 feature_sets = args.feature_sets
+feature_sets = [feature for feature in feature_sets if "-random-" not in feature]
 
 colour_map = getFeatureColourConfig(feature_ls=feature_sets, colour_map=v.colour_map)
 
@@ -361,7 +362,6 @@ if not iqr_external_df.empty:
 
 if ft_difference_rows:
     ft_difference_df = pd.concat(ft_difference_rows, ignore_index=True)
-    ft_difference_df = ft_difference_df.loc[~ft_difference_df["ft_feature"].str.contains("-random", na=False)].copy()
     ft_difference_df.to_csv(
         save_path / "ft_differences.csv",
         index=False,
