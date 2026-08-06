@@ -3146,6 +3146,7 @@ if run_31:
         base_plus_ls: list[str],
         base_label: str,
         base_plus_label: str,
+        extra_path_groups: dict[str, list[str]] | None = None,
         metric_path: tuple[str, str, str] = ("external", "mean", "r2"),
         save_path: str | Path = "grouped_rf_performance_bar.png",
         y_label: str = "External R2",
@@ -3173,10 +3174,14 @@ if run_31:
 
         rows = []
 
-        for label, paths in {
-            base_label: base_ls,
-            base_plus_label: base_plus_ls,
-        }.items():
+        path_groups = {base_label: base_ls}
+
+        if extra_path_groups is not None:
+            path_groups.update(extra_path_groups)
+
+        path_groups[base_plus_label] = base_plus_ls
+
+        for label, paths in path_groups.items():
             for p in paths:
                 p = Path(p)
                 prop = get_property_from_path(p)
@@ -3204,9 +3209,12 @@ if run_31:
         )
 
         if plot_df.empty:
+            path_count_summary = ", ".join(
+                f"{label}: {len(paths)}" for label, paths in path_groups.items()
+            )
             print(
                 "No RF performance rows found for grouped bar plot. "
-                f"base_ls={len(base_ls)}, base_plus_ls={len(base_plus_ls)}"
+                f"path counts={{{path_count_summary}}}"
             )
             return plot_df, pd.DataFrame()
 
@@ -3222,7 +3230,7 @@ if run_31:
         print(summary_df[summary_df.isna().any(axis=1)])
 
         property_order = summary_df.index.tolist()
-        hue_order = [base_label, base_plus_label]
+        hue_order = list(path_groups.keys())
 
         save_path = Path(save_path)
         save_path.parent.mkdir(parents=True, exist_ok=True)
@@ -3240,7 +3248,7 @@ if run_31:
         plt.ylim(0, 1)
         plt.xlabel("Property")
         plt.ylabel(y_label)
-        plt.title(title or f"{base_label} vs {base_plus_label}")
+        plt.title(title or " vs ".join(hue_order))
         plt.xticks(rotation=45, ha="right")
         plt.tight_layout()
         plt.savefig(save_path, dpi=400, bbox_inches="tight")
@@ -3534,17 +3542,23 @@ if run_31:
         f"{base_feature}/additional_features/mordred/rf_performance.json"
     )
 
+    mordred_ls = glob(
+        "/users/yhb18174/TL_project/results/*_predictions_rf/"
+        "mordred/rf_performance.json"
+    )
+
     plotGroupedRFPerformanceBar(
         base_ls=base_ls,
         base_plus_ls=base_plus_mordred_ls,
-        base_label="ft-molformer-c3-1b",
-        base_plus_label="ft-molformer-c3-1b + Mordred",
+        base_label="Embedding",
+        base_plus_label="Embedding + Mordred",
+        extra_path_groups={"Mordred": mordred_ls},
         save_path=(
             "/users/yhb18174/TL_project/results/pp_analysis/"
             "ft_molformer_c3_1b_mordred_grouped_bar.png"
         ),
         y_label="External R2",
-        title="ft-molformer-c3-1b vs ft-molformer-c3-1b + Mordred",
+        title="Embedding vs Mordred vs Embedding + Mordred",
     )
 
     target_columns = {
@@ -3564,8 +3578,8 @@ if run_31:
     plotEmbeddingMordredScatterPlots(
         base_ls=base_ls,
         base_plus_ls=base_plus_mordred_ls,
-        base_label="ft-molformer-c3-1b",
-        base_plus_label="ft-molformer-c3-1b + Mordred",
+        base_label="Embedding",
+        base_plus_label="Embedding + Mordred",
         target_paths=paths["targets"],
         target_columns=target_columns,
         save_dir=(
