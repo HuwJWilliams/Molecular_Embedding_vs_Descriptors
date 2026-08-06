@@ -3475,13 +3475,11 @@ if run_31:
             "PKA": "pka",
             "PKA_P1B": "pka_paper1_basic",
             "PKA_P1A": "pka_paper1_acidic",
-            "LD50": "ld50",
             "LOG_LD50": "log_ld50",
             "PIC50": "pic50",
             "HOLE_RE": "hole_re",
             "ELEC_RE": "elec_re",
             "AQ_SOL": "aq_sol",
-            "HOMO_LUMO_GAP": "homo_lumo_gap",
             "EGFR_PIC50": "egfr_pic50",
         }
 
@@ -3760,13 +3758,31 @@ if run_31:
         "pka": "pKa",
         "pka_paper1_basic": "pKa",
         "pka_paper1_acidic": "pKa",
+        "ld50": "LD50",
         "log_ld50": "LOG_LD50",
         "pic50": "pIC50",
         "hole_re": "Hole_Reorganisation_Energy",
         "elec_re": "Electron_Reorganisation_Energy",
         "aq_sol": "Solubility",
+        "homo_lumo_gap": "homolumogap",
         "egfr_pic50": "pIC50",
     }
+
+    plotGroupedRFPerformance3IQRBar(
+        path_groups={
+            "Embedding": base_ls,
+            "Mordred": mordred_ls,
+            "Embedding + Mordred": base_plus_mordred_ls,
+        },
+        target_paths=paths["targets"],
+        target_columns=target_columns,
+        save_path=(
+            "/users/yhb18174/TL_project/results/pp_analysis/"
+            "ft_molformer_c3_1b_mordred_3xIQR_grouped_bar.png"
+        ),
+        y_label="External 3xIQR R2",
+        title="Embedding vs Mordred vs Embedding + Mordred, 3xIQR",
+    )
 
     plotEmbeddingMordredScatterPlots(
         base_ls=base_ls,
@@ -3779,6 +3795,7 @@ if run_31:
             "/users/yhb18174/TL_project/results/pp_analysis/"
             "ft_molformer_c3_1b_mordred_scatters"
         ),
+        target_iqr_multiplier=3,
     )
 
 
