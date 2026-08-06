@@ -3568,6 +3568,10 @@ if run_31:
 
             target_df = pd.read_csv(target_paths[target_key], index_col=0)
             target_df.index = target_df.index.astype(str)
+            true_for_bounds = pd.to_numeric(
+                target_df[target_col],
+                errors="coerce",
+            ).dropna()
 
             plot_df = (
                 target_df[[target_col]]
@@ -3588,8 +3592,8 @@ if run_31:
             n_before_trim = len(plot_df)
 
             if target_iqr_multiplier is not None and not plot_df.empty:
-                q1 = plot_df[target_col].quantile(0.25)
-                q3 = plot_df[target_col].quantile(0.75)
+                q1 = true_for_bounds.quantile(0.25)
+                q3 = true_for_bounds.quantile(0.75)
                 iqr = q3 - q1
                 lower = q1 - (target_iqr_multiplier * iqr)
                 upper = q3 + (target_iqr_multiplier * iqr)
