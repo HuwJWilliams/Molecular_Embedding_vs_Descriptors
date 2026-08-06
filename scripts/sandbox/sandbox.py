@@ -3138,7 +3138,7 @@ if run_30:
     print(corrs.sort_values(ascending=False))
     print(f"Average SLogP-group correlation: {avg_corr}")
 
-run_31 = True
+run_31 = False
 if run_31:
 
     def plotGroupedRFPerformanceBar(
