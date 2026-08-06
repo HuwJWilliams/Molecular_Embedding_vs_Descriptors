@@ -3522,14 +3522,16 @@ if run_31:
         print(f"Saved scatter plots to: {save_dir}")
         return summary_df
 
-    base_feature = "ft-molformer-c3-1b"
+    base_feature = "ft-scaffold-molformer-c3-1b"
 
     base_ls = glob(
-        f"/users/yhb18174/TL_project/results/*_predictions_rf/rf_performance.json"
+        f"/users/yhb18174/TL_project/results/*_predictions_rf/"
+        f"{base_feature}/rf_performance.json"
     )
 
     base_plus_mordred_ls = glob(
-        f"/users/yhb18174/TL_project/results/*_predictions_rf/additional_features/mordred/rf_performance.json"
+        f"/users/yhb18174/TL_project/results/*_predictions_rf/"
+        f"{base_feature}/additional_features/mordred/rf_performance.json"
     )
 
     plotGroupedRFPerformanceBar(
@@ -3551,7 +3553,6 @@ if run_31:
         "pka": "pKa",
         "pka_paper1_basic": "pKa",
         "pka_paper1_acidic": "pKa",
-        "ld50": "LD50",
         "log_ld50": "LOG_LD50",
         "pic50": "pIC50",
         "hole_re": "Hole_Reorganisation_Energy",
