@@ -167,6 +167,35 @@ def getMetricColumn(metric: str, data: pd.DataFrame) -> str | None:
     return None
 
 
+def getFeatureStyleFromConfig(
+    colour_map: dict | None,
+    feature: str,
+    fallback_feature: str | None = None,
+    default: str = "#808080",
+) -> tuple[str, str | None]:
+    if colour_map is None:
+        return default, "//" if feature.startswith("ft-") else None
+
+    style = colour_map.get(feature)
+
+    if style is None and fallback_feature is not None:
+        style = colour_map.get(fallback_feature)
+
+    if style is None:
+        return default, "//" if feature.startswith("ft-") else None
+
+    if isinstance(style, tuple):
+        colour, hatch = style
+        return colour, hatch
+
+    if isinstance(style, dict):
+        colour = style.get("colour", default)
+        hatch = style.get("hatch")
+        return colour, hatch
+
+    return style, "//" if feature.startswith("ft-") else None
+
+
 def getFTDifferenceDf(
     data: pd.DataFrame,
     prop: str,
@@ -243,14 +272,19 @@ def plotFTDifferenceBar(
         return diff_df
 
     diff_df = diff_df.sort_values("difference", ascending=False)
-    bar_colours = [
-        (
-            colour_map.get(row["base_feature"], "#808080")
-            if not isinstance(colour_map.get(row["base_feature"]), tuple)
-            else colour_map[row["base_feature"]][0]
+    feature_pair_order = diff_df["feature_pair"].tolist()
+    feature_pair_styles = {
+        row["feature_pair"]: getFeatureStyleFromConfig(
+            colour_map=colour_map,
+            feature=row["ft_feature"],
+            fallback_feature=row["base_feature"],
         )
         for _, row in diff_df.iterrows()
-    ]
+    }
+    feature_pair_palette = {
+        feature_pair: feature_pair_styles[feature_pair][0]
+        for feature_pair in feature_pair_order
+    }
 
     plot_dir = save_path / prop / split_name / "ft_differences"
     plot_dir.mkdir(parents=True, exist_ok=True)
@@ -261,10 +295,19 @@ def plotFTDifferenceBar(
         x="feature_pair",
         y="difference",
         hue="feature_pair",
-        order=diff_df["feature_pair"].tolist(),
-        palette=bar_colours,
+        order=feature_pair_order,
+        hue_order=feature_pair_order,
+        palette=feature_pair_palette,
         legend=False,
     )
+    for container, feature_pair in zip(ax.containers, feature_pair_order):
+        hatch = feature_pair_styles[feature_pair][1]
+        if hatch:
+            for bar in container:
+                bar.set_hatch(hatch)
+                bar.set_edgecolor("black")
+                bar.set_linewidth(0.8)
+
     ax.axhline(0, color="black", linewidth=1)
     ax.tick_params(axis="x", labelrotation=45, labelsize=10)
     plt.yticks(fontsize=10)
@@ -515,6 +558,7 @@ def plotFTDifferenceSummaryBars(
     ft_difference_df: pd.DataFrame,
     save_path: Path,
     metrics: list[str] | None = None,
+    colour_map: dict | None = None,
     dpi: int = 400,
 ) -> None:
     if ft_difference_df.empty:
@@ -548,6 +592,18 @@ def plotFTDifferenceSummaryBars(
 
             property_order = metric_df["property"].drop_duplicates().tolist()
             feature_pair_order = metric_df["feature_pair"].drop_duplicates().tolist()
+            feature_pair_styles = {
+                row["feature_pair"]: getFeatureStyleFromConfig(
+                    colour_map=colour_map,
+                    feature=row["ft_feature"],
+                    fallback_feature=row["base_feature"],
+                )
+                for _, row in metric_df.drop_duplicates("feature_pair").iterrows()
+            }
+            feature_pair_palette = {
+                feature_pair: feature_pair_styles[feature_pair][0]
+                for feature_pair in feature_pair_order
+            }
 
             plt.figure(figsize=(max(14, 0.9 * len(property_order)), 7))
             ax = sns.barplot(
@@ -557,8 +613,17 @@ def plotFTDifferenceSummaryBars(
                 hue="feature_pair",
                 order=property_order,
                 hue_order=feature_pair_order,
+                palette=feature_pair_palette,
                 errorbar=None,
             )
+            for container, feature_pair in zip(ax.containers, feature_pair_order):
+                hatch = feature_pair_styles[feature_pair][1]
+                if hatch:
+                    for bar in container:
+                        bar.set_hatch(hatch)
+                        bar.set_edgecolor("black")
+                        bar.set_linewidth(0.8)
+
             ax.axhline(0, color="black", linewidth=1)
             ax.set_xlabel("property", fontsize=12, weight="bold")
             ax.set_ylabel(f"ft - base {metric}", fontsize=12, weight="bold")

@@ -369,4 +369,5 @@ if ft_difference_rows:
         ft_difference_df=ft_difference_df,
         save_path=save_path,
         metrics=summary_metrics,
+        colour_map=colour_map,
     )
