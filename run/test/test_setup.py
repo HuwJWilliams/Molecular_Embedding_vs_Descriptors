@@ -29,5 +29,5 @@ addNewDatasetPaths(
     target_file="dummy_data.csv",
     dataset_prefix="TEST",
     dataset_folder_name="test",
-    json_path=test_json_name,
+    json_name=test_json_name,
 )
