@@ -14,3 +14,5 @@ results_pre_3D/
 *.gz*
 .codex
 sandbox/
+!test/
+!test/**
