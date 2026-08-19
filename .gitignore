@@ -1,18 +1,28 @@
+# Output directories
 results/
 results_pre_3D/
+
+# Local/tooling directories
+.codex
+sandbox/
+*/__pycache__/
+
+# Generated data and artifacts
 *.pkl
 *.csv
-*.out
-*.log
-*.key
-*.sh
-*/__pycache/*
+*.gz*
 *.zip
 *.xml
 *.png
 *.json
-*.gz*
-.codex
-sandbox/
+
+# Logs, keys, and shell/job outputs
+*.out
+*.log
+*.key
+*.sh
+
+# Keep committed test fixtures, even when they match ignored artifact patterns
 !test/
 !test/**
+!test/**/*
