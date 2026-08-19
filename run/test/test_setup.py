@@ -13,6 +13,7 @@ RUN_DIR = ROOT / "run"
 SCRIPTS_DIR = ROOT / "scripts"
 SRC_DIR = SCRIPTS_DIR / "src"
 DATASET_DIR = ROOT / "datasets"
+EXPECTED_DATA = RUN_DIR / "test" / "expected_test_results"
 
 FEATURES = [
     "rdkit",
@@ -38,12 +39,22 @@ from get_paths import (
 # %% ========== PATHING JSON SETUP TESTING
 TEST_JSON_NAME = "test.json"
 TEST_JSON_PATH = SRC_DIR / "pathing" / TEST_JSON_NAME
-EXPECTED_PATHING_PATH = (
-    RUN_DIR / "test" / "expected_test_results" / "expected_pathing.json"
-)
+EXPECTED_PATHING_PATH = EXPECTED_DATA / "expected_pathing.json"
 EXPECTED_FEATURE_PATHS = {
-    "rdkit": RUN_DIR / "test" / "expected_test_results" / "expected_rdkit_features.csv",
+    "rdkit": EXPECTED_DATA / "expected_rdkit_features.csv",
 }
+
+EXPECTED_INT_PERFORMANCE = EXPECTED_DATA / "expected_int_perf.json"
+
+
+def assert_performance_close(actual_perf, expected_perf, rel=1e-2, abs=1e-2):
+    for metric, expected_value in expected_perf.items():
+        assert metric in actual_perf
+        assert actual_perf[metric] == pytest.approx(
+            expected_value,
+            rel=rel,
+            abs=abs,
+        )
 
 
 @pytest.fixture
@@ -171,4 +182,6 @@ def test_single_property_prediction():
     assert final_model is not None
     assert isinstance(best_params, dict)
     assert isinstance(internal_perf, dict)
+    expected_int_perf = loadJSON(EXPECTED_INT_PERFORMANCE)
+    assert_performance_close(internal_perf, expected_int_perf)
     assert not feat_importance.empty
