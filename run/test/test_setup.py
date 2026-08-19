@@ -7,7 +7,7 @@ import sys
 import importlib
 
 # %% ==== Pathing
-ROOT = Path(__file__).resolve.parents[2]
+ROOT = Path(__file__).resolve().parents[2]
 RUN_DIR = ROOT / "run"
 SCRIPTS_DIR = ROOT / "scripts"
 SRC_DIR = SCRIPTS_DIR / "src"
