@@ -121,7 +121,7 @@ from feature_cleaning import cleanFeatureDF
 
 
 def test_single_property_prediction():
-    X = pd.read_csv(EXPECTED_FEATURE_PATHS["rdkit"])
+    X = pd.read_csv(EXPECTED_FEATURE_PATHS["rdkit"], index_col="ID")
     clean_X, cleaning_report = cleanFeatureDF(X)
 
     y = pd.read_csv(str(DATASET_DIR / "test" / "dummy_data.csv"), index_col="ID")
