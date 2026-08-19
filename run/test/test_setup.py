@@ -48,7 +48,7 @@ expected_json = {
         "results_dir": "${RESULTS_DIR}",
     },
     "train_test_splits": {},
-    "raw_data": {"test": str(RUN_DIR / "test" / "dummy_data.csv")},
+    "raw_data": {"test": "${DATASETS_DIR}/test/dummy_data.csv"},
     "targets": {"test": "${DATASETS_DIR}/test/dummy_data.csv"},
     "full_features": {"test": {"rdkit": "${DATASETS_DIR}/test/test_rdkit.csv"}},
     "prediction_output_dirs": {
