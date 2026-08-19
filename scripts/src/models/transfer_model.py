@@ -140,7 +140,7 @@ class TL:
         save_feat_imp: bool = False,
         min_training_samples: int = 2500,
         min_samples_per_class: int = 20,
-        n_jobs: int=None
+        n_jobs: int | None = None,
     ) -> pd.DataFrame:
         """
         Train Random Forest models for multiple target columns using logging.
@@ -157,8 +157,9 @@ class TL:
         )
         completed_targets = set()
 
-        # Cache n_jobs once
-n_jobs = n_jobs if n_jobs is not None else os.cpu_count()
+        # Cache n_jobs once so every target uses the same parallelism setting.
+        n_jobs = n_jobs if n_jobs is not None else os.cpu_count()
+
         self.logger.debug(f"Existing performance CSV path: {existing_performance_csv}")
 
         # Load existing performance CSV
