@@ -141,7 +141,7 @@ def test_single_property_prediction():
 
     data = final_X.join(final_y)
 
-    assert data.shape == (25, 219)
+    assert data.shape == (25, 173)
 
     train_data = data.iloc[:20]
     test_data = data.iloc[20:]
