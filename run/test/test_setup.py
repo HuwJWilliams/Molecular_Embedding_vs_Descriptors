@@ -1,5 +1,9 @@
 """Script to run tests to check the full workflow"""
 
+pytestmark = [
+    pytest.mark.filterwarnings("ignore:.*least populated class.*:UserWarning"),
+]
+
 # %% ===== Imports
 import math
 import shutil
