@@ -245,3 +245,41 @@ def test_single_property_prediction(created_paths):
 
     preds_path = MODEL_OUTPUT_DIR / "preds.csv.gz"
     assert preds_path.exists()
+
+
+# %% ========== CROSS FEATURE PREDICTION TESTING
+def test_cross_feature_prediction(created_paths):
+    output_dir = RUN_DIR / "test" / "test_cfp_model"
+    shutil.rmtree(output_dir, ignore_errors=True)
+    created_paths.append(output_dir)
+
+    train_ft = pd.read_csv(EXPECTED_FEATURE_PATHS["rdkit"], index_col="ID")
+    test_ft = pd.read_csv(EXPECTED_FEATURE_PATHS["maccs"], index_col="ID")
+
+    model = TL()
+
+    perf_df = model.trainMultiTargetRFModels(
+        features_df=train_ft,
+        targets_df=test_ft,
+        hyper_params={
+            "n_estimators": [5],
+            "max_features": ["sqrt"],
+            "max_depth": [5],
+            "min_samples_split": [2],
+            "min_samples_leaf": [1],
+        },
+        output_csv="cfp_test.csv",
+        n_resamples=1,
+        test_size=0.3,
+        cv_splits=2,
+        random_seed=42,
+        save_models=False,
+        save_path=output_dir,
+        trim_by_percentile=False,
+        min_training_samples=10,
+    )
+
+    assert isinstance(perf_df, pd.DataFrame)
+    assert not perf_df.empty
+
+    assert (output_dir / "cfp_test.csv").exists()
