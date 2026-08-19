@@ -16,14 +16,14 @@ DATASET_DIR = ROOT / "datasets"
 
 FEATURES = [
     "rdkit",
-    # "mordred",
-    # "maccs",
-    # "morgan",
-    # "chemberta-dc",
-    # "chemberta-sey",
-    # "molformer-ibm",
-    # "molformer-dc",
-    # "selformer",
+    "mordred",
+    "maccs",
+    "morgan",
+    "chemberta-dc",
+    "chemberta-sey",
+    "molformer-ibm",
+    "molformer-dc",
+    "selformer",
 ]
 
 sys.path.insert(0, str(SRC_DIR / "pathing"))
@@ -42,10 +42,7 @@ EXPECTED_PATHING_PATH = (
     RUN_DIR / "test" / "expected_test_results" / "expected_pathing.json"
 )
 EXPECTED_FEATURE_PATHS = {
-    "rdkit": RUN_DIR
-    / "test"
-    / "expected_test_results"
-    / "expected_rdkit_features.csv",
+    "rdkit": RUN_DIR / "test" / "expected_test_results" / "expected_rdkit_features.csv",
 }
 
 
@@ -81,7 +78,7 @@ def test_setup_creates_expected_pathing_json(clean_test_json):
 
 # %% ========== FEATURE GENERATION TESTING
 sys.path.insert(0, str(SRC_DIR / "datasets"))
-FULL_TEST_PATHING = getPaths(TEST_JSON_PATH)
+FULL_TEST_PATHING = getPaths(EXPECTED_PATHING_PATH)
 
 from feature_generator import FeatureGenerator
 
