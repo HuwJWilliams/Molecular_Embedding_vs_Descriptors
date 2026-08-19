@@ -20,7 +20,7 @@ EXPECTED_DATA = RUN_DIR / "test" / "expected_test_results"
 FEATURES = [
     "rdkit",
     # "mordred",
-    # "maccs",
+    "maccs",
     # "morgan",
     # "chemberta-dc",
     # "chemberta-sey",
