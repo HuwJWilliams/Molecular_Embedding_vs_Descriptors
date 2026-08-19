@@ -45,6 +45,7 @@ TEST_JSON_PATH = SRC_DIR / "pathing" / TEST_JSON_NAME
 EXPECTED_PATHING_PATH = EXPECTED_DATA / "expected_pathing.json"
 EXPECTED_FEATURE_PATHS = {
     "rdkit": EXPECTED_DATA / "expected_rdkit_features.csv",
+    "maccs": EXPECTED_DATA / "expected_maccs_features.csv",
 }
 
 EXPECTED_INT_PERFORMANCE = EXPECTED_DATA / "expected_int_perf.json"
