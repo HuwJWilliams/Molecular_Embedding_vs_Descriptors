@@ -136,47 +136,49 @@ def addNewDatasetPaths(
     target_file: str,
     dataset_prefix: str,
     dataset_folder_name: str,
+    feature_sets: list[str],
     json_name: str = "paths.json",
 ):
-    json_contents = loadJSON(FILE_DIR / json_name)
+    json_path = FILE_DIR / json_name
+    json_contents = loadJSON(json_path)
+
     dataset_key = dataset_key.lower()
     dataset_prefix = dataset_prefix.strip()
+    dataset_dir = f"${{DATASETS_DIR}}/{dataset_folder_name}"
 
     # targets
-    json_contents["targets"][
-        dataset_key
-    ] = f"${{DATASETS_DIR}}/{dataset_folder_name}/{target_file}"
+    json_contents["targets"][dataset_key] = f"{dataset_dir}/{target_file}"
 
     # full_features
     json_contents["full_features"][dataset_key] = {}
-    template_full = json_contents["full_features"]["bp"]
-
-    dataset_dir = f"${{DATASETS_DIR}}/{dataset_folder_name}"
-    for feature in template_full:
+    for feature in feature_sets:
         json_contents["full_features"][dataset_key][
             feature
         ] = f"{dataset_dir}/{dataset_key}_{feature}.csv"
 
-    # prediction_output_dirs rf/lr
+    # prediction_output_dirs rf
     result_prefix = dataset_prefix.upper()
 
-    for model in ["rf"]:
-        json_contents["prediction_output_dirs"][model][dataset_key] = {}
+    json_contents["prediction_output_dirs"].setdefault("rf", {})
+    json_contents["prediction_output_dirs"]["rf"][dataset_key] = {}
 
-        for feature in template_full.keys():
-            json_contents["prediction_output_dirs"][model][dataset_key][
-                feature
-            ] = f"${{RESULTS_DIR}}/{result_prefix}_predictions_{model}/{feature}"
+    for feature in feature_sets:
+        json_contents["prediction_output_dirs"]["rf"][dataset_key][
+            feature
+        ] = f"${{RESULTS_DIR}}/{result_prefix}_predictions_rf/{feature}"
 
+    # cross-feature prediction paths
     existing_features = list(
-        json_contents["dataset_analysis"]["descriptor_analysis"].keys()
+        json_contents.get("dataset_analysis", {}).get("descriptor_analysis", {}).keys()
     )
+
     identifiers = [
         f"pred_{target_feature}_tr_{train_feature}"
         for train_feature in existing_features
         for target_feature in existing_features
         if train_feature != target_feature
     ]
+
     _add_dataset_cross_prediction_paths(
         prediction_output_dirs=json_contents["prediction_output_dirs"],
         dataset_key=dataset_key,
