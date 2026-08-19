@@ -254,14 +254,19 @@ def test_cross_feature_prediction(created_paths):
     created_paths.append(output_dir)
 
     train_ft = pd.read_csv(EXPECTED_FEATURE_PATHS["rdkit"], index_col="ID")
-    test_ft = pd.read_csv(EXPECTED_FEATURE_PATHS["maccs"], index_col="ID")
+    train_ft = train_ft.drop(columns=["SMILES"], errors="ignore")
+    train_ft = train_ft.select_dtypes(include="number")
 
+    test_ft = pd.read_csv(EXPECTED_FEATURE_PATHS["maccs"], index_col="ID")
     maccs_cols = [
         col
         for col in test_ft.columns
         if col.endswith("_maccs") and test_ft[col].nunique(dropna=True) > 1
     ]
     test_ft = test_ft[maccs_cols[:5]]
+
+    assert train_ft.shape[1] > 0
+    assert test_ft.shape[1] == 5
 
     assert test_ft.shape[1] == 5
 
