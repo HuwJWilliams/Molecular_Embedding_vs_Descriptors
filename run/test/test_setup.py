@@ -45,6 +45,7 @@ EXPECTED_FEATURE_PATHS = {
 }
 
 EXPECTED_INT_PERFORMANCE = EXPECTED_DATA / "expected_int_perf.json"
+EXPECTED_EXT_PERFORMANCE = EXPECTED_DATA / "expected_ext_perf.json"
 
 
 def assert_performance_close(actual_perf, expected_perf, rel=1e-2, abs=1e-2):
@@ -194,3 +195,5 @@ def test_single_property_prediction():
         save_preds=True,
         save_path=RUN_DIR / "test" / "test_model",
     )
+    expected_ext_perf = loadJSON(EXPECTED_EXT_PERFORMANCE)
+    assert_performance_close(external_perf, expected_ext_perf)
