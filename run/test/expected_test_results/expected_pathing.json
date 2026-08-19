@@ -1,0 +1,20 @@
+{
+    "imp_dirs": {
+        "proj_dir": "${PROJ_DIR}",
+        "scripts_dir": "${SCRIPTS_DIR}",
+        "src_dir": "${SRC_DIR}",
+        "datasets_dir": "${DATASETS_DIR}",
+        "results_dir": "${RESULTS_DIR}"
+    },
+    "train_test_splits": {},
+    "raw_data": {"test": "${DATASETS_DIR}/test/dummy_data.csv"},
+    "targets": {"test": "${DATASETS_DIR}/test/dummy_data.csv"},
+    "full_features": {"test": {"rdkit": "${DATASETS_DIR}/test/test_rdkit.csv"}},
+    "prediction_output_dirs": {
+        "rf": {"test": {"rdkit": "${RESULTS_DIR}/TEST_predictions_rf/rdkit"}},
+        "cross_feature_predictions": {"test": {}},
+        "lipinski_cross_feature_predictions": {"test": {}}
+    },
+    "dataset_analysis": {},
+    "config": {}
+}

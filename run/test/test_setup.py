@@ -38,26 +38,14 @@ from get_paths import (
 # %% ========== PATHING JSON SETUP TESTING
 TEST_JSON_NAME = "test.json"
 TEST_JSON_PATH = SRC_DIR / "pathing" / TEST_JSON_NAME
-
-expected_json = {
-    "imp_dirs": {
-        "proj_dir": "${PROJ_DIR}",
-        "scripts_dir": "${SCRIPTS_DIR}",
-        "src_dir": "${SRC_DIR}",
-        "datasets_dir": "${DATASETS_DIR}",
-        "results_dir": "${RESULTS_DIR}",
-    },
-    "train_test_splits": {},
-    "raw_data": {"test": "${DATASETS_DIR}/test/dummy_data.csv"},
-    "targets": {"test": "${DATASETS_DIR}/test/dummy_data.csv"},
-    "full_features": {"test": {"rdkit": "${DATASETS_DIR}/test/test_rdkit.csv"}},
-    "prediction_output_dirs": {
-        "rf": {"test": {"rdkit": "${RESULTS_DIR}/TEST_predictions_rf/rdkit"}},
-        "cross_feature_predictions": {"test": {}},
-        "lipinski_cross_feature_predictions": {"test": {}},
-    },
-    "dataset_analysis": {},
-    "config": {},
+EXPECTED_PATHING_PATH = (
+    RUN_DIR / "test" / "expected_test_results" / "expected_pathing.json"
+)
+EXPECTED_FEATURE_PATHS = {
+    "rdkit": RUN_DIR
+    / "test"
+    / "expected_test_results"
+    / "expected_rdkit_features.csv",
 }
 
 
@@ -86,6 +74,7 @@ def test_setup_creates_expected_pathing_json(clean_test_json):
     )
 
     generated_json = loadJSON(TEST_JSON_PATH)
+    expected_json = loadJSON(EXPECTED_PATHING_PATH)
 
     assert generated_json == expected_json
 
@@ -116,3 +105,14 @@ def test_generate_features(feature_set):
 
     assert len(generated_df) > 0
     assert generated_df.index.notna().all()
+
+    expected_feature_path = EXPECTED_FEATURE_PATHS.get(feature_set)
+    if expected_feature_path is not None:
+        expected_df = pd.read_csv(expected_feature_path, index_col="ID")
+        pd.testing.assert_frame_equal(
+            generated_df,
+            expected_df,
+            check_exact=False,
+            rtol=1e-10,
+            atol=1e-12,
+        )
