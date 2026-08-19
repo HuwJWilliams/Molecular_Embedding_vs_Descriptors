@@ -1,10 +1,12 @@
 """Script to run tests to check the full workflow"""
 
 # %% ===== Imports
+import math
+import shutil
 from pathlib import Path
 import sys
+
 import pandas as pd
-import math
 import pytest
 
 # %% ==== Pathing
@@ -45,23 +47,57 @@ EXPECTED_FEATURE_PATHS = {
 }
 
 EXPECTED_INT_PERFORMANCE = EXPECTED_DATA / "expected_int_perf.json"
-EXPECTED_EXT_PERFORMANCE = EXPECTED_DATA / "expected_ext_perf.json"
+MODEL_OUTPUT_DIR = RUN_DIR / "test" / "test_model"
+TARGET_COLUMN = "Solubility"
+REQUIRED_EXTERNAL_METRICS = [
+    "bias",
+    "sdep",
+    "mse",
+    "rmse",
+    "r2",
+    "r_pearson",
+    "p_pearson",
+    "r_spearman",
+]
 
 
-def assert_performance_close(actual_perf, expected_perf, rel=1e-2, abs=1e-2):
+def assert_performance_close(actual_perf, expected_perf, rel=1e-2, abs_tol=1e-2):
     for metric, expected_value in expected_perf.items():
         assert metric in actual_perf
         assert actual_perf[metric] == pytest.approx(
             expected_value,
             rel=rel,
-            abs=abs,
+            abs=abs_tol,
         )
+
+
+def assert_valid_external_performance(performance):
+    assert isinstance(performance, dict)
+
+    for metric in REQUIRED_EXTERNAL_METRICS:
+        assert metric in performance
+        assert performance[metric] is not None
+        assert math.isfinite(float(performance[metric]))
 
 
 @pytest.fixture
 def clean_test_json():
     TEST_JSON_PATH.unlink(missing_ok=True)
     yield
+    TEST_JSON_PATH.unlink(missing_ok=True)
+
+
+@pytest.fixture(scope="session")
+def created_paths():
+    paths = []
+    yield paths
+
+    for path in reversed(paths):
+        path = Path(path)
+        if path.is_dir():
+            shutil.rmtree(path, ignore_errors=True)
+        elif path.is_file():
+            path.unlink(missing_ok=True)
 
 
 def test_pathing_setup(clean_test_json):
@@ -96,10 +132,11 @@ from feature_generator import FeatureGenerator
 
 
 @pytest.mark.parametrize("feature_set", FEATURES)
-def test_generate_features(feature_set):
+def test_generate_features(feature_set, created_paths):
     input_df = pd.read_csv(FULL_TEST_PATHING["targets"]["test"], index_col="ID")
     output_path = Path(FULL_TEST_PATHING["full_features"]["test"][feature_set])
     output_path.unlink(missing_ok=True)
+    created_paths.append(output_path)
 
     fg = FeatureGenerator(feature_set)
     fg.calcBatchFeatures(
@@ -134,15 +171,13 @@ from feature_cleaning import cleanFeatureDF
 sys.path.insert(0, str(SRC_DIR / "models"))
 from transfer_model import TL
 
-TARGET_COLUMN = "Solubility"
 
-
-def test_single_property_prediction():
+def test_single_property_prediction(created_paths):
     X = pd.read_csv(EXPECTED_FEATURE_PATHS["rdkit"], index_col="ID")
-    clean_X, cleaning_report = cleanFeatureDF(X)
+    clean_X, _ = cleanFeatureDF(X)
 
-    y = pd.read_csv(str(DATASET_DIR / "test" / "dummy_data.csv"), index_col="ID")
-    y = y[["Solubility"]]
+    y = pd.read_csv(DATASET_DIR / "test" / "dummy_data.csv", index_col="ID")
+    y = y[[TARGET_COLUMN]]
 
     common = clean_X.index.intersection(y.index)
     final_X = clean_X.loc[common]
@@ -158,11 +193,14 @@ def test_single_property_prediction():
     train_data = data.iloc[:20]
     test_data = data.iloc[20:]
 
+    shutil.rmtree(MODEL_OUTPUT_DIR, ignore_errors=True)
+    created_paths.append(MODEL_OUTPUT_DIR)
+
     model = TL()
     final_model, best_params, internal_perf, feat_importance = (
         model.trainSingleTargetRFModel(
             data=train_data,
-            target_column="Solubility",
+            target_column=TARGET_COLUMN,
             hyper_params={
                 "n_estimators": [5],
                 "max_features": ["sqrt"],
@@ -175,7 +213,7 @@ def test_single_property_prediction():
             cv_splits=2,
             random_seed=42,
             save_models=False,
-            save_path=RUN_DIR / "test" / "test_model",
+            save_path=MODEL_OUTPUT_DIR,
             trim_3xIQR=False,
         )
     )
@@ -193,28 +231,12 @@ def test_single_property_prediction():
         target_column=TARGET_COLUMN,
         calc_perf=True,
         save_preds=True,
-        save_path=RUN_DIR / "test" / "test_model",
+        save_path=MODEL_OUTPUT_DIR,
     )
-    assert isinstance(external_perf, dict)
+    assert_valid_external_performance(external_perf)
 
-    required_metrics = [
-        "bias",
-        "sdep",
-        "mse",
-        "rmse",
-        "r2",
-        "r_pearson",
-        "p_pearson",
-        "r_spearman",
-    ]
-
-    for metric in required_metrics:
-        assert metric in external_perf
-        assert external_perf[metric] is not None
-        assert math.isfinite(float(external_perf[metric]))
-
-    performance_path = RUN_DIR / "test" / "test_model" / "performance.json"
+    performance_path = MODEL_OUTPUT_DIR / "performance.json"
     assert performance_path.exists()
 
-    preds_path = RUN_DIR / "test" / "test_model" / "preds.csv.gz"
+    preds_path = MODEL_OUTPUT_DIR / "preds.csv.gz"
     assert preds_path.exists()
