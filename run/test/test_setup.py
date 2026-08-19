@@ -62,9 +62,9 @@ def testSetup():
 
     assert (
         generated_json == expected_json
-    ), "Generated pathing JSON does not match the expected standard"
+    ), "FAIL: Generated pathing JSON does not match the expected standard"
 
-    print("Pathing JSON configured")
+    print("PASS: Pathing setup")
 
 
 testSetup()
