@@ -291,9 +291,10 @@ def test_cross_feature_prediction(created_paths):
         save_path=output_dir,
         trim_by_percentile=False,
         min_training_samples=10,
+        n_jobs=1,
+        batch_size=1,
     )
 
     assert isinstance(perf_df, pd.DataFrame)
     assert not perf_df.empty
-
     assert (output_dir / "cfp_test.csv").exists()
