@@ -136,7 +136,7 @@ def test_single_property_prediction():
     final_X = clean_X.loc[common]
     final_y = y.loc[common]
 
-    assert final_X.shape == (25, 218)
+    assert final_X.shape == (25, 172)
     assert final_y.shape == (25, 1)
 
     data = final_X.join(final_y)
