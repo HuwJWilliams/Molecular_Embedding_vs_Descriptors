@@ -302,6 +302,7 @@ def test_cross_feature_prediction(created_paths):
         min_training_samples=10,
         min_samples_per_class=3,
         batch_size=1,
+        n_jobs=1,
     )
 
     assert isinstance(perf_df, pd.DataFrame)
