@@ -23,6 +23,5 @@ sandbox/
 *.sh
 
 # Keep committed test fixtures, even when they match ignored artifact patterns
-!test/
-!test/**
-!test/**/*
+!run/test/
+!run/test/**
