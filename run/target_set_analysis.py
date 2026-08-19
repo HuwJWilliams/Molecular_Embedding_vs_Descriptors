@@ -4,6 +4,10 @@ import pandas as pd
 import seaborn as sns
 import matplotlib.pyplot as plt
 import sys 
+from pathlib import Path
+
+RUN_DIR = Path(__file__).resolve().parent
+sys.path.insert(0, str(RUN_DIR / "config"))
 
 from config import PATHING_JSON_PATH, SRC_DIR, TARGET_COLUMNS
 print(f"\n{SRC_DIR}\n")

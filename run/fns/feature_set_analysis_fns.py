@@ -14,6 +14,9 @@ from rdkit.Chem.rdchem import HybridizationType
 from collections import Counter
 
 # %% ===== Project Imports & Pathing Setup =====
+RUN_DIR = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(RUN_DIR / "config"))
+
 from config import PATHING_JSON_PATH, SRC_DIR
 
 sys.path.insert(0, str(SRC_DIR / "pathing"))

@@ -58,7 +58,7 @@ dependencies:
   - cuda-nvtx=12.9.79=h5888daf_0
   - cuda-nvvm-tools=12.9.86=h4bc722e_2
   - cuda-version=12.9=h4f385c5_3
-  - cudnn=9.13.0.50=hbcb9cd8_0
+  - cudnn>=9.10.1.4
   - cycler=0.12.1=pyhd8ed1ab_1
   - cyrus-sasl=2.1.28=hd9c7081_0
   - datasets=4.0.0=pyhcf101f3_0
@@ -133,8 +133,8 @@ dependencies:
   - libclang13=21.1.0=default_h746c552_1
   - libcrc32c=1.1.2=h9c3ff4c_0
   - libcublas=12.9.1.4=h9ab20c4_0
-  - libcudnn=9.13.0.50=hf7e9902_0
-  - libcudnn-dev=9.13.0.50=h58dd1b1_0
+  - libcudnn
+  - libcudnn-dev
   - libcudss=0.6.0.5=h58dd1b1_0
   - libcufft=11.4.1.4=h5888daf_0
   - libcufile=1.14.1.1=ha8da6e3_0

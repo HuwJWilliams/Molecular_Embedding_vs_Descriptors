@@ -5,8 +5,13 @@ Run feature-importance averaging for individual property RF predictions.
 # %% ===== Python Imports =====
 import argparse
 import sys
+from pathlib import Path
 
 # %% ===== Project Imports & Pathing Setup =====
+RUN_DIR = Path(__file__).resolve().parent
+sys.path.insert(0, str(RUN_DIR / "config"))
+sys.path.insert(0, str(RUN_DIR / "fns"))
+
 from config import (
     SRC_DIR,
     PATHING_JSON_PATH,

@@ -11,6 +11,9 @@ import sys
 from glob import glob
 
 # %% ===== Project Imports & Pathing Setup =====
+RUN_DIR = Path(__file__).resolve().parent
+sys.path.insert(0, str(RUN_DIR / "config"))
+
 from config import (
     SRC_DIR,
     SUPPORTED_FEATURE_SETS,
@@ -30,12 +33,6 @@ sys.path.insert(0, str(SRC_DIR / "datasets"))
 from feature_cleaning import cleanFeatureDF
 
 FULL_PATHING = getPaths(PATHING_JSON_PATH)
-
-PROPERTY_CHOICES = [
-    prop
-    for prop in FULL_PATHING["full_features"].keys()
-    if prop not in {"all", "fit_lipinski"}
-]
 
 # %% ===== Argument Parsing =====
 parser = argparse.ArgumentParser(description="Generating cross-feature predictions")
@@ -58,18 +55,8 @@ parser.add_argument("--property", default="all", choices=SUPPORTED_TARGET_SETS)
 
 parser.add_argument(
     "--save-dir",
-    default="lipinski_cross_feature_predictions",
+    default="cross_feature_predictions",
     help="Directory to save the results to",
-)
-
-parser.add_argument(
-    "--property",
-    default=None,
-    choices=PROPERTY_CHOICES,
-    help=(
-        "Optional property-specific feature table to use, e.g. bp, pka, aq_sol. "
-        "If omitted, uses all or fit_lipinski."
-    ),
 )
 
 parser.add_argument(

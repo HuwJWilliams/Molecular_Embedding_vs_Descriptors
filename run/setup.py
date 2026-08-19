@@ -8,7 +8,10 @@ from pathlib import Path
 import argparse
 
 # %% ===== Project Imports & Pathing Setup =====
-SCRIPTS_DIR = Path(__file__).parents[1] / "script"
+SCRIPTS_DIR = Path(__file__).parents[1] / "scripts"
+RUN_DIR = Path(__file__).resolve().parent
+
+sys.path.insert(0, str(RUN_DIR / "config"))
 
 sys.path.insert(0, str(SCRIPTS_DIR / "src" / "pathing"))
 from get_paths import createPathingJSON, addRawDataPaths
@@ -26,12 +29,6 @@ parser.add_argument(
 )
 
 parser.add_argument(
-    "--json-name",
-    default=PATHING_JSON_NAME,
-    help="Name to set pathing json. If this is set you will need to change the JSON_NAME variable in config.py",
-)
-
-parser.add_argument(
     "--set-paths",
     nargs="+",
     required=False,
@@ -46,7 +43,7 @@ args = parser.parse_args()
 
 # %% ===== Create Project Pathing and Add New Data Paths =====
 if args.create_pathing:
-    createPathingJSON(json_name=args.json_name)
+    createPathingJSON(json_name=PATHING_JSON_NAME)
 
 if bool(args.set_names) != bool(args.set_paths):
     raise ValueError("Set both '--set-paths' and '--set-names' to save new raw data")

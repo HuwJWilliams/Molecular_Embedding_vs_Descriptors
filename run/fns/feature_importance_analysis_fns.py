@@ -17,6 +17,9 @@ from matplotlib.patches import Rectangle
 import seaborn as sns
 
 # %% ===== Project Imports & Pathing Setup =====
+RUN_DIR = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(RUN_DIR / "config"))
+
 from config import PATHING_JSON_PATH, SRC_DIR, PP_ANALYSIS_METRICS
 
 sys.path.insert(0, str(SRC_DIR / "datasets"))

@@ -4,13 +4,16 @@ Running individual property prediction (PP) analysis
 
 # %% ===== Python Imports =====
 import argparse
-import json
 import sys
 from pathlib import Path
 
 import pandas as pd
 
 # %% ===== Project Imports & Pathing Setup=====
+RUN_DIR = Path(__file__).resolve().parent
+sys.path.insert(0, str(RUN_DIR / "config"))
+sys.path.insert(0, str(RUN_DIR / "fns"))
+
 from config import (
     SRC_DIR,
     PATHING_JSON_PATH,
@@ -34,7 +37,9 @@ PREDS_DIR = FULL_PATHING["prediction_output_dirs"]["rf"]
 
 # %% ===== Argument Parsing =====
 
-parser = argparse.ArgumentParser(description="Generating cross-feature analysis")
+parser = argparse.ArgumentParser(
+    description="Generating single property prediction analysis"
+)
 
 parser.add_argument(
     "--properties",
@@ -56,6 +61,14 @@ parser.add_argument(
     "--save-dir",
     default=str(RESULTS_DIR / "pp_analysis"),
     help="Where to plot the results",
+)
+
+parser.add_argument(
+    "--analysis-metrics",
+    nargs="+",
+    default=["r2", "pearson_r", "rmse"],
+    choices=["r2", "pearson_r", "bias", "sdep", "rmse"],
+    help="Analysis metrics to plot",
 )
 
 args = parser.parse_args()
@@ -94,7 +107,7 @@ for prop in args.properties:
 internal_summary_rows = []
 external_summary_rows = []
 ft_difference_rows = []
-summary_metrics = ["r2", "pearson_r", "bias", "sdep", "rmse"]
+summary_metrics = args.analysis_metrics
 
 # %% ===== Running Analysis =====
 # Creating a bar plots for each property & performance metric
@@ -211,6 +224,133 @@ for prop, int_ext_perfs in full_performance_dict.items():
             )
             if not ft_diff_df.empty:
                 ft_difference_rows.append(ft_diff_df)
+
+# %% ===== True vs Predicted Plots =====
+true_vs_pred_rows = []
+target_3xiqr_rows = []
+
+for prop in args.properties:
+    if prop not in PREDS_DIR:
+        print(f"{prop} not in prediction output paths")
+        continue
+
+    target_col = TARGET_COLUMNS[prop]
+    target_path = FULL_PATHING["targets"][prop]
+
+    try:
+        target_df = pd.read_csv(target_path, index_col="ID")
+    except Exception as e:
+        print(f"Could not load target data for {prop}: {e}")
+        continue
+
+    if target_col not in target_df.columns:
+        print(f"{target_col} not found in target data for {prop}")
+        continue
+
+    target_3xiqr_metrics = plotTarget3xIQRDistribution(
+        target_df=target_df,
+        target_col=target_col,
+        save_path=save_path / prop / "external_3xIQR" / "target_distribution",
+        save_fname=f"{prop}_{target_col}_target_distribution_3xIQR",
+    )
+
+    if target_3xiqr_metrics:
+        target_3xiqr_rows.append(
+            {
+                "property": prop,
+                "target_column": target_col,
+                **target_3xiqr_metrics,
+            }
+        )
+
+    for feature_set in feature_sets:
+        if feature_set not in PREDS_DIR[prop]:
+            print(f"{feature_set} not in prediction output paths for {prop}")
+            continue
+
+        pred_path = Path(PREDS_DIR[prop][feature_set]) / "last_20pct_pred.csv.gz"
+
+        if not pred_path.exists():
+            print(f"Missing predictions for {prop} / {feature_set}: {pred_path}")
+            continue
+
+        try:
+            pred_df = pd.read_csv(pred_path, index_col="ID")
+        except Exception as e:
+            print(f"Could not load predictions for {prop} / {feature_set}: {e}")
+            continue
+
+        pred_col = target_col if target_col in pred_df.columns else pred_df.columns[0]
+
+        metrics = plotTrueVsPred(
+            true_df=target_df,
+            pred_df=pred_df,
+            true_col=target_col,
+            pred_col=pred_col,
+            save_path=save_path / prop / "external" / "true_vs_pred",
+            save_fname=f"{prop}_{feature_set}_true_vs_pred",
+            model_name=f"{prop} / {feature_set}",
+        )
+
+        row = {
+            "property": prop,
+            "feature_set": feature_set,
+        }
+
+        dist_metrics = {}
+
+        split_ids_path = (
+            Path(PREDS_DIR[prop][feature_set])
+            / "repeats"
+            / "repeat_001"
+            / "training_data"
+            / "split_train_ids.csv"
+        )
+
+        if split_ids_path.exists():
+            train_ids = pd.read_csv(split_ids_path)["ID"].astype(str)
+            target_for_split = target_df.copy()
+            target_for_split.index = target_for_split.index.astype(str)
+
+            train_df = target_for_split.loc[
+                target_for_split.index.intersection(train_ids)
+            ]
+
+            dist_metrics = plotTrainTestPredDistribution(
+                train_df=train_df,
+                true_df=target_df,
+                pred_df=pred_df,
+                train_col=target_col,
+                true_col=target_col,
+                pred_col=pred_col,
+                save_path=save_path / prop / "external" / "prediction_distributions",
+                save_fname=f"{prop}_{feature_set}_train_test_pred_distribution",
+            )
+        else:
+            print(
+                f"Missing train split IDs for {prop} / {feature_set}: {split_ids_path}"
+            )
+
+        if metrics:
+            row.update(metrics)
+
+        if dist_metrics:
+            row.update(dist_metrics)
+
+        if metrics or dist_metrics:
+            true_vs_pred_rows.append(row)
+
+if true_vs_pred_rows:
+    pd.DataFrame(true_vs_pred_rows).to_csv(
+        save_path / "external_true_vs_pred_metrics.csv",
+        index=False,
+    )
+
+if target_3xiqr_rows:
+    pd.DataFrame(target_3xiqr_rows).to_csv(
+        save_path / "target_3xIQR_summary.csv",
+        index=False,
+    )
 
 if internal_summary_rows:
     internal_summary_df = pd.concat(internal_summary_rows, ignore_index=True)

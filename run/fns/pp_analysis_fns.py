@@ -10,9 +10,13 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import json
 from glob import glob
+import numpy as np
 
 # %% ===== Project Imports & Pathing Setup =====
-from config import PATHING_JSON_PATH, SRC_DIR, PP_ANALYSIS_METRICS
+RUN_DIR = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(RUN_DIR / "config"))
+
+from config import PATHING_JSON_PATH, SRC_DIR
 
 sys.path.insert(0, str(SRC_DIR / "pathing"))
 from get_paths import getPaths
@@ -680,6 +684,313 @@ def calculateR2(y_true: pd.Series, y_pred: pd.Series) -> float:
 
     ss_res = ((y_true - y_pred) ** 2).sum()
     return float(1 - (ss_res / ss_total))
+
+
+def plotTrueVsPred(
+    true_df: pd.DataFrame,
+    pred_df: pd.DataFrame,
+    true_col: str,
+    pred_col: str,
+    save_path: str | Path,
+    save_fname: str = "true_vs_pred_scatter",
+    model_name: str | None = None,
+    dpi: int = 300,
+    remove_pred_outliers: bool = False,
+    remove_true_outliers: bool = False,
+    lower_pct: float = 1,
+    upper_pct: float = 99,
+) -> dict:
+    true_df = true_df.copy()
+    pred_df = pred_df.copy()
+
+    true_df.index = true_df.index.astype(str)
+    pred_df.index = pred_df.index.astype(str)
+
+    common_idx = true_df.index.intersection(pred_df.index)
+
+    y_true = pd.to_numeric(true_df.loc[common_idx, true_col], errors="coerce")
+    y_pred = pd.to_numeric(pred_df.loc[common_idx, pred_col], errors="coerce")
+
+    plot_df = pd.DataFrame({"true": y_true, "pred": y_pred}).dropna()
+
+    if plot_df.empty:
+        print(f"No valid true/pred rows for {model_name or save_fname}")
+        return {}
+
+    if remove_pred_outliers:
+        pred_low = plot_df["pred"].quantile(lower_pct / 100)
+        pred_high = plot_df["pred"].quantile(upper_pct / 100)
+        plot_df = plot_df[plot_df["pred"].between(pred_low, pred_high)]
+
+    if remove_true_outliers:
+        true_low = plot_df["true"].quantile(lower_pct / 100)
+        true_high = plot_df["true"].quantile(upper_pct / 100)
+        plot_df = plot_df[plot_df["true"].between(true_low, true_high)]
+
+    if len(plot_df) < 2:
+        print(f"Not enough rows to plot true vs pred for {model_name or save_fname}")
+        return {}
+
+    y_true = plot_df["true"]
+    y_pred = plot_df["pred"]
+
+    residuals = y_pred - y_true
+    bias = residuals.mean()
+    sdep = ((residuals - bias).pow(2).mean()) ** 0.5
+    rmse = (residuals.pow(2).mean()) ** 0.5
+    r2 = calculateR2(y_true, y_pred)
+    pearson_r = y_true.corr(y_pred, method="pearson")
+
+    metrics = {
+        "rmse": float(rmse),
+        "r2": float(r2),
+        "pearson_r": float(pearson_r),
+        "bias": float(bias),
+        "sdep": float(sdep),
+        "n": int(len(plot_df)),
+    }
+
+    fig, ax = plt.subplots(figsize=(6, 7))
+
+    ax.scatter(
+        y_true,
+        y_pred,
+        alpha=0.7,
+        edgecolor="black",
+        linewidth=0.4,
+    )
+
+    min_val = min(y_true.min(), y_pred.min())
+    max_val = max(y_true.max(), y_pred.max())
+
+    ax.plot(
+        [min_val, max_val],
+        [min_val, max_val],
+        linestyle="--",
+        color="red",
+        linewidth=1,
+    )
+
+    ax.set_xlabel("True")
+    ax.set_ylabel("Predicted")
+    ax.set_title(f"True vs Predicted ({model_name or save_fname})")
+
+    table_data = [
+        [
+            f"{rmse:.3f}",
+            f"{r2:.3f}",
+            f"{pearson_r:.3f}",
+            f"{bias:.3f}",
+            f"{sdep:.3f}",
+        ]
+    ]
+
+    table = ax.table(
+        cellText=table_data,
+        colLabels=["RMSE", "R2", "Pearson r", "Bias", "SDEP"],
+        cellLoc="center",
+        loc="bottom",
+        bbox=[0.0, -0.32, 1.0, 0.16],
+    )
+
+    table.auto_set_font_size(False)
+    table.set_fontsize(9)
+
+    plt.subplots_adjust(bottom=0.25)
+    plt.tight_layout()
+
+    save_path = Path(save_path)
+    save_path.mkdir(parents=True, exist_ok=True)
+
+    fig.savefig(
+        save_path / f"{save_fname}.png",
+        dpi=dpi,
+        bbox_inches="tight",
+    )
+    plt.close(fig)
+
+    return metrics
+
+
+def plotTrainTestPredDistribution(
+    train_df: pd.DataFrame,
+    true_df: pd.DataFrame,
+    pred_df: pd.DataFrame,
+    train_col: str,
+    true_col: str,
+    pred_col: str,
+    save_path: str | Path,
+    save_fname: str = "train_test_pred_distribution",
+    bins: int = 40,
+    alpha: float = 0.45,
+    density: bool = False,
+    dpi: int = 300,
+) -> dict:
+    train_df = train_df.copy()
+    true_df = true_df.copy()
+    pred_df = pred_df.copy()
+
+    train_df.index = train_df.index.astype(str)
+    true_df.index = true_df.index.astype(str)
+    pred_df.index = pred_df.index.astype(str)
+
+    common_idx = true_df.index.intersection(pred_df.index)
+
+    train_vals = pd.to_numeric(train_df[train_col], errors="coerce").dropna()
+    test_vals = pd.to_numeric(
+        true_df.loc[common_idx, true_col], errors="coerce"
+    ).dropna()
+    pred_vals = pd.to_numeric(
+        pred_df.loc[common_idx, pred_col], errors="coerce"
+    ).dropna()
+
+    if train_vals.empty or test_vals.empty or pred_vals.empty:
+        print(
+            f"Skipping distribution plot for {save_fname}: missing train/test/pred values"
+        )
+        return {}
+
+    all_vals = pd.concat([train_vals, test_vals, pred_vals])
+
+    if all_vals.nunique() < 2:
+        print(f"Skipping distribution plot for {save_fname}: not enough value range")
+        return {}
+
+    bin_edges = np.linspace(all_vals.min(), all_vals.max(), bins + 1)
+
+    fig, ax = plt.subplots(figsize=(11, 6))
+
+    ax.hist(
+        train_vals,
+        bins=bin_edges,
+        alpha=alpha,
+        density=density,
+        label=f"Train true (n={len(train_vals)})",
+        edgecolor="black",
+        color="tab:blue",
+    )
+    ax.hist(
+        test_vals,
+        bins=bin_edges,
+        alpha=alpha,
+        density=density,
+        label=f"Test true (n={len(test_vals)})",
+        edgecolor="black",
+        color="tab:orange",
+    )
+    ax.hist(
+        pred_vals,
+        bins=bin_edges,
+        alpha=alpha,
+        density=density,
+        label=f"Predicted (n={len(pred_vals)})",
+        edgecolor="black",
+        color="tab:green",
+    )
+
+    ax.set_xlabel(true_col)
+    ax.set_ylabel("Density" if density else "Count")
+    ax.set_title(save_fname.replace("_", " "))
+    ax.legend()
+    ax.grid(axis="y", alpha=0.25)
+
+    plt.tight_layout()
+
+    save_path = Path(save_path)
+    save_path.mkdir(parents=True, exist_ok=True)
+
+    fig.savefig(
+        save_path / f"{save_fname}.png",
+        dpi=dpi,
+        bbox_inches="tight",
+    )
+    plt.close(fig)
+
+    return {
+        "n_train": int(len(train_vals)),
+        "n_test": int(len(test_vals)),
+        "n_pred": int(len(pred_vals)),
+        "train_min": float(train_vals.min()),
+        "train_max": float(train_vals.max()),
+        "test_min": float(test_vals.min()),
+        "test_max": float(test_vals.max()),
+        "pred_min": float(pred_vals.min()),
+        "pred_max": float(pred_vals.max()),
+        "train_mean": float(train_vals.mean()),
+        "test_mean": float(test_vals.mean()),
+        "pred_mean": float(pred_vals.mean()),
+    }
+
+
+def plotTarget3xIQRDistribution(
+    target_df: pd.DataFrame,
+    target_col: str,
+    save_path: str | Path,
+    save_fname: str = "target_distribution_3xIQR",
+    iqr_multiplier: float = 3.0,
+    bins: int = 40,
+    dpi: int = 300,
+) -> dict:
+    values = pd.to_numeric(target_df[target_col], errors="coerce").dropna()
+
+    if values.empty:
+        print(f"Skipping 3xIQR target plot for {target_col}: no numeric values")
+        return {}
+
+    q1 = values.quantile(0.25)
+    q3 = values.quantile(0.75)
+    iqr = q3 - q1
+    lower = q1 - (iqr_multiplier * iqr)
+    upper = q3 + (iqr_multiplier * iqr)
+
+    outlier_mask = ~values.between(lower, upper)
+    outliers = values.loc[outlier_mask].rename(target_col).to_frame()
+
+    save_path = Path(save_path)
+    save_path.mkdir(parents=True, exist_ok=True)
+
+    if not outliers.empty:
+        outliers.to_csv(save_path / f"{save_fname}_outliers.csv", index_label="ID")
+
+    fig, ax = plt.subplots(figsize=(8, 5))
+
+    ax.axvspan(
+        lower,
+        upper,
+        color="tab:green",
+        alpha=0.12,
+        label=f"{iqr_multiplier:g}x IQR range",
+    )
+    ax.axvline(lower, color="tab:red", linestyle="--", linewidth=1.2)
+    ax.axvline(upper, color="tab:red", linestyle="--", linewidth=1.2)
+    ax.axvline(
+        values.median(), color="black", linestyle="-", linewidth=1.0, label="Median"
+    )
+
+    sns.histplot(values, bins=bins, kde=True, ax=ax)
+
+    ax.set_xlabel(target_col)
+    ax.set_ylabel("Count")
+    ax.set_title(
+        f"{target_col} Target Distribution with {iqr_multiplier:g}x IQR Bounds"
+    )
+    ax.legend()
+    ax.grid(axis="y", alpha=0.25)
+
+    plt.tight_layout()
+    fig.savefig(save_path / f"{save_fname}.png", dpi=dpi, bbox_inches="tight")
+    plt.close(fig)
+
+    return {
+        "target_n": int(len(values)),
+        "target_q1": float(q1),
+        "target_q3": float(q3),
+        "target_iqr": float(iqr),
+        "target_lower_3xIQR": float(lower),
+        "target_upper_3xIQR": float(upper),
+        "target_n_outliers_3xIQR": int(outlier_mask.sum()),
+        "target_outlier_fraction_3xIQR": float(outlier_mask.mean()),
+    }
 
 
 def getLipinskiFilteredExternalPerformanceDf(

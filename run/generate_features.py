@@ -11,6 +11,9 @@ import shutil
 import sys
 
 # %% ===== Project Imports & Pathing Setup =====
+RUN_DIR = Path(__file__).resolve().parent
+sys.path.insert(0, str(RUN_DIR / "config"))
+
 from config import (
     SRC_DIR,
     SCRIPTS_DIR,
@@ -97,13 +100,6 @@ parser.add_argument(
 )
 
 parser.add_argument(
-    "--max-token-len",
-    type=int,
-    default=0,
-    help="Maximum transformer token length for fine-tuning and embedding generation.",
-)
-
-parser.add_argument(
     "--pooling",
     choices=("mean", "cls"),
     default="mean",
@@ -142,11 +138,6 @@ args = parser.parse_args()
 task = args.task.lower()
 feature_set = args.feature_set.lower()
 target_col = args.target_col
-
-if args.max_token_len == 0:
-    max_token_len = 202 if "molformer" in feature_set else 512
-else:
-    max_token_len = args.max_token_len
 
 in_path = FULL_PATHING["targets"][task]
 out_path = FULL_PATHING["full_features"][task][feature_set]
@@ -218,7 +209,7 @@ if args.fine_tune:
         targets=fine_tune_df[target_col].astype(float).to_list(),
         model_label=spec["model_label"],
         batch_size=args.fine_tune_batch_size,
-        max_token_len=max_token_len,
+        max_token_len=spec["max_token_len"],
         pooling=args.pooling,
         output_dir=fine_tune_output_dir,
         test_frac=args.fine_tune_test_frac,
@@ -246,7 +237,6 @@ generator.calcBatchFeatures(
     id_ls=in_df.index.to_list(),
     fpath=out_path,
     batch_size=args.batch_size,
-    max_token_len=max_token_len,
     pooling=args.pooling,
 )
 

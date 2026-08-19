@@ -10,6 +10,9 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 
 # %% ===== Project Imports & Pathing Setup =====
+RUN_DIR = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(RUN_DIR / "config"))
+
 from config import PATHING_JSON_PATH, SRC_DIR, CFP_ANALYSIS_METRICS
 
 sys.path.insert(0, str(SRC_DIR / "pathing"))
@@ -137,7 +140,9 @@ def getTaskGroupPerf(
     group_perf_by_task = {}
 
     for task_name, task_cfg in CFP_ANALYSIS_METRICS.items():
-        metrics = [metric for metric in task_cfg["group_metrics"] if metric in df.columns]
+        metrics = [
+            metric for metric in task_cfg["group_metrics"] if metric in df.columns
+        ]
 
         if not metrics:
             print(f"Skipping grouped performance for {task_name}: no metric columns.")
@@ -662,15 +667,16 @@ def runCFPAnalysisForPerformanceDF(
         task_type=args.radar_task,
     )
 
-    for group_name, group_members in group_map.items():
-        plotGroupMemberBars(
-            df=exp_perf_df,
-            group_members=group_members,
-            group_name=group_name,
-            group_map=group_map,
-            plot_dir=exp_dir,
-            exp_name=exp_name,
-        )
+    if not args.skip_group_member_bars:
+        for group_name, group_members in group_map.items():
+            plotGroupMemberBars(
+                df=exp_perf_df,
+                group_members=group_members,
+                group_name=group_name,
+                group_map=group_map,
+                plot_dir=exp_dir,
+                exp_name=exp_name,
+            )
 
     plotFullTaskBar(
         df=exp_perf_df,

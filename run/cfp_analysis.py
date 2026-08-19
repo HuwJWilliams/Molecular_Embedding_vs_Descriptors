@@ -10,6 +10,10 @@ import argparse
 from glob import glob
 
 # %% ===== Project Imports & Pathing Setup=====
+RUN_DIR = Path(__file__).resolve().parent
+sys.path.insert(0, str(RUN_DIR / "config"))
+sys.path.insert(0, str(RUN_DIR / "fns"))
+
 from config import SRC_DIR, PATHING_JSON_PATH
 from cfp_analysis_fns import *
 
@@ -35,7 +39,7 @@ unique_exp_names = sorted(set(cfp + lcfp))
 parser = argparse.ArgumentParser(description="Generating cross-feature analysis")
 
 parser.add_argument(
-    "--result-dir",
+    "--results-dir",
     help="Directory to look for cross-feature predictions.\
           Put here the name of dir as it appears in the pathing json (e,g,. 'cross_feature_predictions')",
 )
@@ -105,6 +109,12 @@ parser.add_argument(
     help="Performance threshold used with --plot-poor-distributions",
 )
 
+parser.add_argument(
+    "--skip-group-member-bars",
+    action="store_true",
+    help="Skip individual descriptor group/member bar plots",
+)
+
 args = parser.parse_args()
 
 
@@ -113,7 +123,7 @@ property_dataset = args.property.lower()
 
 cfp_dir = resolveCFPDir(
     prediction_output_dirs=FULL_PATHING["prediction_output_dirs"],
-    result_dir=args.result_dir,
+    results_dir=args.results_dir,
     property_dataset=property_dataset,
 )
 

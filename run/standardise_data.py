@@ -19,14 +19,16 @@ import json
 
 # %% ===== Project Imports & Pathing Setup =====
 SCRIPTS_DIR = Path(__file__).resolve().parents[1]
+RUN_DIR = Path(__file__).resolve().parent
 
+sys.path.insert(0, str(RUN_DIR / "config"))
 from config import PATHING_PATH, PATHING_JSON_PATH, SRC_DIR
 
 sys.path.insert(0, str(PATHING_PATH))
 sys.path.insert(0, str(SRC_DIR / "datasets"))
 
 from get_paths import addNewDatasetPaths, getPaths
-from standardise_dataset import cleanAndvvvvvvvvvvvvvvvvSaveDataset
+from standardise_dataset import cleanAndSaveDataset
 
 FULL_PATHING = getPaths(PATHING_JSON_PATH)
 

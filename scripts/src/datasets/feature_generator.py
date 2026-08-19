@@ -290,7 +290,6 @@ class FeatureGenerator():
             smiles_ls: list[str],
             id_ls: list[str],
             batch_size: int=64,
-            max_token_len: int=512,
             drop_cols: bool=False,
             min_unique: int=MIN_UNIQUE,
             pooling: str="mean"
@@ -306,7 +305,6 @@ class FeatureGenerator():
         smiles_ls           list[str]   List of SMILES
         id_ls               list[str]   List of IDs corresponding to each SMILE
         batch_size          int         Size of batch to process
-        max_token_len         int         Maximum length of the generated embeddings
         drop_cols           bool        Flag to drop columns with low variance
         min_unique          int         Variance threshold for dopping columns       
         pooling             str         Pooling strategy: "cls" or "mean"
@@ -324,7 +322,7 @@ class FeatureGenerator():
             input_texts=parsed_smiles,
             ids=parsed_ids,
             batch_size=batch_size,
-            max_token_len=max_token_len,
+            max_token_len=TRANSFORMER_FEATURE_SPECS[self.feature_set]["max_token_len"],
             drop_cols=drop_cols,
             min_unique=min_unique,
             pooling=pooling,
@@ -335,7 +333,6 @@ class FeatureGenerator():
             smiles_ls: list[str],
             id_ls: list[str],
             batch_size: int=64,
-            max_token_len: int=202,
             drop_cols: bool=False,
             min_unique: int=MIN_UNIQUE,
             pooling: str ="mean"
@@ -351,7 +348,6 @@ class FeatureGenerator():
         smiles_ls           list[str]   List of SMILES
         id_ls               list[str]   List of IDs corresponding to each SMILE
         batch_size          int         Size of batch to process
-        max_token_len       int         Maximum length of the generated embeddings
         drop_cols           bool        Flag to drop columns with low variance
         min_unique          int         Variance threshold for dopping columns
         pooling             str         Pooling strategy: "cls" or "mean"
@@ -368,7 +364,7 @@ class FeatureGenerator():
             input_texts=parsed_smiles,
             ids=parsed_ids,
             batch_size=batch_size,
-            max_token_len=max_token_len,
+            max_token_len=TRANSFORMER_FEATURE_SPECS[self.feature_set]["max_token_len"],
             drop_cols=drop_cols,
             min_unique=min_unique,
             pooling=pooling,
@@ -379,7 +375,6 @@ class FeatureGenerator():
             smiles_ls: list[str],
             id_ls: list[str],
             batch_size: int=64,
-            max_token_len: int=512,
             drop_cols: bool=False,
             min_unique: int=MIN_UNIQUE,
             pooling: str ="mean"
@@ -394,7 +389,6 @@ class FeatureGenerator():
         smiles_ls           list[str]   List of SMILES
         id_ls               list[str]   List of IDs corresponding to each SMILE
         batch_size          int         Size of batch to process
-        max_token_len         int         Maximum length of the generated embeddings
         drop_cols           bool        Flag to drop columns with low variance
         min_unique          int         Variance threshold for dopping columns       
         pooling             str         Pooling strategy: "cls" or "mean"
@@ -418,7 +412,7 @@ class FeatureGenerator():
             input_texts=valid_selfies,
             ids=valid_ids,
             batch_size=batch_size,
-            max_token_len=max_token_len,
+            max_token_len=TRANSFORMER_FEATURE_SPECS[self.feature_set]["max_token_len"],
             drop_cols=drop_cols,
             min_unique=min_unique,
             pooling=pooling,
@@ -722,7 +716,6 @@ class FeatureGenerator():
             id_ls: list[str],
             batch_size: int=2000,
             ignore_3D: bool=False,
-            max_token_len: int=400,
             fpath: str | Path = "./",
             compression: str | None=None,
             drop_cols: bool=False,
@@ -740,7 +733,6 @@ class FeatureGenerator():
         id_ls               list[str]   List of IDs corresponding to each SMILE
         batch_size          int         Size of batch to process
         ignore_3d           bool        Flag to ignore 3D mordred descriptors
-        max_token_len       int         Maximum length of the generated embeddings
         fpath               str | Path  Path to save the descriptor datasets to
         compression         str         Type of compression to save dataset as (e.g., "gzip")
         drop_cols           bool        Flag to drop columns with low variance
@@ -755,6 +747,7 @@ class FeatureGenerator():
         n_smiles = len(smiles_ls)
         total_batches = (n_smiles + batch_size - 1) // batch_size
 
+        single_output_path = "*" not in str(fpath)
         saved_path_ls = []
         for i in range(0, n_smiles, batch_size):
 
@@ -770,19 +763,38 @@ class FeatureGenerator():
                 id for id in id_ls[i : i + batch_size]
             ]
 
-            df = self._calculate_features(smi_batch, id_batch, ignore_3D, max_token_len, pooling)
+            df = self._calculate_features(smi_batch, id_batch, ignore_3D, pooling)
             
-            fpath_str = str(fpath).replace('*', str(current_batch_no))
-            base_path = Path(fpath_str)
-
-            save_path = (
-                base_path.with_suffix(".csv")
-                if not drop_cols
-                else base_path.with_name(base_path.stem + "_tmp.csv")
-            )
+            if single_output_path:
+                base_path = Path(fpath).with_suffix(".csv")
+                if drop_cols:
+                    save_path = base_path.with_name(
+                        f"{base_path.stem}_batch_{current_batch_no}_tmp.csv"
+                    )
+                else:
+                    save_path = base_path
+            else:
+                fpath_str = str(fpath).replace('*', str(current_batch_no))
+                base_path = Path(fpath_str)
+                save_path = (
+                    base_path.with_suffix(".csv")
+                    if not drop_cols
+                    else base_path.with_name(base_path.stem + "_tmp.csv")
+                )
 
             save_path.parent.mkdir(parents=True, exist_ok=True)
-            df.to_csv(save_path, index_label="ID", compression=compression)
+            if single_output_path and not drop_cols:
+                write_header = current_batch_no == 1
+                write_mode = "w" if write_header else "a"
+                df.to_csv(
+                    save_path,
+                    index_label="ID",
+                    compression=compression,
+                    mode=write_mode,
+                    header=write_header,
+                )
+            else:
+                df.to_csv(save_path, index_label="ID", compression=compression)
             self.logger.info(f"Saved batch {current_batch_no} to:\n{save_path}\n\n")
             
             saved_path_ls.append(save_path)
@@ -793,13 +805,26 @@ class FeatureGenerator():
             self.logger.info(f"Dropping {len(cols_to_drop)} columns from all batches:\n{cols_to_drop}")
 
             final_saved_paths = []
+            final_single_path = Path(fpath).with_suffix(".csv") if single_output_path else None
 
             for i, temp_path in enumerate(saved_path_ls, 1):
                 df = pd.read_csv(temp_path, index_col="ID")
                 df = df.drop(columns=cols_to_drop, errors="ignore")
 
-                final_path = temp_path.parent / temp_path.name.replace("_tmp.csv", ".csv")
-                df.to_csv(final_path, index_label="ID", compression=compression)
+                if final_single_path is not None:
+                    final_path = final_single_path
+                    write_header = i == 1
+                    write_mode = "w" if write_header else "a"
+                    df.to_csv(
+                        final_path,
+                        index_label="ID",
+                        compression=compression,
+                        mode=write_mode,
+                        header=write_header,
+                    )
+                else:
+                    final_path = temp_path.parent / temp_path.name.replace("_tmp.csv", ".csv")
+                    df.to_csv(final_path, index_label="ID", compression=compression)
                 final_saved_paths.append(final_path)
 
                 temp_path.unlink()
@@ -1422,7 +1447,6 @@ class FeatureGenerator():
             smi_batch: list[str],
             id_batch: list[str],
             ignore_3D: bool,
-            max_token_len: int,
             pooling: str="mean",
     ):
         """
@@ -1440,35 +1464,30 @@ class FeatureGenerator():
                 smiles_ls=smi_batch,
                 id_ls=id_batch,
                 batch_size=64,
-                max_token_len=max_token_len,
                 pooling=pooling,
             ),
             "chembertasey": lambda: self.calcChemBERTa(
                 smiles_ls=smi_batch,
                 id_ls=id_batch,
                 batch_size=64,
-                max_token_len=max_token_len,
                 pooling=pooling,
             ),
             "molformer": lambda: self.calcMolFormer(
                 smiles_ls=smi_batch,
                 id_ls=id_batch,
                 batch_size=64,
-                max_token_len=max_token_len,
                 pooling=pooling,
             ),
             "molformer-c3-1b": lambda: self.calcMolFormer(
                 smiles_ls=smi_batch,
                 id_ls=id_batch,
                 batch_size=64,
-                max_token_len=max_token_len,
                 pooling=pooling,
             ),
             "selformer": lambda: self.calcSELFormer(
                 smiles_ls=smi_batch,
                 id_ls=id_batch,
                 batch_size=64,
-                max_token_len=max_token_len,
                 pooling=pooling,
             ),
             "morgan": lambda: self.calcMorganFingerprints(smiles_ls=smi_batch, id_ls=id_batch),

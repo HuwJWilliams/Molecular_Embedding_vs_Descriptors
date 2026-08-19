@@ -20,22 +20,23 @@ from get_paths import getPaths
 #  --- CONSTANTS
 PATHS = getPaths()
 
+
 def loadData(
-        df: str | pd.DataFrame | Path,
-        index_col: int | str=0,
-        exclude: list[str]=[],
-        wildcard: str="*",
-        force_float32: bool=True,  # Changed default to True
+    df: str | pd.DataFrame | Path,
+    index_col: int | str = 0,
+    exclude: list[str] = [],
+    wildcard: str = "*",
+    force_float32: bool = True,  # Changed default to True
 ) -> pd.DataFrame:
     """
     Flexibly loads data into a pandas DataFrame from various input types.
-    This function accepts either a file path, a wildcard pattern (to merge 
-    multiple CSV files), or an existing DataFrame. It standardises the input 
+    This function accepts either a file path, a wildcard pattern (to merge
+    multiple CSV files), or an existing DataFrame. It standardises the input
     into a clean, indexed DataFrame and optionally removes specified columns.
     Parameters
     ----------
     df : str, Path, pd.DataFrame
-                        Path to a CSV file, a wildcard pattern (e.g., "*.csv"), 
+                        Path to a CSV file, a wildcard pattern (e.g., "*.csv"),
                         or an existing DataFrame.
     index_col : int, str (optional)
                         Column to use as the index when reading CSV files.
@@ -44,7 +45,7 @@ def loadData(
                         List of column names to drop after loading.
                         Default = [].
     wildcard : str (optional)
-                        Character used to denote a wildcard pattern when loading 
+                        Character used to denote a wildcard pattern when loading
                         multiple files.
                         Default = "*".
     force_float32 : bool (optional)
@@ -61,11 +62,13 @@ def loadData(
                         If the input is not a path (str/Path) or a pandas DataFrame.
     """
     if isinstance(df, (str, Path)) and wildcard in str(df):
-        loaded_df = pd.concat([pd.read_csv(f, index_col=index_col) for f in glob(str(df))], axis=0)
+        loaded_df = pd.concat(
+            [pd.read_csv(f, index_col=index_col) for f in glob(str(df))], axis=0
+        )
         try:
             print("Trying to number the index in order")
             loaded_df = loaded_df.sort_index(
-                key=lambda idx: idx.str.extract(r'(\d+)$').astype(int)[0]
+                key=lambda idx: idx.str.extract(r"(\d+)$").astype(int)[0]
             )
             print("Succeeded.")
         except Exception as e:
@@ -76,48 +79,52 @@ def loadData(
         loaded_df = df.copy()
     else:
         raise TypeError("Input must be a path (str/Path) or a pandas DataFrame.")
-    
+
     if exclude:
-        loaded_df = loaded_df.drop(columns=[c for c in exclude if c in loaded_df.columns])
-    
+        loaded_df = loaded_df.drop(
+            columns=[c for c in exclude if c in loaded_df.columns]
+        )
+
     # FLOAT32 CONVERSION WITH CLIPPING
     if force_float32:
         numeric_cols = loaded_df.select_dtypes(include=[np.number]).columns
         float32_max = np.finfo(np.float32).max
         float32_min = np.finfo(np.float32).min
-        
+
         clipped_cols = []
-        
+
         for col in numeric_cols:
             max_val = loaded_df[col].abs().max()
-            
+
             # Check if clipping is needed
             if max_val > float32_max or loaded_df[col].min() < float32_min:
                 # Clip values to float32 range
-                loaded_df[col] = loaded_df[col].clip(lower=float32_min, upper=float32_max)
+                loaded_df[col] = loaded_df[col].clip(
+                    lower=float32_min, upper=float32_max
+                )
                 clipped_cols.append((col, max_val))
-        
+
         if clipped_cols:
             print(f"Clipped {len(clipped_cols)} columns to float32 range")
             # Show first 5 clipped columns
             for col, val in clipped_cols[:5]:
                 print(f"  - {col}: original max = {val:.2e}")
-        
+
         # Convert all numeric columns to float32
         loaded_df[numeric_cols] = loaded_df[numeric_cols].astype(np.float32)
         print(f"✓ Converted {len(numeric_cols)} numeric columns to float32")
-    
+
     return loaded_df
 
 
 def setupLogger(
-        name: str,
-        identifier: str,
-        save_logger: bool,
-        level: int=logging.DEBUG,     
-        log_dir: Path=PATHS['config']["logs"],
-        message: str='%(asctime)s | %(funcName)s | %(message)s'
-    ):
+    name: str,
+    identifier: str,
+    save_logger: bool,
+    level: int = logging.DEBUG,
+    log_dir: Path = PATHS["config"]["logs"],
+    message: str = "%(asctime)s | %(funcName)s | %(message)s",
+):
 
     logger = logging.getLogger(name)
     logger.setLevel(level)
@@ -141,16 +148,16 @@ def setupLogger(
 
 
 def fixCSVColumns(
-        root_dir: str | Path,
-        col_to_drop: str=None,
-        rename_to: dict={},
-        file_fnames: list="*feature_importance.csv",
-        file_ls: list=None,
-        ):
-    
+    root_dir: str | Path,
+    col_to_drop: str = None,
+    rename_to: dict = {},
+    file_fnames: list = "*feature_importance.csv",
+    file_ls: list = None,
+):
+
     if not file_ls:
         file_ls = root_dir.rglob(file_fnames)
-    
+
     for csv_file in file_ls:
         try:
             df = pd.read_csv(csv_file)
@@ -170,10 +177,10 @@ def fixCSVColumns(
 
 
 def getFeatures(
-        ids: list[str] | Path | pd.DataFrame,
-        feature_name: str,
+    ids: list[str] | Path | pd.DataFrame,
+    feature_name: str,
 ):
-    
+
     if isinstance(ids, Path):
         id_df = pd.read_csv(ids)
         id_ls = id_df["ID"].to_list()
@@ -181,7 +188,7 @@ def getFeatures(
     elif isinstance(ids, pd.DataFrame):
         id_df = ids.reset_index()
         id_ls = id_df["ID"].to_list()
-    
+
     else:
         id_ls = ids
 
@@ -192,19 +199,24 @@ def getFeatures(
 
     return rows
 
+
 def center_rows(df):
     return df.sub(df.mean(axis=1), axis=0)
+
 
 def scale_rows(df):
     denom = df.abs().max(axis=1).replace(0, 1)
     return df.div(denom, axis=0)
 
+
 def center_columns(df):
     return df.sub(df.mean(axis=0), axis=1)
+
 
 def scale_columns(df):
     denom = df.abs().max(axis=0).replace(0, 1)
     return df.div(denom, axis=1)
+
 
 def filter_molecules_by_mw(
     df: pd.DataFrame,
@@ -220,8 +232,7 @@ def filter_molecules_by_mw(
     mw_column = next((col for col in mw_column_candidates if col in df.columns), None)
     if mw_column is None:
         raise ValueError(
-            "No molecular-weight column found. "
-            f"Tried: {list(mw_column_candidates)}"
+            "No molecular-weight column found. " f"Tried: {list(mw_column_candidates)}"
         )
 
     filtered_df = df.copy()
@@ -233,6 +244,7 @@ def filter_molecules_by_mw(
         filtered_df = filtered_df[filtered_df[mw_column] <= max_mw]
 
     return filtered_df
+
 
 def get_ids_in_mw_range(
     df: pd.DataFrame,
@@ -249,6 +261,7 @@ def get_ids_in_mw_range(
         mw_column_candidates=mw_column_candidates,
     )
     return filtered_df.index
+
 
 def check_path_exists(path, expect=None, non_empty=False, name="path"):
     p = Path(path)
@@ -267,10 +280,9 @@ def check_path_exists(path, expect=None, non_empty=False, name="path"):
 
     return p
 
+
 def getMostImportantFeatures(
-        importance_source,
-        top_n: int=25,
-        mode: str="shap"
+    importance_source, top_n: int = 25, mode: str = "shap"
 ) -> tuple[dict, dict, dict]:
     """
     Summarise the top-N most important features for each descriptor.
@@ -303,10 +315,9 @@ def getMostImportantFeatures(
         feature_names = importance_source["feature_names"]
 
         for desc, shap_values in shap_by_desc.items():
-            top = (
-                pd.Series(np.abs(shap_values).mean(axis=0), index=feature_names)
-                .nlargest(top_n)
-            )
+            top = pd.Series(
+                np.abs(shap_values).mean(axis=0), index=feature_names
+            ).nlargest(top_n)
             clean_desc = desc.rsplit("_", 1)[0]
             avg_importance_dict[clean_desc] = [top.index.tolist(), float(top.mean())]
             cum_importance_dict[clean_desc] = [top.index.tolist(), float(top.sum())]
@@ -333,27 +344,27 @@ def getMostImportantFeatures(
 
     return avg_importance_dict, cum_importance_dict, count_dict
 
+
 def molid2Smiles(molid):
     cleaned_all = pd.read_csv(PROJ_DIR / "datasets" / "all" / "cleaned_all.csv")
     return cleaned_all.loc[cleaned_all["ID"] == molid, "SMILES"].iloc[0]
 
+
 def genMurckoScaffold(smiles, include_chirality=False):
-    mol=Chem.MolFromSmiles(smiles)
+    mol = Chem.MolFromSmiles(smiles)
 
     if mol is None:
-        return None 
-    
+        return None
+
     scaffold = MurckoScaffold.MurckoScaffoldSmiles(
-            mol=mol, includeChirality=include_chirality
-        )
-    
+        mol=mol, includeChirality=include_chirality
+    )
+
     return scaffold
 
+
 def splitByMurckoScaffold(
-    df,
-    smi_col="SMILES",
-    n_cmpds=2000,
-    max_scaff_diversity_pass=5
+    df, smi_col="SMILES", n_cmpds=2000, max_scaff_diversity_pass=5
 ):
 
     scaffold_to_indices = defaultdict(list)

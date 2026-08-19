@@ -99,6 +99,16 @@ def _dataset_feature_prefix(dataset_key: str, for_results: bool = False) -> str:
     return feature_prefix_map.get(dataset_key, dataset_key.upper())
 
 
+def _target_dataset_dir(json_contents: dict, dataset_key: str) -> str:
+    """Return the dataset folder from the target path stored in paths.json."""
+
+    target_path = json_contents["targets"].get(dataset_key)
+    if target_path is None:
+        raise KeyError(f"No target path found for dataset '{dataset_key}'")
+
+    return str(target_path).rsplit("/", 1)[0]
+
+
 def _add_dataset_cross_prediction_paths(
     prediction_output_dirs: dict,
     dataset_key: str,
@@ -141,22 +151,11 @@ def addNewDatasetPaths(
     json_contents["full_features"][dataset_key] = {}
     template_full = json_contents["full_features"]["bp"]
 
-    for feature, path in template_full.items():
-        if "descriptors" in path:
-            family = "descriptors"
-            suffix = "descriptors"
-        elif "embeddings" in path:
-            family = "embeddings"
-            suffix = "embeddings"
-        elif "fingerprints" in path:
-            family = "fingerprints"
-            suffix = "fingerprints"
-        else:
-            raise ValueError(f"Cannot infer family for feature '{feature}'")
-
+    dataset_dir = f"${{DATASETS_DIR}}/{dataset_folder_name}"
+    for feature in template_full:
         json_contents["full_features"][dataset_key][
             feature
-        ] = f"${{DATASETS_DIR}}/{family}/{dataset_prefix}_{suffix}/{dataset_key}_{feature}_*.csv"
+        ] = f"{dataset_dir}/{dataset_key}_{feature}.csv"
 
     # prediction_output_dirs rf/lr
     result_prefix = dataset_prefix.upper()
@@ -210,10 +209,8 @@ def addFeatureSetPaths(
             block[feature_name] = f"${{DATASETS_DIR}}/all/{filename}"
             continue
 
-        prefix = _dataset_feature_prefix(dataset, for_results=False)
-        block[feature_name] = (
-            f"${{DATASETS_DIR}}/{family}/{prefix}_{family}/{dataset}_{feature_name}_*.csv"
-        )
+        dataset_dir = _target_dataset_dir(json_contents, dataset)
+        block[feature_name] = f"{dataset_dir}/{dataset}_{feature_name}.csv"
 
     # prediction_output_dirs rf/lr
     for model in ["rf", "lr"]:

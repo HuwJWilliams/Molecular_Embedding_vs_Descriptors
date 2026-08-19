@@ -1,0 +1,207 @@
+Workflow Script Dependency Flow
+===============================
+
+Source checked: run/Workflow.md
+Local Python entry scripts named by the workflow:
+- run/setup.py
+- run/generate_features.py
+- run/run_cfp.py
+- run/cfp_analysis.py
+- run/run_single_prediction.py
+- run/pp_analysis.py
+- run/feature_importance_analysis.py
+
+Note: Workflow.md currently spells the PP analysis example as
+`pp_analaysis.py`, but the actual file in run/ is `pp_analysis.py`.
+
+Shared local modules used by many workflow scripts:
+- run/config/config.py
+  - scripts/src/pathing/get_paths.py
+- scripts/src/pathing/get_paths.py
+
+
+Hierarchical Dependency Flow
+============================
+
+1. run/setup.py
+   - run/config/config.py
+     - scripts/src/pathing/get_paths.py
+   - scripts/src/pathing/get_paths.py
+
+2. run/generate_features.py
+   - run/config/config.py
+     - scripts/src/pathing/get_paths.py
+   - scripts/src/datasets/feature_generator.py
+     - scripts/src/pathing/get_paths.py
+     - scripts/src/misc/misc_fns.py
+       - scripts/src/pathing/get_paths.py
+     - scripts/config/pipeline_config.py
+   - scripts/src/pathing/get_paths.py
+   - scripts/src/misc/misc_fns.py
+     - scripts/src/pathing/get_paths.py
+
+3. run/run_cfp.py
+   - run/config/config.py
+     - scripts/src/pathing/get_paths.py
+   - scripts/src/models/transfer_model.py
+     - scripts/src/models/RF_models.py
+     - scripts/src/misc/misc_fns.py
+       - scripts/src/pathing/get_paths.py
+     - scripts/src/datasets/analyse_datasets.py
+       - scripts/src/pathing/get_paths.py
+       - scripts/src/datasets/group_descriptors.py
+     - external/project-adjacent import: performance_calculation.py
+       This file was not found inside this repository.
+   - scripts/src/pathing/get_paths.py
+   - scripts/src/datasets/feature_cleaning.py
+
+4. run/cfp_analysis.py
+   - run/config/config.py
+     - scripts/src/pathing/get_paths.py
+   - run/fns/cfp_analysis_fns.py
+     - run/config/config.py
+       - scripts/src/pathing/get_paths.py
+     - scripts/src/pathing/get_paths.py
+     - scripts/src/visualisation/vis.py
+       - scripts/src/pathing/get_paths.py
+       - scripts/src/datasets/group_descriptors.py
+       - scripts/src/datasets/feature_cleaning.py
+       - scripts/src/misc/misc_fns.py
+         - scripts/src/pathing/get_paths.py
+     - scripts/src/datasets/group_descriptors.py
+     - scripts/src/datasets/analyse_datasets.py
+       - scripts/src/pathing/get_paths.py
+       - scripts/src/datasets/group_descriptors.py
+   - scripts/src/pathing/get_paths.py
+
+5. run/run_single_prediction.py
+   - run/config/config.py
+     - scripts/src/pathing/get_paths.py
+   - scripts/src/pathing/get_paths.py
+   - scripts/src/models/transfer_model.py
+     - scripts/src/models/RF_models.py
+     - scripts/src/misc/misc_fns.py
+       - scripts/src/pathing/get_paths.py
+     - scripts/src/datasets/analyse_datasets.py
+       - scripts/src/pathing/get_paths.py
+       - scripts/src/datasets/group_descriptors.py
+     - external/project-adjacent import: performance_calculation.py
+       This file was not found inside this repository.
+   - scripts/src/misc/misc_fns.py
+     - scripts/src/pathing/get_paths.py
+   - scripts/src/datasets/feature_cleaning.py
+   - scripts/src/datasets/group_descriptors.py
+
+6. run/pp_analysis.py
+   - run/config/config.py
+     - scripts/src/pathing/get_paths.py
+   - run/fns/pp_analysis_fns.py
+     - run/config/config.py
+       - scripts/src/pathing/get_paths.py
+     - scripts/src/pathing/get_paths.py
+     - scripts/src/visualisation/vis.py
+       - scripts/src/pathing/get_paths.py
+       - scripts/src/datasets/group_descriptors.py
+       - scripts/src/datasets/feature_cleaning.py
+       - scripts/src/misc/misc_fns.py
+         - scripts/src/pathing/get_paths.py
+     - scripts/src/datasets/analyse_datasets.py
+       - scripts/src/pathing/get_paths.py
+       - scripts/src/datasets/group_descriptors.py
+   - scripts/src/pathing/get_paths.py
+   - scripts/src/visualisation/vis.py
+     - scripts/src/pathing/get_paths.py
+     - scripts/src/datasets/group_descriptors.py
+     - scripts/src/datasets/feature_cleaning.py
+     - scripts/src/misc/misc_fns.py
+       - scripts/src/pathing/get_paths.py
+
+7. run/feature_importance_analysis.py
+   - run/config/config.py
+     - scripts/src/pathing/get_paths.py
+   - run/fns/feature_importance_analysis_fns.py
+     - run/config/config.py
+       - scripts/src/pathing/get_paths.py
+     - scripts/src/datasets/group_descriptors.py
+   - scripts/src/pathing/get_paths.py
+
+
+Workflow Script Purposes
+========================
+
+- run/setup.py
+  Creates or updates the global pathing JSON.
+
+- run/generate_features.py
+  Generates descriptor, fingerprint, and embedding feature CSVs.
+
+- run/run_cfp.py
+  Runs cross-feature prediction models.
+
+- run/cfp_analysis.py
+  Analyses cross-feature prediction outputs.
+
+- run/run_single_prediction.py
+  Runs single-property RF prediction models.
+
+- run/pp_analysis.py
+  Analyses single-property prediction outputs.
+
+- run/feature_importance_analysis.py
+  Averages RF feature importances across single-property prediction repeats and
+  produces descriptor-group summaries for RDKit and Mordred.
+
+
+Local Python Files Reached From Workflow.md
+===========================================
+
+run/config/config.py
+run/setup.py
+run/generate_features.py
+run/run_cfp.py
+run/cfp_analysis.py
+run/fns/cfp_analysis_fns.py
+run/run_single_prediction.py
+run/pp_analysis.py
+run/fns/pp_analysis_fns.py
+run/feature_importance_analysis.py
+run/fns/feature_importance_analysis_fns.py
+scripts/config/pipeline_config.py
+scripts/src/datasets/analyse_datasets.py
+scripts/src/datasets/feature_cleaning.py
+scripts/src/datasets/feature_generator.py
+scripts/src/datasets/group_descriptors.py
+scripts/src/misc/misc_fns.py
+scripts/src/models/RF_models.py
+scripts/src/models/transfer_model.py
+scripts/src/pathing/get_paths.py
+scripts/src/visualisation/vis.py
+
+
+Local Python Files Not Reached From Workflow.md
+===============================================
+
+These files exist locally but were not reached by recursively following the
+Workflow.md entry scripts above:
+
+run/fns/feature_set_analysis_fns.py
+run/standardise_data.py
+run/target_set_analysis.py
+scripts/src/datasets/join_desc_funcs.py
+scripts/src/datasets/standardise_dataset.py
+scripts/src/datasets/standardise_dataset_funcs.py
+
+Shell/environment/documentation files in run/ are not Python dependencies:
+- run/config/environment.yml
+- run/submit_generate_features.sh
+- run/Workflow.md
+
+
+Checks Performed
+================
+
+- Extracted Python commands from run/Workflow.md.
+- Compared those names with Python files present in run/.
+- Followed local import statements through run/, scripts/src/, and scripts/config/.
+- Checked for pipeline_config.py and found it at scripts/config/pipeline_config.py.
+- Checked for performance_calculation.py and did not find it inside this repository.

@@ -44,115 +44,6 @@ def calc_mw(smi):
     return Chem.Descriptors.MolWt(mol)
 
 
-def plot_true_vs_pred(
-    true_test_data,
-    pred_df,
-    true_col: str,
-    pred_col: str = "Prediction",
-    save_plot: bool = False,
-    save_path: str | Path = ".",
-    save_fname: str = "true_vs_pred_scatter",
-    dpi: int = 300,
-    remove_pred_outliers: bool = False,
-    remove_true_outliers: bool = False,
-    lower_pct: float = 1,
-    upper_pct: float = 99,
-    show_plot: bool = False,
-    model_name: str = None,
-):
-    common_idx = true_test_data.index.intersection(pred_df.index)
-
-    y_true = true_test_data.loc[common_idx, true_col]
-    y_pred = pred_df.loc[common_idx, pred_col]
-
-    plot_df = pd.DataFrame({"true": y_true, "pred": y_pred}).dropna()
-
-    if remove_pred_outliers:
-        pred_low = plot_df["pred"].quantile(lower_pct / 100)
-        pred_high = plot_df["pred"].quantile(upper_pct / 100)
-        plot_df = plot_df[plot_df["pred"].between(pred_low, pred_high)]
-
-    if remove_true_outliers:
-        true_low = plot_df["true"].quantile(lower_pct / 100)
-        true_high = plot_df["true"].quantile(upper_pct / 100)
-        plot_df = plot_df[plot_df["true"].between(true_low, true_high)]
-
-    y_true = plot_df["true"]
-    y_pred = plot_df["pred"]
-
-    residuals = y_pred - y_true
-    bias = residuals.mean()
-    sdep = np.sqrt(np.mean((residuals - bias) ** 2))
-    rmse = root_mean_squared_error(y_true, y_pred)
-    r2 = r2_score(y_true, y_pred)
-    pear_r, pear_p = pearsonr(y_true, y_pred)
-
-    metrics = {
-        "RMSE": float(rmse),
-        "r2": float(r2),
-        "Pearson_r": float(pear_r),
-        "Pearson_p": float(pear_p),
-        "Bias": float(bias),
-        "SDEP": float(sdep),
-        "n": int(len(plot_df)),
-    }
-
-    fig, ax = plt.subplots(figsize=(6, 7))
-
-    ax.scatter(y_true, y_pred, alpha=0.7, edgecolor="black", linewidth=0.4)
-
-    min_val = min(y_true.min(), y_pred.min())
-    max_val = max(y_true.max(), y_pred.max())
-
-    ax.plot(
-        [min_val, max_val],
-        [min_val, max_val],
-        linestyle="--",
-        color="red",
-        linewidth=1,
-    )
-
-    ax.set_xlabel("True")
-    ax.set_ylabel("Predicted")
-    ax.set_title(f"True vs Predicted ({model_name})")
-
-    table_data = [
-        [
-            f"{rmse:.3f}",
-            f"{r2:.3f}",
-            f"{pear_r:.3f}",
-            f"{bias:.3f}",
-            f"{sdep:.3f}",
-        ]
-    ]
-
-    table = ax.table(
-        cellText=table_data,
-        colLabels=["RMSE", "R2", "Pearson r", "Bias", "SDEP"],
-        cellLoc="center",
-        loc="bottom",
-        bbox=[0.0, -0.32, 1.0, 0.16],
-    )
-
-    table.auto_set_font_size(False)
-    table.set_fontsize(9)
-
-    plt.subplots_adjust(bottom=0.25)
-    plt.tight_layout()
-
-    if save_plot:
-        save_path = Path(save_path)
-        save_path.mkdir(parents=True, exist_ok=True)
-        fig.savefig(save_path / f"{save_fname}.png", dpi=dpi, bbox_inches="tight")
-
-    if show_plot:
-        plt.show()
-
-    plt.close(fig)
-
-    return fig, ax, metrics
-
-
 def plot_train_test_pred_distribution(
     train_data,
     true_test_data,
@@ -420,11 +311,6 @@ def plot_two_df_ridgeplots(
         figs[desc] = fig
 
     return figs
-
-
-# endregion
-
-# region
 
 run_1 = False
 
@@ -1614,101 +1500,6 @@ if run_16:
     print(f"Autocorrelation descriptors plotted: {corr.shape[0]}")
     print(f"Saved heatmap to: {save_path}")
 
-# run_17 (= True)
-
-# if run_17:
-#     import re
-#     import sys
-#     from pathlib import Path
-
-#     import numpy as np
-#     import pandas as pd
-#     import matplotlib.pyplot as plt
-#     import seaborn as sns
-
-#     sys.path.insert(0, "/users/yhb18174/TL_project/scripts/src/datasets")
-#     from group_descriptors import getGroups
-
-#     mordred_path = Path(
-#         "/users/yhb18174/TL_project/datasets/all/fit_lipinski/all_mordred.csv"
-#     )
-#     save_dir = Path(
-#         "/users/yhb18174/TL_project/results/lipinski_embeddings_and_descriptor_predictions/pred_mordred_tr_rdkit"
-#     )
-#     save_dir.mkdir(parents=True, exist_ok=True)
-
-#     df = pd.read_csv(mordred_path, index_col="ID")
-#     df = df.drop(columns=["SMILES"], errors="ignore")
-#     df = df.apply(pd.to_numeric, errors="coerce")
-#     df = df.replace([np.inf, -np.inf], np.nan)
-
-#     autocorr_features = [
-#         c for c in getGroups("mordred")["Autocorrelation"]
-#         if c in df.columns
-#     ]
-
-#     def clean_name(name):
-#         return str(name).replace("_mordred", "").replace("_rdkit", "")
-
-#     def get_family(descriptor):
-#         # Examples: MATS1c -> MATS, AATSC3v -> AATSC
-#         match = re.match(r"([A-Za-z]+)\d+", clean_name(descriptor))
-#         return match.group(1) if match else "Unknown"
-
-#     records = []
-
-#     for feat in autocorr_features:
-#         family = get_family(feat)
-#         values = df[feat].dropna()
-
-#         if values.empty:
-#             continue
-
-#         q1 = values.quantile(0.25)
-#         q3 = values.quantile(0.75)
-
-#         records.extend([
-#             {"family": family, "descriptor": feat, "stat": "min", "value": values.min()},
-#             {"family": family, "descriptor": feat, "stat": "max", "value": values.max()},
-#             {"family": family, "descriptor": feat, "stat": "avg", "value": values.mean()},
-#             {"family": family, "descriptor": feat, "stat": "IQR", "value": q3 - q1},
-#         ])
-
-#     stat_df = pd.DataFrame(records)
-
-#     print("\nAutocorrelation descriptor summary stats by family:")
-#     print(
-#         stat_df.groupby(["family", "stat"])["value"]
-#         .agg(["count", "mean", "median", "min", "max"])
-#         .round(4)
-#     )
-
-#     stat_order = ["min", "max", "avg", "IQR"]
-
-#     plt.figure(figsize=(12, 6))
-#     sns.stripplot(
-#         data=stat_df,
-#         x="family",
-#         y="value",
-#         hue="stat",
-#         hue_order=stat_order,
-#         dodge=True,
-#         alpha=0.65,
-#         size=4,
-#     )
-
-#     plt.xlabel("Autocorrelation descriptor family")
-#     plt.ylabel("Statistic value")
-#     plt.title("Min, Max, Average, and IQR per Autocorrelation Descriptor")
-#     plt.xticks(rotation=45, ha="right")
-#     plt.legend(title="Statistic", bbox_to_anchor=(1.02, 1), loc="upper left")
-#     plt.tight_layout()
-
-#     save_path = save_dir / "autocorrelation_family_descriptor_stats_scatter.png"
-#     plt.savefig(save_path, dpi=300, bbox_inches="tight")
-#     plt.close()
-
-#     print(f"\nSaved plot to: {save_path}")
 
 run_17 = False
 
@@ -3285,7 +3076,6 @@ if run_31:
             "HOLE_RE": "hole_re",
             "ELEC_RE": "elec_re",
             "AQ_SOL": "aq_sol",
-            "HOMO_LUMO_GAP": "homo_lumo_gap",
             "EGFR_PIC50": "egfr_pic50",
         }
 

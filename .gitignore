@@ -11,4 +11,6 @@ results_pre_3D/
 *.xml
 *.png
 *.json
+*.gz*
 .codex
+sandbox.py

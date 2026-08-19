@@ -11,6 +11,9 @@ import sys
 from glob import glob
 
 # %% ===== Project Imports & Pathing Setup =====
+RUN_DIR = Path(__file__).resolve().parent
+sys.path.insert(0, str(RUN_DIR / "config"))
+
 from config import (
     SCRIPTS_DIR,
     SRC_DIR,
@@ -58,7 +61,7 @@ p.add_argument(
     help="Number of internal resamples per repeat",
 )
 p.add_argument(
-    "--max_nan_frac",
+    "--max-nan-frac",
     type=float,
     default=0,
     help="Fraction of NaN rows to drop a column",
@@ -84,8 +87,7 @@ p.add_argument(
 
 def safe_path_label(value: str) -> str:
     return "".join(
-        char if char.isalnum() or char in ("-", "_") else "-"
-        for char in str(value)
+        char if char.isalnum() or char in ("-", "_") else "-" for char in str(value)
     ).strip("-")
 
 
@@ -322,6 +324,7 @@ for repeat_i in range(args.repeats):
     pred_name = f"repeat_{repeat_n:03d}"
     saved_pred_df = pd.read_csv(repeat_dir / "external_preds.csv.gz", index_col="ID")
     repeat_pred_series.append(saved_pred_df[target_col].rename(pred_name))
+
 
 def summarise_performance(records: list[dict]) -> dict:
     perf_df = pd.DataFrame(records).set_index("repeat")
