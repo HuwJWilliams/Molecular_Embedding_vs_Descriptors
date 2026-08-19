@@ -131,6 +131,13 @@ def test_single_property_prediction():
     final_X = X.loc[common]
     final_y = y.loc[common]
 
-    print(f"Aligned shapes → X: {X.shape}, y: {y.shape}")
-    data = X.join(y)
+    print(f"Aligned shapes -> X: {X.shape}, y: {y.shape}")
+
+    # assert final_X.shape == (25, 219)
+    # assert final_y.shape == (25, 1)
+
+    data = final_X.join(final_y)
+
+    # assert data.shape == (25, 220)
+
     print(f"Full modelling data: {data.shape}")
