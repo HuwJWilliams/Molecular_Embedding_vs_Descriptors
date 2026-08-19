@@ -39,7 +39,7 @@ from get_paths import (
 )
 
 # %% ========== PATHING JSON SETUP TESTING
-CLEAN_PATHING = False
+CLEAN_CREATED_PATHS = False
 TEST_JSON_NAME = "test.json"
 TEST_JSON_PATH = SRC_DIR / "pathing" / TEST_JSON_NAME
 EXPECTED_PATHING_PATH = EXPECTED_DATA / "expected_pathing.json"
