@@ -1,9 +1,5 @@
 """Script to run tests to check the full workflow"""
 
-pytestmark = [
-    pytest.mark.filterwarnings("ignore:.*least populated class.*:UserWarning"),
-]
-
 # %% ===== Imports
 import math
 import shutil
@@ -12,6 +8,11 @@ import sys
 
 import pandas as pd
 import pytest
+
+pytestmark = [
+    pytest.mark.filterwarnings("ignore:.*least populated class.*:UserWarning"),
+]
+
 
 # %% ==== Pathing
 ROOT = Path(__file__).resolve().parents[2]
