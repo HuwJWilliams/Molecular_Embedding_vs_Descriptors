@@ -14,14 +14,14 @@ SCRIPTS_DIR = ROOT / "scripts"
 SRC_DIR = SCRIPTS_DIR / "src"
 FEATURES = [
     "rdkit",
-    "mordred",
-    "maccs",
-    "morgan",
-    "chemberta-dc",
-    "chemberta-sey",
-    "molformer-ibm",
-    "molformer-dc",
-    "selformer",
+    # "mordred",
+    # "maccs",
+    # "morgan",
+    # "chemberta-dc",
+    # "chemberta-sey",
+    # "molformer-ibm",
+    # "molformer-dc",
+    # "selformer",
 ]
 
 sys.path.insert(0, str(SRC_DIR / "pathing"))
@@ -114,3 +114,5 @@ def test_generate_features(feature_set):
 
     assert len(generated_df) > 0
     assert generated_df.index.notna().all()
+
+

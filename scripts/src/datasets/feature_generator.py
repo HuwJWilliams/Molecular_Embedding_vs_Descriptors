@@ -35,14 +35,15 @@ FILE_DIR = Path(__file__).resolve()
 PROJ_DIR = FILE_DIR.parents[3]
 SCRIPTS_DIR = PROJ_DIR / "scripts"
 SRC_DIR = SCRIPTS_DIR / "src"
+RUN_DIR = PROJ_DIR / "run"
 
 sys.path.insert(0, str(SRC_DIR / "pathing"))
 sys.path.insert(0, str(SRC_DIR / "misc"))
-sys.path.insert(0, str(SCRIPTS_DIR / "config"))
+sys.path.insert(0, str(RUN_DIR / "config"))
 
 from get_paths import getPaths
 from misc_fns import setupLogger
-from pipeline_config import TRANSFORMER_FEATURE_SPECS
+from config import TRANSFORMER_FEATURE_SPECS
 
 LOG_LEVEL = logging.DEBUG
 PATHS = getPaths()
