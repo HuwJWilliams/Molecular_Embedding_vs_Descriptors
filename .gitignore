@@ -25,3 +25,5 @@ sandbox/
 # Keep committed test fixtures, even when they match ignored artifact patterns
 !run/test/
 !run/test/**
+!datasets/test/
+!datasets/test/**
