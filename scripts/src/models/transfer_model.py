@@ -229,7 +229,7 @@ class TL:
             is_class_like = False
             if (
                 pd.api.types.is_object_dtype(non_na_target)
-                or pd.api.types.is_categorical_dtype(non_na_target)
+                or isinstance(non_na_target.dtype, pd.CategoricalDtype)
                 or pd.api.types.is_bool_dtype(non_na_target)
             ):
                 is_class_like = True
@@ -978,7 +978,7 @@ class TL:
         save_models: bool = False,
         save_path: str = "./",
         log_level=logging.DEBUG,
-        n_jobs: int = os.cpu_count(),
+        n_jobs: int | None = None,
         trim_3xIQR: bool = True,
     ):
 
@@ -1054,7 +1054,7 @@ class TL:
                 save_final_model=save_models,
                 plot_feat_importance=False,
                 batch_size=batch_size,
-                n_jobs=os.cpu_count(),
+                n_jobs=n_jobs if n_jobs is not None else os.cpu_count(),
                 final_rf_seed=None,
             )
         )

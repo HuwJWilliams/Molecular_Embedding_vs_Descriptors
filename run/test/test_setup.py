@@ -219,6 +219,7 @@ def test_single_property_prediction(created_paths):
             random_seed=42,
             save_models=False,
             save_path=MODEL_OUTPUT_DIR,
+            n_jobs=1,
             trim_3xIQR=False,
         )
     )
