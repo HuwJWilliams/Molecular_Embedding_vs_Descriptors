@@ -65,3 +65,6 @@ def testSetup():
     ), "Generated pathing JSON does not match the expected standard"
 
     print("Pathing JSON configured")
+
+
+testSetup()
