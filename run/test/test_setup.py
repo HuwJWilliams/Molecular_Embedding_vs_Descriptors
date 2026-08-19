@@ -174,7 +174,6 @@ def test_single_property_prediction():
             test_size=0.2,
             cv_splits=2,
             random_seed=42,
-            final_rf_seed=42,
             save_models=False,
             save_path=RUN_DIR / "test" / "test_model",
             trim_3xIQR=False,
