@@ -185,3 +185,11 @@ def test_single_property_prediction():
     expected_int_perf = loadJSON(EXPECTED_INT_PERFORMANCE)
     assert_performance_close(internal_perf, expected_int_perf)
     assert not feat_importance.empty
+
+    _, _, external_perf = model.predictSingleTargetRF(
+        model=final_model,
+        data=test_data,
+        target_column=TARGET_COLUMN,
+        calc_perf=True,
+        save_preds=False,
+    )
