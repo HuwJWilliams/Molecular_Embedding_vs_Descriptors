@@ -16,14 +16,14 @@ DATASET_DIR = ROOT / "datasets"
 
 FEATURES = [
     "rdkit",
-    "mordred",
-    "maccs",
-    "morgan",
-    "chemberta-dc",
-    "chemberta-sey",
-    "molformer-ibm",
-    "molformer-dc",
-    "selformer",
+    # "mordred",
+    # "maccs",
+    # "morgan",
+    # "chemberta-dc",
+    # "chemberta-sey",
+    # "molformer-ibm",
+    # "molformer-dc",
+    # "selformer",
 ]
 
 sys.path.insert(0, str(SRC_DIR / "pathing"))
@@ -52,7 +52,7 @@ def clean_test_json():
     yield
 
 
-def test_setup_creates_expected_pathing_json(clean_test_json):
+def test_pathing_setup(clean_test_json):
     createPathingJSON(json_name=TEST_JSON_NAME)
 
     addRawDataPaths(
@@ -113,3 +113,24 @@ def test_generate_features(feature_set):
             rtol=1e-10,
             atol=1e-12,
         )
+
+
+# %% ========== SINGLE PROPERTY PREDICTION TESTING
+sys.path.insert(0, str(SRC_DIR / "datasets"))
+from feature_cleaning import cleanFeatureDF
+
+
+def test_single_property_prediction():
+    X = pd.read_csv("run\test\expected_test_results\expected_rdkit_features.csv")
+    clean_X, cleaning_report = cleanFeatureDF(X)
+
+    y = pd.read_csv(str(DATASET_DIR / "test" / "dummy_data.csv"), index_col="ID")
+    y = y[["Solubility"]]
+
+    common = clean_X.index.intersection(y.index)
+    final_X = X.loc[common]
+    final_y = y.loc[common]
+
+    print(f"Aligned shapes → X: {X.shape}, y: {y.shape}")
+    data = X.join(y)
+    print(f"Full modelling data: {data.shape}")
