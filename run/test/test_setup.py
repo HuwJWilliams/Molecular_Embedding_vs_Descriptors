@@ -19,15 +19,18 @@ from get_paths import createPathingJSON, addRawDataPaths, addNewDatasetPaths
 test_json_name = "test.json"
 
 createPathingJSON(json_name=test_json_name)
+
 addRawDataPaths(
     raw_data_paths=[str(RUN_DIR / "dummy_data.csv")],
     set_names=["test"],
     json_name=test_json_name,
 )
+
 addNewDatasetPaths(
     dataset_key="test",
     target_file="dummy_data.csv",
     dataset_prefix="TEST",
     dataset_folder_name="test",
+    feature_sets=["rdkit"],
     json_name=test_json_name,
 )
