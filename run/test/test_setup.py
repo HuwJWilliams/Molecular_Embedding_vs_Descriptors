@@ -119,6 +119,11 @@ def test_generate_features(feature_set):
 sys.path.insert(0, str(SRC_DIR / "datasets"))
 from feature_cleaning import cleanFeatureDF
 
+sys.path.insert(0, str(SRC_DIR / "models"))
+from transfer_model import TL
+
+TARGET_COLUMN = "Solubility"
+
 
 def test_single_property_prediction():
     X = pd.read_csv(EXPECTED_FEATURE_PATHS["rdkit"], index_col="ID")
@@ -128,16 +133,42 @@ def test_single_property_prediction():
     y = y[["Solubility"]]
 
     common = clean_X.index.intersection(y.index)
-    final_X = X.loc[common]
+    final_X = clean_X.loc[common]
     final_y = y.loc[common]
 
-    print(f"Aligned shapes -> X: {X.shape}, y: {y.shape}")
-
-    # assert final_X.shape == (25, 219)
-    # assert final_y.shape == (25, 1)
+    assert final_X.shape == (25, 218)
+    assert final_y.shape == (25, 1)
 
     data = final_X.join(final_y)
 
-    # assert data.shape == (25, 220)
+    assert data.shape == (25, 219)
 
-    print(f"Full modelling data: {data.shape}")
+    train_data = data.iloc[:20]
+    test_data = data.iloc[20:]
+
+    model = TL()
+    final_model, best_params, internal_perf, feat_importance = (
+        model.trainSingleTargetRFModel(
+            data=train_data,
+            target_column="Solubility",
+            hyper_params={
+                "n_estimators": [5],
+                "max_features": ["sqrt"],
+                "max_depth": [5],
+                "min_samples_split": [2],
+                "min_samples_leaf": [1],
+            },
+            n_resamples=1,
+            test_size=0.2,
+            cv_splits=2,
+            random_seed=42,
+            save_models=False,
+            save_path=RUN_DIR / "test" / "test_model",
+            trim_3xIQR=False,
+        )
+    )
+
+    assert final_model is not None
+    assert isinstance(best_params, dict)
+    assert isinstance(internal_perf, dict)
+    assert not feat_importance.empty
