@@ -249,6 +249,18 @@ def test_single_property_prediction(created_paths):
 
 # %% ========== CROSS FEATURE PREDICTION TESTING
 def test_cross_feature_prediction(created_paths):
+
+    CFP_TARGET_COLUMNS = [
+        # regression
+        "ABC_mordred",
+        "ABCGG_mordred",
+        "SpAbs_A_mordred",
+        # binary classification
+        "naHRing_mordred",
+        # multiclass classification
+        "n6HRing_mordred",
+    ]
+
     output_dir = RUN_DIR / "test" / "test_cfp_model"
     shutil.rmtree(output_dir, ignore_errors=True)
     created_paths.append(output_dir)
@@ -258,12 +270,9 @@ def test_cross_feature_prediction(created_paths):
     train_ft = train_ft.select_dtypes(include="number")
 
     test_ft = pd.read_csv(EXPECTED_FEATURE_PATHS["mordred"], index_col="ID")
-    mordred_cols = [
-        col
-        for col in test_ft.columns
-        if col.endswith("_mordred") and test_ft[col].nunique(dropna=True) > 1
-    ]
-    test_ft = test_ft[mordred_cols[:5]]
+    test_ft = test_ft[CFP_TARGET_COLUMNS]
+
+    assert list(test_ft.columns) == CFP_TARGET_COLUMNS
 
     assert train_ft.shape[1] > 0
     assert test_ft.shape[1] == 5
