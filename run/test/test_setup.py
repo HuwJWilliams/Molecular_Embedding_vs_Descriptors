@@ -191,5 +191,6 @@ def test_single_property_prediction():
         data=test_data,
         target_column=TARGET_COLUMN,
         calc_perf=True,
-        save_preds=False,
+        save_preds=True,
+        save_path=RUN_DIR / "test" / "test_model",
     )
