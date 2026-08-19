@@ -29,8 +29,6 @@ from feature_generator import FeatureGenerator
 sys.path.insert(0, str(PATHING_PATH))
 from get_paths import getPaths
 
-FULL_PATHING = getPaths(PATHING_JSON_PATH)
-
 sys.path.insert(0, str(SRC_DIR / "misc"))
 from misc_fns import splitByMurckoScaffold
 
@@ -134,13 +132,18 @@ parser.add_argument(
     help="Random seed used when selecting molecules for fine-tuning.",
 )
 
+parser.add_argument("--pathing-json", default=PATHING_JSON_PATH)
+
+
 args = parser.parse_args()
+full_pathing = getPaths(args.pathing_json)
+
 task = args.task.lower()
 feature_set = args.feature_set.lower()
 target_col = args.target_col
 
-in_path = FULL_PATHING["targets"][task]
-out_path = FULL_PATHING["full_features"][task][feature_set]
+in_path = full_pathing["targets"][task]
+out_path = full_pathing["full_features"][task][feature_set]
 
 in_df = pd.read_csv(in_path, index_col="ID")
 
@@ -173,7 +176,7 @@ def resolveFineTunedFeaturePath(
 
 if args.fine_tune:
     out_path, pathing_key = resolveFineTunedFeaturePath(
-        full_feature_paths=FULL_PATHING["full_features"][task],
+        full_feature_paths=full_pathing["full_features"][task],
         base_feature_set=feature_set,
         split_by=args.split_by,
     )

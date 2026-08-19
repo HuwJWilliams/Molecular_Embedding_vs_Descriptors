@@ -1,22 +1,41 @@
 """Script to run tests to check the full workflow"""
 
 # %% ===== Imports
-import pandas as pd
 from pathlib import Path
 import sys
-import importlib
+import pandas as pd
+
+import pytest
 
 # %% ==== Pathing
 ROOT = Path(__file__).resolve().parents[2]
 RUN_DIR = ROOT / "run"
 SCRIPTS_DIR = ROOT / "scripts"
 SRC_DIR = SCRIPTS_DIR / "src"
+FEATURES = [
+    "rdkit",
+    "mordred",
+    "maccs",
+    "morgan",
+    "chemberta-dc",
+    "chemberta-sey",
+    "molformer-ibm",
+    "molformer-dc",
+    "selformer",
+]
 
 sys.path.insert(0, str(SRC_DIR / "pathing"))
-from get_paths import createPathingJSON, addRawDataPaths, addNewDatasetPaths, loadJSON
+from get_paths import (
+    createPathingJSON,
+    addRawDataPaths,
+    addNewDatasetPaths,
+    loadJSON,
+    getPaths,
+)
 
-# %%
-test_json_name = "test.json"
+# %% ========== PATHING JSON SETUP TESTING
+TEST_JSON_NAME = "test.json"
+TEST_JSON_PATH = SRC_DIR / "pathing" / TEST_JSON_NAME
 
 expected_json = {
     "imp_dirs": {
@@ -40,13 +59,19 @@ expected_json = {
 }
 
 
-def testSetup():
-    createPathingJSON(json_name=test_json_name)
+@pytest.fixture
+def clean_test_json():
+    TEST_JSON_PATH.unlink(missing_ok=True)
+    yield
+
+
+def test_setup_creates_expected_pathing_json(clean_test_json):
+    createPathingJSON(json_name=TEST_JSON_NAME)
 
     addRawDataPaths(
         raw_data_paths=[str(RUN_DIR / "test" / "dummy_data.csv")],
         set_names=["test"],
-        json_name=test_json_name,
+        json_name=TEST_JSON_NAME,
     )
 
     addNewDatasetPaths(
@@ -54,17 +79,38 @@ def testSetup():
         target_file="dummy_data.csv",
         dataset_prefix="TEST",
         dataset_folder_name="test",
-        feature_sets=["rdkit"],
-        json_name=test_json_name,
+        feature_sets=FEATURES,
+        json_name=TEST_JSON_NAME,
     )
 
-    generated_json = loadJSON(SRC_DIR / "pathing" / test_json_name)
+    generated_json = loadJSON(TEST_JSON_PATH)
 
-    assert (
-        generated_json == expected_json
-    ), "FAIL: Generated pathing JSON does not match the expected standard"
-
-    print("PASS: Pathing setup")
+    assert generated_json == expected_json
 
 
-testSetup()
+# %% ========== FEATURE GENERATION TESTING
+sys.path.insert(0, str(SRC_DIR / "datasets"))
+FULL_TEST_PATHING = getPaths(TEST_JSON_PATH)
+
+from feature_generator import FeatureGenerator
+
+
+@pytest.mark.parametrize("feature_set", FEATURES)
+def test_generate_features(feature_set):
+    input_df = pd.read_csv(FULL_TEST_PATHING["targets"]["test"], index_col="ID")
+    output_path = Path(FULL_TEST_PATHING["full_features"]["test"][feature_set])
+    output_path.unlink(missing_ok=True)
+
+    fg = FeatureGenerator(feature_set)
+    fg.calcBatchFeatures(
+        smiles_ls=input_df["SMILES"].tolist(),
+        id_ls=input_df.index.to_list(),
+        fpath=output_path,
+        batch_size=25,
+    )
+
+    assert output_path.exists()
+    generated_df = pd.read_csv(output_path, index_col="ID")
+
+    assert len(generated_df) > 0
+    assert generated_df.index.notna().all()
