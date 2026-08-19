@@ -188,7 +188,7 @@ class FeatureGenerator():
 
         self.logger.info(f"Generating descriptors for {len(df)} valid molecules")
         calc = Calculator(descriptors, ignore_3D=ignore_3D)
-        desc_df = calc.pandas(df["Mols"])
+        desc_df = calc.pandas(df["Mols"], nproc=1)
         desc_df = desc_df.add_suffix("_mordred")
         final_df = pd.concat([df.drop(columns=["Mols"]), desc_df], axis=1)
         final_df.index.name="ID"
