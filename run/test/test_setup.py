@@ -12,6 +12,8 @@ ROOT = Path(__file__).resolve().parents[2]
 RUN_DIR = ROOT / "run"
 SCRIPTS_DIR = ROOT / "scripts"
 SRC_DIR = SCRIPTS_DIR / "src"
+DATASET_DIR = ROOT / "datasets"
+
 FEATURES = [
     "rdkit",
     # "mordred",
@@ -69,7 +71,7 @@ def test_setup_creates_expected_pathing_json(clean_test_json):
     createPathingJSON(json_name=TEST_JSON_NAME)
 
     addRawDataPaths(
-        raw_data_paths=[str(RUN_DIR / "test" / "dummy_data.csv")],
+        raw_data_paths=[str(DATASET_DIR / "test" / "dummy_data.csv")],
         set_names=["test"],
         json_name=TEST_JSON_NAME,
     )
@@ -114,5 +116,3 @@ def test_generate_features(feature_set):
 
     assert len(generated_df) > 0
     assert generated_df.index.notna().all()
-
-
