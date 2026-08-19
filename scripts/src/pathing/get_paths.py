@@ -136,9 +136,9 @@ def addNewDatasetPaths(
     target_file: str,
     dataset_prefix: str,
     dataset_folder_name: str,
-    json_path: str | Path = FILE_DIR / "paths.json",
+    json_name: str = "paths.json",
 ):
-    json_contents = loadJSON(json_path)
+    json_contents = loadJSON(FILE_DIR / json_name)
     dataset_key = dataset_key.lower()
     dataset_prefix = dataset_prefix.strip()
 

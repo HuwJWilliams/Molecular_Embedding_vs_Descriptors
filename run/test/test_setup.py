@@ -13,7 +13,7 @@ SCRIPTS_DIR = ROOT / "scripts"
 SRC_DIR = SCRIPTS_DIR / "src"
 
 sys.path.insert(0, str(SRC_DIR / "pathing"))
-from get_paths import createPathingJSON, addRawDataPaths
+from get_paths import createPathingJSON, addRawDataPaths, addNewDatasetPaths
 
 # %%
 test_json_name = "test.json"
@@ -23,4 +23,11 @@ addRawDataPaths(
     raw_data_paths=[str(RUN_DIR / "dummy_data.csv")],
     set_names=["test"],
     json_name=test_json_name,
+)
+addNewDatasetPaths(
+    dataset_key="test",
+    target_file="dummy_data.csv",
+    dataset_prefix="TEST",
+    dataset_folder_name="test",
+    json_path=test_json_name,
 )
