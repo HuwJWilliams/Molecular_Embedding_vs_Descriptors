@@ -9,9 +9,9 @@
     "train_test_splits": {},
     "raw_data": {"test": "${DATASETS_DIR}/test/dummy_data.csv"},
     "targets": {"test": "${DATASETS_DIR}/test/dummy_data.csv"},
-    "full_features": {"test": {"rdkit": "${DATASETS_DIR}/test/test_rdkit.csv", "maccs": "${DATASETS_DIR}/test/test_maccs.csv"}},
+    "full_features": {"test": {"rdkit": "${DATASETS_DIR}/test/test_rdkit.csv", "mordred": "${DATASETS_DIR}/test/test_mordred.csv"}},
     "prediction_output_dirs": {
-        "rf": {"test": {"rdkit": "${RESULTS_DIR}/TEST_predictions_rf/rdkit", "maccs": "${RESULTS_DIR}/TEST_predictions_rf/maccs"}},
+        "rf": {"test": {"rdkit": "${RESULTS_DIR}/TEST_predictions_rf/rdkit", "mordred": "${RESULTS_DIR}/TEST_predictions_rf/mordred"}},
         "cross_feature_predictions": {"test": {}},
         "lipinski_cross_feature_predictions": {"test": {}}
     },

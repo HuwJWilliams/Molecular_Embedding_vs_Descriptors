@@ -19,8 +19,8 @@ EXPECTED_DATA = RUN_DIR / "test" / "expected_test_results"
 
 FEATURES = [
     "rdkit",
-    # "mordred",
-    "maccs",
+    "mordred",
+    # "maccs",
     # "morgan",
     # "chemberta-dc",
     # "chemberta-sey",
@@ -45,7 +45,7 @@ TEST_JSON_PATH = SRC_DIR / "pathing" / TEST_JSON_NAME
 EXPECTED_PATHING_PATH = EXPECTED_DATA / "expected_pathing.json"
 EXPECTED_FEATURE_PATHS = {
     "rdkit": EXPECTED_DATA / "expected_rdkit_features.csv",
-    "maccs": EXPECTED_DATA / "expected_maccs_features.csv",
+    "mordred": EXPECTED_DATA / "expected_mordred_features.csv",
 }
 
 EXPECTED_INT_PERFORMANCE = EXPECTED_DATA / "expected_int_perf.json"
@@ -257,13 +257,13 @@ def test_cross_feature_prediction(created_paths):
     train_ft = train_ft.drop(columns=["SMILES"], errors="ignore")
     train_ft = train_ft.select_dtypes(include="number")
 
-    test_ft = pd.read_csv(EXPECTED_FEATURE_PATHS["maccs"], index_col="ID")
-    maccs_cols = [
+    test_ft = pd.read_csv(EXPECTED_FEATURE_PATHS["mordred"], index_col="ID")
+    mordred_cols = [
         col
         for col in test_ft.columns
-        if col.endswith("_maccs") and test_ft[col].nunique(dropna=True) > 1
+        if col.endswith("_mordred") and test_ft[col].nunique(dropna=True) > 1
     ]
-    test_ft = test_ft[maccs_cols[:5]]
+    test_ft = test_ft[mordred_cols[:5]]
 
     assert train_ft.shape[1] > 0
     assert test_ft.shape[1] == 5
