@@ -694,10 +694,26 @@ class FeatureGenerator():
 
         fig, ax = plt.subplots(figsize=(7, 4))
         plotted = False
+        if "loss" in log_df.columns:
+            train_df = log_df.dropna(subset=["loss"])
+            if not train_df.empty:
+                ax.plot(
+                    train_df["epoch"],
+                    train_df["loss"],
+                    marker="o",
+                    label="train loss",
+                )
+                plotted = True
+
         if "eval_mse" in log_df.columns:
             eval_df = log_df.dropna(subset=["eval_mse"])
             if not eval_df.empty:
-                ax.plot(eval_df["epoch"], eval_df["eval_mse"], marker="o", label="eval MSE")
+                ax.plot(
+                    eval_df["epoch"],
+                    eval_df["eval_mse"],
+                    marker="o",
+                    label="eval MSE",
+                )
                 plotted = True
 
         if plotted:
