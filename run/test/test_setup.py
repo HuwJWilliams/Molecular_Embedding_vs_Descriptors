@@ -13,7 +13,6 @@ pytestmark = [
     pytest.mark.filterwarnings("ignore:.*least populated class.*:UserWarning"),
 ]
 
-
 # %% ==== Pathing
 ROOT = Path(__file__).resolve().parents[2]
 RUN_DIR = ROOT / "run"
@@ -25,13 +24,6 @@ EXPECTED_DATA = RUN_DIR / "test" / "expected_test_results"
 FEATURES = [
     "rdkit",
     "mordred",
-    # "maccs",
-    # "morgan",
-    # "chemberta-dc",
-    # "chemberta-sey",
-    # "molformer-ibm",
-    # "molformer-dc",
-    # "selformer",
 ]
 
 sys.path.insert(0, str(SRC_DIR / "pathing"))

@@ -4,8 +4,8 @@ results_pre_3D/
 
 # Local/tooling directories
 .codex
-sandbox/
-*/__pycache__/
+# scripts/sandbox/
+/__pycache__/
 
 # Generated data and artifacts
 *.pkl
