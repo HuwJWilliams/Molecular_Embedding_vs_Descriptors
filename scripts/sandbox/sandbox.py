@@ -179,7 +179,7 @@ original_data = pd.read_csv(
 for desc in cols:
     v.plotFeatureImportance(
         data=original_data,
-        x_col=f"Importance_{desc}_mordred",
+        x_col=f"Importance_{desc}",
         y_col="Feature",
         top_n=25,
         save_path=str(Path(__file__).parent),
