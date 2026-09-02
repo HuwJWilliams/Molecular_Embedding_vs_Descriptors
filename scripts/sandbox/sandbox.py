@@ -87,6 +87,8 @@ total_average_dfs = []
 for exp, exp_dir in FULL_PATHING["prediction_output_dirs"][
     "lipinski_cross_feature_predictions"
 ]["all"].items():
+
+    print("\n\n{exp}\n\n")
     if exp.startswith("pred_mordred_"):
         total_average_df = averageExperimentPerformanceTotalDescriptors(
             exp=exp,
