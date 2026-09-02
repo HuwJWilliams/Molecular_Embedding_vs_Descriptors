@@ -111,3 +111,6 @@ for exp, exp_dir in cfp_block.items():
         print(e)
 
 all_total_average_df = pd.concat(total_average_dfs, ignore_index=True)
+all_total_average_df.to_csv(
+    "/users/yhb18174/TL_project/results/lipinski_embeddings_and_descriptor_predictions/pred_mordred_avg_perf.csv"
+)
