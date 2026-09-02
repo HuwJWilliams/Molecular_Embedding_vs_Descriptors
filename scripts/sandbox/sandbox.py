@@ -119,11 +119,11 @@ def averageExperimentPerformanceTotalDescriptors(
 import sys
 from pathlib import Path
 
-# CONFIG_DIR = Path(__file__).resolve().parents[2] / "run" / "config"
-# sys.path.insert(0, str(CONFIG_DIR))
-# from config import FULL_PATHING
+CONFIG_DIR = Path(__file__).resolve().parents[2] / "run" / "config"
+sys.path.insert(0, str(CONFIG_DIR))
+from config import FULL_PATHING
 
-# total_average_dfs = []
+total_average_dfs = []
 
 cfp_block = FULL_PATHING["prediction_output_dirs"][
     "lipinski_cross_feature_predictions"
@@ -160,6 +160,7 @@ cfp_block = FULL_PATHING["prediction_output_dirs"][
 
 # %% Plot top RDKit features for each predicted Mordred descriptor
 
+
 def safeFilename(name: str) -> str:
     return (
         str(name)
@@ -184,7 +185,9 @@ def plotTopFeaturesForEachPredictedDescriptor(
     importance_path = exp_dir / "all_feature_importance.csv"
 
     if not importance_path.exists():
-        raise FileNotFoundError(f"Could not find feature importance file: {importance_path}")
+        raise FileNotFoundError(
+            f"Could not find feature importance file: {importance_path}"
+        )
 
     importance_df = pd.read_csv(importance_path)
     if "Feature" not in importance_df.columns:
@@ -198,7 +201,10 @@ def plotTopFeaturesForEachPredictedDescriptor(
     if not importance_cols:
         raise ValueError(f"No Importance_* columns found in {importance_path}")
 
-    plot_dir = Path(__file__).resolve().parent / "top25_feature_importance_by_predicted_descriptor"
+    plot_dir = (
+        Path(__file__).resolve().parent
+        / "top25_feature_importance_by_predicted_descriptor"
+    )
     plot_dir.mkdir(parents=True, exist_ok=True)
 
     summary_rows = []
