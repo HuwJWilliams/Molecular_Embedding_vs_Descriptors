@@ -82,22 +82,32 @@ CONFIG_DIR = Path(__file__).resolve().parents[2] / "run" / "config"
 sys.path.insert(0, str(CONFIG_DIR))
 from config import FULL_PATHING
 
-# Example:
 total_average_dfs = []
-for exp, exp_dir in FULL_PATHING["prediction_output_dirs"][
-    "lipinski_cross_feature_predictions"
-]["all"].items():
 
-    print(f"\n\n{exp}\n\n")
-    if exp.startswith("pred_mordred_") and "average" not in exp:
+cfp_block = FULL_PATHING["prediction_output_dirs"][
+    "lipinski_cross_feature_predictions"
+]["all"]
+
+for exp, exp_dir in cfp_block.items():
+    exp_parts = exp.split("_")
+
+    if len(exp_parts) < 4:
+        continue
+
+    pred_feature = exp_parts[1]
+    train_feature = exp_parts[3]
+
+    if pred_feature != "mordred":
+        continue
+
+    try:
         total_average_df = averageExperimentPerformanceTotalDescriptors(
             exp=exp,
             exp_dir=exp_dir,
             task_type="regression",
         )
         total_average_dfs.append(total_average_df)
+    except Exception as e:
+        print(e)
 
 all_total_average_df = pd.concat(total_average_dfs, ignore_index=True)
-all_total_average_df.to_csv(
-    "/users/yhb18174/TL_project/results/lipinski_embeddings_and_descriptor_predictions"
-)
