@@ -159,16 +159,16 @@ cfp_block = FULL_PATHING["prediction_output_dirs"][
 
 
 # %% Plot top RDKit features for each predicted Mordred descriptor
+# %% Plot top RDKit features for predicting Mordred Autocorrelation descriptors
 sys.path.insert(0, str(SRC_DIR / "visualisation"))
 from vis import Visualise
 
 sys.path.insert(0, str(SRC_DIR / "datasets"))
 from group_descriptors import *
 
-cols = []
+# Get all Mordred descriptors belonging to Autocorrelation
 res = getMordredGroups()
-cols.extend(res["GeometricalIndex"])
-cols.extend(res["TopologicalIndex"])
+autocorrelation_descs = res["Autocorrelation"]
 
 v = Visualise(save_all=False)
 
@@ -176,11 +176,21 @@ original_data = pd.read_csv(
     cfp_block["pred_mordred_tr_rdkit"] / "all_feature_importance.csv"
 )
 
-for desc in cols:
-    v.plotFeatureImportance(
-        data=original_data,
-        x_col=f"Importance_{desc}",
-        y_col="Feature",
-        top_n=25,
-        save_path=str(Path(__file__).parent),
-    )
+# Corresponding importance columns
+cols_to_avg = [
+    f"Importance_{desc}"
+    for desc in autocorrelation_descs
+    if f"Importance_{desc}" in original_data.columns
+]
+
+# Mean importance of each RDKit feature across all
+# Autocorrelation Mordred descriptors
+original_data["Importance_Autocorrelation"] = original_data[cols_to_avg].mean(axis=1)
+
+v.plotFeatureImportance(
+    data=original_data,
+    x_col="Importance_Autocorrelation",
+    y_col="Feature",
+    top_n=25,
+    save_path=str(Path(__file__).parent),
+)
