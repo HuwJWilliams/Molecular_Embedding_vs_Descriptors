@@ -199,6 +199,9 @@ def plotTopFeaturesForEachPredictedDescriptor(
         col for col in importance_df.columns if col.startswith("Importance_")
     ]
 
+    if not importance_cols:
+        importance_cols = importance_df.columns.tolist()
+
     if target_predicted_descriptors is not None:
         target_predicted_descriptors = [
             desc if desc.endswith("_mordred") else f"{desc}_mordred"
@@ -207,6 +210,7 @@ def plotTopFeaturesForEachPredictedDescriptor(
         target_importance_cols = {
             f"Importance_{desc}" for desc in target_predicted_descriptors
         }
+        target_importance_cols.update(target_predicted_descriptors)
         importance_cols = [
             col for col in importance_cols if col in target_importance_cols
         ]
@@ -280,7 +284,14 @@ top_feature_summary_df = plotTopFeaturesForEachPredictedDescriptor(
     exp_dir=rdkit_to_mordred_dir,
     top_n=25,
     target_predicted_descriptors=[
+        "GeomDiameter_mordred",
+        "GeomRadius_mordred",
+        "GeomPetitjeanIndex_mordred",
+        "GeomTopoShapeIndex_mordred",
         "GeomShapeIndex_mordred",
         "TopoShapeIndex_mordred",
+        "Radius_mordred",
+        "Diameter_mordred",
+        "PetitjeanIndex_mordred",
     ],
 )
