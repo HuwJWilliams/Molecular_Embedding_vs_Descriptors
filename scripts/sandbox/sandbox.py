@@ -162,6 +162,11 @@ cfp_block = FULL_PATHING["prediction_output_dirs"][
 sys.path.insert(0, str(SRC_DIR / "visualisation"))
 from vis import Visualise
 
+sys.path.insert(0, str(SRC_DIR / "datasets" /))
+from group_descriptors import *
+
+print getMordredGroups["GeometricalIndex"]
+
 v = Visualise(save_all=False)
 
 original_data = pd.read_csv(
