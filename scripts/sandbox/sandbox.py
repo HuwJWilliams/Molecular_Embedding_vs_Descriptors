@@ -88,8 +88,8 @@ for exp, exp_dir in FULL_PATHING["prediction_output_dirs"][
     "lipinski_cross_feature_predictions"
 ]["all"].items():
 
-    print("\n\n{exp}\n\n")
-    if exp.startswith("pred_mordred_"):
+    print(f"\n\n{exp}\n\n")
+    if exp.startswith("pred_mordred_") and "average" not in exp:
         total_average_df = averageExperimentPerformanceTotalDescriptors(
             exp=exp,
             exp_dir=exp_dir,
@@ -98,3 +98,6 @@ for exp, exp_dir in FULL_PATHING["prediction_output_dirs"][
         total_average_dfs.append(total_average_df)
 
 all_total_average_df = pd.concat(total_average_dfs, ignore_index=True)
+all_total_average_df.to_csv(
+    "/users/yhb18174/TL_project/results/lipinski_embeddings_and_descriptor_predictions"
+)
