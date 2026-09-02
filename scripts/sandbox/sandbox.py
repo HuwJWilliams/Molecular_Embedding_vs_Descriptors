@@ -165,7 +165,8 @@ from vis import Visualise
 sys.path.insert(0, str(SRC_DIR / "datasets"))
 from group_descriptors import *
 
-print(getMordredGroups["GeometricalIndex"])
+res = getMordredGroups()
+print(res["GeometricalIndex"])
 
 v = Visualise(save_all=False)
 
