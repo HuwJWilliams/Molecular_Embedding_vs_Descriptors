@@ -86,12 +86,13 @@ from config import FULL_PATHING
 total_average_dfs = []
 for exp, exp_dir in FULL_PATHING["prediction_output_dirs"][
     "lipinski_cross_feature_predictions"
-]["all"].items()[0]:
-    total_average_df = averageExperimentPerformanceTotalDescriptors(
-        exp=exp,
-        exp_dir=exp_dir,
-        task_type="regression",
-    )
-    total_average_dfs.append(total_average_df)
+]["all"].items():
+    if exp.startswith("pred_mordred_"):
+        total_average_df = averageExperimentPerformanceTotalDescriptors(
+            exp=exp,
+            exp_dir=exp_dir,
+            task_type="regression",
+        )
+        total_average_dfs.append(total_average_df)
 
 all_total_average_df = pd.concat(total_average_dfs, ignore_index=True)
