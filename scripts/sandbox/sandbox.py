@@ -164,7 +164,9 @@ from vis import Visualise
 
 v = Visualise(save_all=False)
 
-original_data = pd.read_csv(cfp_block["pred_mordred_tr_rdkit"])
+original_data = pd.read_csv(
+    cfp_block["pred_mordred_tr_rdkit"] / "all_feature_importance.csv"
+)
 
 for desc in ["GeomRadius", "GeomDiameter", "GeomPetitJeanIndex", "GeomShapeIndex"]:
     v.plotFeatureImportance(

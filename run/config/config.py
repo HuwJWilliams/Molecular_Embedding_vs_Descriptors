@@ -10,8 +10,6 @@ import sys
 SCRIPTS_DIR = Path(__file__).resolve().parents[2] / "scripts"
 SRC_DIR = SCRIPTS_DIR / "src"
 
-print(f"Scripts dir: {SCRIPTS_DIR}")
-
 # %% ===== Configuration variables =====
 
 # --- Pathing JSON variables
