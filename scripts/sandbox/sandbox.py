@@ -88,29 +88,30 @@ cfp_block = FULL_PATHING["prediction_output_dirs"][
     "lipinski_cross_feature_predictions"
 ]["all"]
 
-for exp, exp_dir in cfp_block.items():
-    exp_parts = exp.split("_")
+for task_type in ["regression", "binary_classification", "multiclass_classification"]:
+    for exp, exp_dir in cfp_block.items():
+        exp_parts = exp.split("_")
 
-    if len(exp_parts) < 4:
-        continue
+        if len(exp_parts) < 4:
+            continue
 
-    pred_feature = exp_parts[1]
-    train_feature = exp_parts[3]
+        pred_feature = exp_parts[1]
+        train_feature = exp_parts[3]
 
-    if pred_feature != "mordred":
-        continue
+        if pred_feature != "mordred":
+            continue
 
-    try:
-        total_average_df = averageExperimentPerformanceTotalDescriptors(
-            exp=exp,
-            exp_dir=exp_dir,
-            task_type="regression",
-        )
-        total_average_dfs.append(total_average_df)
-    except Exception as e:
-        print(e)
+        try:
+            total_average_df = averageExperimentPerformanceTotalDescriptors(
+                exp=exp,
+                exp_dir=exp_dir,
+                task_type="regression",
+            )
+            total_average_dfs.append(total_average_df)
+        except Exception as e:
+            print(e)
 
-all_total_average_df = pd.concat(total_average_dfs, ignore_index=True)
-all_total_average_df.to_csv(
-    "/users/yhb18174/TL_project/results/lipinski_embeddings_and_descriptor_predictions/pred_mordred_avg_perf.csv"
-)
+    all_total_average_df = pd.concat(total_average_dfs, ignore_index=True)
+    all_total_average_df.to_csv(
+        f"/users/yhb18174/TL_project/results/lipinski_embeddings_and_descriptor_predictions/pred_mordred_{task_type}_avg_perf.csv"
+    )
