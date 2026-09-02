@@ -119,40 +119,145 @@ def averageExperimentPerformanceTotalDescriptors(
 import sys
 from pathlib import Path
 
-CONFIG_DIR = Path(__file__).resolve().parents[2] / "run" / "config"
-sys.path.insert(0, str(CONFIG_DIR))
-from config import FULL_PATHING
+# CONFIG_DIR = Path(__file__).resolve().parents[2] / "run" / "config"
+# sys.path.insert(0, str(CONFIG_DIR))
+# from config import FULL_PATHING
 
-total_average_dfs = []
+# total_average_dfs = []
 
 cfp_block = FULL_PATHING["prediction_output_dirs"][
     "lipinski_cross_feature_predictions"
 ]["all"]
 
-for exp, exp_dir in cfp_block.items():
-    exp_parts = exp.split("_")
+# for exp, exp_dir in cfp_block.items():
+#     exp_parts = exp.split("_")
 
-    if len(exp_parts) < 4:
-        continue
+#     if len(exp_parts) < 4:
+#         continue
 
-    pred_feature = exp_parts[1]
+#     pred_feature = exp_parts[1]
 
-    if pred_feature != "mordred" and exp != "pred_rdkit_tr_mordred":
-        continue
+#     if pred_feature != "mordred" and exp != "pred_rdkit_tr_mordred":
+#         continue
 
-    try:
-        total_average_df = averageExperimentPerformanceTotalDescriptors(
-            exp=exp,
-            exp_dir=exp_dir,
+#     try:
+#         total_average_df = averageExperimentPerformanceTotalDescriptors(
+#             exp=exp,
+#             exp_dir=exp_dir,
+#         )
+#         total_average_dfs.append(total_average_df)
+#     except Exception as e:
+#         print(e)
+
+# all_total_average_df = pd.concat(total_average_dfs, ignore_index=True)
+# numeric_cols = all_total_average_df.select_dtypes(include="number").columns
+# all_total_average_df[numeric_cols] = all_total_average_df[numeric_cols].round(3)
+# all_total_average_df.to_csv(
+#     "/users/yhb18174/TL_project/results/lipinski_embeddings_and_descriptor_predictions/pred_mordred_all_task_metric_avg_perf.csv",
+#     index=False,
+# )
+
+
+# %% Plot top RDKit features for each predicted Mordred descriptor
+
+def safeFilename(name: str) -> str:
+    return (
+        str(name)
+        .replace("/", "_")
+        .replace("\\", "_")
+        .replace(":", "_")
+        .replace("*", "_")
+        .replace("?", "_")
+        .replace('"', "_")
+        .replace("<", "_")
+        .replace(">", "_")
+        .replace("|", "_")
+    )
+
+
+def plotTopFeaturesForEachPredictedDescriptor(
+    exp: str,
+    exp_dir: str | Path,
+    top_n: int = 25,
+) -> pd.DataFrame:
+    exp_dir = Path(exp_dir)
+    importance_path = exp_dir / "all_feature_importance.csv"
+
+    if not importance_path.exists():
+        raise FileNotFoundError(f"Could not find feature importance file: {importance_path}")
+
+    importance_df = pd.read_csv(importance_path)
+    if "Feature" not in importance_df.columns:
+        raise KeyError(f"'Feature' column not found in {importance_path}")
+
+    importance_df = importance_df.set_index("Feature")
+    importance_cols = [
+        col for col in importance_df.columns if col.startswith("Importance_")
+    ]
+
+    if not importance_cols:
+        raise ValueError(f"No Importance_* columns found in {importance_path}")
+
+    plot_dir = Path(__file__).resolve().parent / "top25_feature_importance_by_predicted_descriptor"
+    plot_dir.mkdir(parents=True, exist_ok=True)
+
+    summary_rows = []
+
+    for importance_col in importance_cols:
+        predicted_descriptor = importance_col.removeprefix("Importance_")
+        plot_df = (
+            pd.to_numeric(importance_df[importance_col], errors="coerce")
+            .dropna()
+            .sort_values(ascending=False)
+            .head(top_n)
+            .sort_values(ascending=True)
         )
-        total_average_dfs.append(total_average_df)
-    except Exception as e:
-        print(e)
 
-all_total_average_df = pd.concat(total_average_dfs, ignore_index=True)
-numeric_cols = all_total_average_df.select_dtypes(include="number").columns
-all_total_average_df[numeric_cols] = all_total_average_df[numeric_cols].round(3)
-all_total_average_df.to_csv(
-    "/users/yhb18174/TL_project/results/lipinski_embeddings_and_descriptor_predictions/pred_mordred_all_task_metric_avg_perf.csv",
-    index=False,
+        if plot_df.empty:
+            continue
+
+        summary_rows.extend(
+            {
+                "experiment": exp,
+                "predicted_descriptor": predicted_descriptor,
+                "rank": rank,
+                "feature": feature,
+                "importance": importance,
+            }
+            for rank, (feature, importance) in enumerate(
+                plot_df.sort_values(ascending=False).items(),
+                start=1,
+            )
+        )
+
+        fig_height = max(6, 0.28 * len(plot_df) + 1.5)
+        plt.figure(figsize=(8, fig_height))
+        plt.barh(plot_df.index.astype(str), plot_df.values, color="#4C72B0")
+        plt.xlabel("Feature importance")
+        plt.ylabel("RDKit descriptor")
+        plt.title(f"{predicted_descriptor}: top {top_n} RDKit features")
+        plt.tight_layout()
+        plt.savefig(
+            plot_dir / f"top{top_n}_{safeFilename(predicted_descriptor)}.png",
+            dpi=300,
+            bbox_inches="tight",
+        )
+        plt.close()
+
+    summary_df = pd.DataFrame(summary_rows)
+    summary_df.to_csv(
+        plot_dir / f"{exp}_top{top_n}_feature_importance_summary.csv",
+        index=False,
+    )
+
+    return summary_df
+
+
+rdkit_to_mordred_exp = "pred_mordred_tr_rdkit"
+rdkit_to_mordred_dir = cfp_block[rdkit_to_mordred_exp]
+
+top_feature_summary_df = plotTopFeaturesForEachPredictedDescriptor(
+    exp=rdkit_to_mordred_exp,
+    exp_dir=rdkit_to_mordred_dir,
+    top_n=25,
 )
