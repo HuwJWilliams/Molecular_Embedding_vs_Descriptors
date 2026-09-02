@@ -159,7 +159,7 @@ cfp_block = FULL_PATHING["prediction_output_dirs"][
 
 
 # %% Plot top RDKit features for each predicted Mordred descriptor
-sys.path.insert(0, str(SRC_DIR) / "visualisation")
+sys.path.insert(0, str(SRC_DIR / "visualisation")
 from vis import Visualise
 
 v = Visualise(save_all=False)
