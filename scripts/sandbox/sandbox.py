@@ -30,7 +30,6 @@ data = pd.read_csv(
 def averageExperimentPerformanceTotalDescriptors(
     exp: str,
     exp_dir: str | Path,
-    task_type: str | None = "regression",
     save: bool = True,
 ) -> pd.DataFrame:
     """
@@ -49,11 +48,53 @@ def averageExperimentPerformanceTotalDescriptors(
 
     exp_df = pd.read_csv(exp_path, index_col=0)
 
-    if task_type is not None and "task_type" in exp_df.columns:
-        exp_df = exp_df.loc[exp_df["task_type"] == task_type].copy()
+    task_metric_cols = {
+        "regression": [
+            "Bias",
+            "SDEP",
+            "MSE",
+            "RMSE",
+            "r2",
+            "Pearson_r",
+            "Pearson_p",
+        ],
+        "binary_classification": [
+            "Accuracy",
+            "Balanced_Accuracy",
+            "Sensitivity",
+            "Specificity",
+            "PPV",
+            "NPV",
+            "AUC",
+            "MCC",
+        ],
+        "multiclass_classification": [
+            "Accuracy",
+            "Balanced_Accuracy",
+            "F1_macro",
+            "AUC_OVR",
+            "MCC",
+        ],
+    }
 
-    numeric_cols = exp_df.select_dtypes(include="number").columns.tolist()
-    mean_metrics = exp_df[numeric_cols].mean(numeric_only=True).to_dict()
+    descriptor_counts = {}
+    mean_metrics = {}
+
+    if "task_type" in exp_df.columns:
+        for task_name, metric_cols in task_metric_cols.items():
+            task_df = exp_df.loc[exp_df["task_type"] == task_name].copy()
+            descriptor_counts[f"n_{task_name}_descriptors"] = len(task_df)
+
+            for metric_col in metric_cols:
+                if metric_col not in task_df.columns:
+                    continue
+
+                metric_values = pd.to_numeric(task_df[metric_col], errors="coerce")
+                if metric_values.notna().any():
+                    mean_metrics[f"{task_name}_{metric_col}"] = metric_values.mean()
+    else:
+        numeric_cols = exp_df.select_dtypes(include="number").columns.tolist()
+        mean_metrics = exp_df[numeric_cols].mean(numeric_only=True).to_dict()
 
     exp_parts = exp.split("_")
     total_average_df = pd.DataFrame(
@@ -62,8 +103,8 @@ def averageExperimentPerformanceTotalDescriptors(
                 "experiment": exp,
                 "pred": exp_parts[1] if len(exp_parts) > 1 else pd.NA,
                 "train": exp_parts[3] if len(exp_parts) > 3 else pd.NA,
-                "task_type": task_type or "all",
                 "n_descriptors": len(exp_df),
+                **descriptor_counts,
                 **mean_metrics,
             }
         ]
@@ -88,30 +129,28 @@ cfp_block = FULL_PATHING["prediction_output_dirs"][
     "lipinski_cross_feature_predictions"
 ]["all"]
 
-for task_type in ["regression", "binary_classification", "multiclass_classification"]:
-    for exp, exp_dir in cfp_block.items():
-        exp_parts = exp.split("_")
+for exp, exp_dir in cfp_block.items():
+    exp_parts = exp.split("_")
 
-        if len(exp_parts) < 4:
-            continue
+    if len(exp_parts) < 4:
+        continue
 
-        pred_feature = exp_parts[1]
-        train_feature = exp_parts[3]
+    pred_feature = exp_parts[1]
 
-        if pred_feature != "mordred":
-            continue
+    if pred_feature != "mordred":
+        continue
 
-        try:
-            total_average_df = averageExperimentPerformanceTotalDescriptors(
-                exp=exp,
-                exp_dir=exp_dir,
-                task_type="regression",
-            )
-            total_average_dfs.append(total_average_df)
-        except Exception as e:
-            print(e)
+    try:
+        total_average_df = averageExperimentPerformanceTotalDescriptors(
+            exp=exp,
+            exp_dir=exp_dir,
+        )
+        total_average_dfs.append(total_average_df)
+    except Exception as e:
+        print(e)
 
-    all_total_average_df = pd.concat(total_average_dfs, ignore_index=True)
-    all_total_average_df.to_csv(
-        f"/users/yhb18174/TL_project/results/lipinski_embeddings_and_descriptor_predictions/pred_mordred_{task_type}_avg_perf.csv"
-    )
+all_total_average_df = pd.concat(total_average_dfs, ignore_index=True)
+all_total_average_df.to_csv(
+    "/users/yhb18174/TL_project/results/lipinski_embeddings_and_descriptor_predictions/pred_mordred_all_task_metric_avg_perf.csv",
+    index=False,
+)
