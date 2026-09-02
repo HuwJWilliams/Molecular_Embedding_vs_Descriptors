@@ -168,7 +168,7 @@ original_data = pd.read_csv(
     cfp_block["pred_mordred_tr_rdkit"] / "all_feature_importance.csv"
 )
 
-print(original_data.columns[:5]
+print(original_data.columns[:5])
 
 # for desc in ["GeomRadius", "GeomDiameter", "GeomPetitJeanIndex", "GeomShapeIndex"]:
 #     v.plotFeatureImportance(
