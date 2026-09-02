@@ -135,6 +135,7 @@ TRANSFORMER_FEATURE_SPECS: dict[str, dict[str, str]] = {
         "input_kind": "smiles",
         "metadata_col_name": "SMILES",
         "commit_hash": "9f1b9ea3590833bd0ea1a70e789c5d3da11ba7ed",
+        "code_revision": "refs/pr/1",
         "max_token_len": 202,
     },
     "selformer": {
