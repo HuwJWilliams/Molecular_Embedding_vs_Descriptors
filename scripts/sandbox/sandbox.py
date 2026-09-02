@@ -137,7 +137,7 @@ for exp, exp_dir in cfp_block.items():
 
     pred_feature = exp_parts[1]
 
-    if pred_feature != "mordred":
+    if pred_feature != "mordred" and exp != "pred_rdkit_tr_mordred":
         continue
 
     try:
@@ -150,6 +150,8 @@ for exp, exp_dir in cfp_block.items():
         print(e)
 
 all_total_average_df = pd.concat(total_average_dfs, ignore_index=True)
+numeric_cols = all_total_average_df.select_dtypes(include="number").columns
+all_total_average_df[numeric_cols] = all_total_average_df[numeric_cols].round(3)
 all_total_average_df.to_csv(
     "/users/yhb18174/TL_project/results/lipinski_embeddings_and_descriptor_predictions/pred_mordred_all_task_metric_avg_perf.csv",
     index=False,
