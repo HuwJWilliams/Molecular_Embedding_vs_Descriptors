@@ -165,8 +165,10 @@ from vis import Visualise
 sys.path.insert(0, str(SRC_DIR / "datasets"))
 from group_descriptors import *
 
+cols = []
 res = getMordredGroups()
-print(res["GeometricalIndex"])
+cols.extend(res["GeometricalIndex"])
+cols.extend(res["TopologicalIndex"])
 
 v = Visualise(save_all=False)
 
@@ -174,13 +176,11 @@ original_data = pd.read_csv(
     cfp_block["pred_mordred_tr_rdkit"] / "all_feature_importance.csv"
 )
 
-print(original_data.columns[:5])
-
-# for desc in ["GeomRadius", "GeomDiameter", "GeomPetitJeanIndex", "GeomShapeIndex"]:
-#     v.plotFeatureImportance(
-#         data=original_data,
-#         x_col=f"Importance_{desc}_mordred",
-#         y_col="Feature",
-#         top_n=25,
-#         save_path=str(Path(__file__).parent),
-#     )
+for desc in cols:
+    v.plotFeatureImportance(
+        data=original_data,
+        x_col=f"Importance_{desc}_mordred",
+        y_col="Feature",
+        top_n=25,
+        save_path=str(Path(__file__).parent),
+    )
