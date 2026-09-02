@@ -180,6 +180,7 @@ def plotTopFeaturesForEachPredictedDescriptor(
     exp: str,
     exp_dir: str | Path,
     top_n: int = 25,
+    target_predicted_descriptors: list[str] | None = None,
 ) -> pd.DataFrame:
     exp_dir = Path(exp_dir)
     importance_path = exp_dir / "all_feature_importance.csv"
@@ -197,6 +198,18 @@ def plotTopFeaturesForEachPredictedDescriptor(
     importance_cols = [
         col for col in importance_df.columns if col.startswith("Importance_")
     ]
+
+    if target_predicted_descriptors is not None:
+        target_predicted_descriptors = [
+            desc if desc.endswith("_mordred") else f"{desc}_mordred"
+            for desc in target_predicted_descriptors
+        ]
+        target_importance_cols = {
+            f"Importance_{desc}" for desc in target_predicted_descriptors
+        }
+        importance_cols = [
+            col for col in importance_cols if col in target_importance_cols
+        ]
 
     if not importance_cols:
         raise ValueError(f"No Importance_* columns found in {importance_path}")
@@ -266,4 +279,8 @@ top_feature_summary_df = plotTopFeaturesForEachPredictedDescriptor(
     exp=rdkit_to_mordred_exp,
     exp_dir=rdkit_to_mordred_dir,
     top_n=25,
+    target_predicted_descriptors=[
+        "GeomShapeIndex_mordred",
+        "TopoShapeIndex_mordred",
+    ],
 )
