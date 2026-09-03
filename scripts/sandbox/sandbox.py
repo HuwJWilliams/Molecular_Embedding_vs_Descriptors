@@ -264,6 +264,7 @@ for family in AUTOCORR_FAMILIES:
     axes_flat = axes.ravel()
 
     for ax, col, non_nan_values in zip(axes_flat, mass_cols, mass_values):
+        pct_zero = 100 * (non_nan_values == 0).mean()
         ax.hist(
             non_nan_values,
             bins=bin_edges,
@@ -271,7 +272,10 @@ for family in AUTOCORR_FAMILIES:
             color="steelblue",
             alpha=0.85,
         )
-        ax.set_title(f"{col} (non-NaN n={len(non_nan_values)})", fontsize=11)
+        ax.set_title(
+            f"{col} (non-NaN n={len(non_nan_values)}, 0={pct_zero:.1f}%)",
+            fontsize=11,
+        )
         ax.set_xlabel("Descriptor value")
         ax.set_ylabel("Count")
         ax.grid(axis="y", linestyle="--", alpha=0.25)
