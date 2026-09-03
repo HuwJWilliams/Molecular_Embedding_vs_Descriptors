@@ -172,25 +172,92 @@ autocorrelation_descs = res["Autocorrelation"]
 
 v = Visualise(save_all=False)
 
-original_data = pd.read_csv(
-    cfp_block["pred_mordred_tr_rdkit"] / "all_feature_importance.csv"
+# original_data = pd.read_csv(
+#     cfp_block["pred_mordred_tr_rdkit"] / "all_feature_importance.csv"
+# )
+
+# # Corresponding importance columns
+# cols_to_avg = [
+#     f"Importance_{desc}"
+#     for desc in autocorrelation_descs
+#     if f"Importance_{desc}" in original_data.columns
+# ]
+
+# # Mean importance of each RDKit feature across all
+# # Autocorrelation Mordred descriptors
+# original_data["Importance_Autocorrelation"] = original_data[cols_to_avg].mean(axis=1)
+
+# v.plotFeatureImportance(
+#     data=original_data,
+#     x_col="Importance_Autocorrelation",
+#     y_col="Feature",
+#     top_n=25,
+#     save_path=str(Path(__file__).parent),
+# )
+
+# %% Plot Mordred ATS atomic-mass autocorrelation descriptor distributions
+import math
+import re
+
+FILE_DIR = Path(__file__).resolve().parent
+PROJ_DIR = FILE_DIR.parents[1]
+ATS_MASS_PATTERN = re.compile(r"^ATS(?P<lag>\d+)m(?:_mordred)?$")
+
+mordred_features_path = Path(FULL_PATHING["full_features"]["all"]["mordred"])
+if not mordred_features_path.exists():
+    mordred_features_path = (
+        PROJ_DIR
+        / "run"
+        / "test"
+        / "expected_test_results"
+        / "expected_mordred_features.csv"
+    )
+
+mordred_features = pd.read_csv(mordred_features_path, index_col=0, low_memory=False)
+
+ats_mass_cols = []
+for col in mordred_features.columns:
+    match = ATS_MASS_PATTERN.match(col)
+    if match:
+        ats_mass_cols.append((int(match.group("lag")), col))
+
+ats_mass_cols = [col for _, col in sorted(ats_mass_cols)]
+
+if not ats_mass_cols:
+    raise ValueError(
+        "No ATS atomic-mass columns found. Expected names like "
+        "ATS0m_mordred, ATS1m_mordred, ..."
+    )
+
+n_plot_cols = 3
+n_plot_rows = math.ceil(len(ats_mass_cols) / n_plot_cols)
+
+fig, axes = plt.subplots(
+    n_plot_rows,
+    n_plot_cols,
+    figsize=(4.8 * n_plot_cols, 3.6 * n_plot_rows),
+    squeeze=False,
 )
+axes_flat = axes.ravel()
 
-# Corresponding importance columns
-cols_to_avg = [
-    f"Importance_{desc}"
-    for desc in autocorrelation_descs
-    if f"Importance_{desc}" in original_data.columns
-]
+for ax, col in zip(axes_flat, ats_mass_cols):
+    values = pd.to_numeric(mordred_features[col], errors="coerce").dropna()
+    ax.hist(values, bins=40, edgecolor="black", color="steelblue", alpha=0.85)
+    ax.set_title(f"{col} (n={len(values)})", fontsize=11)
+    ax.set_xlabel("Descriptor value")
+    ax.set_ylabel("Count")
+    ax.grid(axis="y", linestyle="--", alpha=0.25)
 
-# Mean importance of each RDKit feature across all
-# Autocorrelation Mordred descriptors
-original_data["Importance_Autocorrelation"] = original_data[cols_to_avg].mean(axis=1)
+for ax in axes_flat[len(ats_mass_cols) :]:
+    ax.axis("off")
 
-v.plotFeatureImportance(
-    data=original_data,
-    x_col="Importance_Autocorrelation",
-    y_col="Feature",
-    top_n=25,
-    save_path=str(Path(__file__).parent),
-)
+fig.suptitle("Mordred Autocorrelation: ATS Atomic Mass", fontsize=14, weight="bold")
+fig.tight_layout()
+
+save_path = FILE_DIR / "ats_mass_histograms.png"
+fig.savefig(save_path, dpi=200, bbox_inches="tight")
+plt.close(fig)
+
+print(f"Loaded Mordred features from: {mordred_features_path}")
+print(f"Plotted descriptors: {', '.join(ats_mass_cols)}")
+print(f"Saved histogram plot to: {save_path}")
