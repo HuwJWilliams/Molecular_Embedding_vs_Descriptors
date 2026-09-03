@@ -205,6 +205,7 @@ FILE_DIR = Path(__file__).resolve().parent
 PROJ_DIR = FILE_DIR.parents[1]
 AUTOCORR_FAMILIES = ["ATS", "AATS", "ATSC", "AATSC", "MATS", "GATS"]
 PROPERTY_SUFFIX = "m"
+TRAINING_PERCENTILE = 0.99
 
 mordred_features_path = Path(FULL_PATHING["full_features"]["all"]["mordred"])
 if not mordred_features_path.exists():
@@ -235,14 +236,26 @@ for family in AUTOCORR_FAMILIES:
         print(f"Skipping {family}: no atomic-mass descriptors found.")
         continue
 
-    mass_values = [
-        pd.to_numeric(mordred_features[col], errors="coerce").dropna()
-        for col in mass_cols
-    ]
+    mass_values = []
+    percentile_cutoffs = []
+    n_raw_values = []
+
+    for col in mass_cols:
+        non_nan_values = pd.to_numeric(mordred_features[col], errors="coerce").dropna()
+        percentile_cutoff = non_nan_values.quantile(TRAINING_PERCENTILE)
+        trained_values = non_nan_values.loc[non_nan_values <= percentile_cutoff]
+
+        mass_values.append(trained_values)
+        percentile_cutoffs.append(percentile_cutoff)
+        n_raw_values.append(len(non_nan_values))
+
     all_mass_values = pd.concat(mass_values, ignore_index=True)
 
     if all_mass_values.empty:
-        print(f"Skipping {family}: descriptors found, but all values are NaN.")
+        print(
+            f"Skipping {family}: descriptors found, but no values remained after "
+            f"the {TRAINING_PERCENTILE:.0%} cutoff."
+        )
         continue
 
     bin_min = all_mass_values.min()
@@ -263,20 +276,28 @@ for family in AUTOCORR_FAMILIES:
     )
     axes_flat = axes.ravel()
 
-    for ax, col, non_nan_values in zip(axes_flat, mass_cols, mass_values):
-        pct_zero = 100 * (non_nan_values == 0).mean()
+    for ax, col, trained_values, percentile_cutoff, n_raw in zip(
+        axes_flat,
+        mass_cols,
+        mass_values,
+        percentile_cutoffs,
+        n_raw_values,
+    ):
+        pct_zero = 100 * (trained_values == 0).mean()
+        pct_removed = 100 * (1 - (len(trained_values) / n_raw)) if n_raw else 0
         ax.hist(
-            non_nan_values,
+            trained_values,
             bins=bin_edges,
             edgecolor="black",
             color="steelblue",
             alpha=0.85,
         )
         ax.set_title(
-            f"{col} (non-NaN n={len(non_nan_values)}, 0={pct_zero:.1f}%)",
+            f"{col}\ntrain n={len(trained_values)}, 0={pct_zero:.1f}%, "
+            f"cut>{TRAINING_PERCENTILE:.0%} ({pct_removed:.1f}%)",
             fontsize=11,
         )
-        ax.set_xlabel("Descriptor value")
+        ax.set_xlabel(f"Descriptor value <= p99 ({percentile_cutoff:.3g})")
         ax.set_ylabel("Count")
         ax.grid(axis="y", linestyle="--", alpha=0.25)
 
